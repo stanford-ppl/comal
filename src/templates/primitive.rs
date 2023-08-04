@@ -1,12 +1,9 @@
 use core::fmt;
-use std::borrow::BorrowMut;
-use std::default;
 
 use dam_rs::templates::ops::ALUOp;
 use dam_rs::templates::ops::PipelineRegister;
 use dam_rs::types::DAMType;
 use dam_rs::RegisterALUOp;
-use frunk::prelude::LiftInto;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Token<ValType, StopType> {
