@@ -1,8 +1,8 @@
+use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::{env, thread};
 
 fn set_tensor_path() {
     env::set_var("FROSTT_FORMATTED_PATH", "/home/rubensl/Documents/data");

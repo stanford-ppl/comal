@@ -105,7 +105,6 @@ impl TryFrom<&str> for Repsiggen {
 macro_rules! token_vec {
     [$toktype: tt; $stoptype: tt; $($val:expr),*] => {
         ({
-            use crate::templates::primitive::Token;
             let hl = frunk::hlist![$($val),*];
             let mapped = hl.map(
                 frunk::poly_fn![

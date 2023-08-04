@@ -1,7 +1,7 @@
 use dam_core::identifier::Identifier;
-use dam_core::metric::LogProducer;
+
 use dam_core::TimeManager;
-use dam_macros::{cleanup, identifiable, log_producer, time_managed};
+use dam_macros::{cleanup, identifiable, time_managed};
 
 use dam_rs::{
     channel::{
