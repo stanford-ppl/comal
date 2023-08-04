@@ -113,10 +113,10 @@ fn test_par_multihead_attention() {
     // let a_vals = read_inputs::<f32>(&a_vals_filename);
 
     let mut parent = Program::default();
-    let chan_size = 1;
+    let chan_size = 64;
     let softmax_chan_size = 4096;
 
-    let par_factor = 1;
+    let par_factor = 8;
 
     // fiberlookup_bi
     let (qi_in_ref_sender, qi_in_ref_receiver) = parent.bounded(chan_size);
