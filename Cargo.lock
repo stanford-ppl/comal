@@ -24,8 +24,14 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "comal"
 version = "0.1.0"
 dependencies = [
+ "dam-core",
+ "dam-macros",
  "dam-rs",
+ "home",
  "num",
+ "serde",
+ "serde_derive",
+ "toml",
 ]
 
 [[package]]
@@ -98,7 +104,7 @@ dependencies = [
 [[package]]
 name = "dam-core"
 version = "0.1.0"
-source = "git+ssh://git@github.com/stanford-ppl/DAM-RS.git?branch=dev#cdcc808911db820c6413a7e33a77b08d95202565"
+source = "git+ssh://git@github.com/stanford-ppl/DAM-RS.git?branch=dev#607b3c9a560082d18e14a8e0f47bd6464af9dfcf"
 dependencies = [
  "dam-macros",
  "dashmap",
@@ -115,7 +121,7 @@ dependencies = [
 [[package]]
 name = "dam-macros"
 version = "0.1.0"
-source = "git+ssh://git@github.com/stanford-ppl/DAM-RS.git?branch=dev#cdcc808911db820c6413a7e33a77b08d95202565"
+source = "git+ssh://git@github.com/stanford-ppl/DAM-RS.git?branch=dev#607b3c9a560082d18e14a8e0f47bd6464af9dfcf"
 dependencies = [
  "phf",
  "proc-macro2",
@@ -126,7 +132,7 @@ dependencies = [
 [[package]]
 name = "dam-rs"
 version = "0.1.0"
-source = "git+ssh://git@github.com/stanford-ppl/DAM-RS.git?branch=dev#cdcc808911db820c6413a7e33a77b08d95202565"
+source = "git+ssh://git@github.com/stanford-ppl/DAM-RS.git?branch=dev#607b3c9a560082d18e14a8e0f47bd6464af9dfcf"
 dependencies = [
  "crossbeam",
  "dam-core",

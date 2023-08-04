@@ -2,7 +2,7 @@ use dam_core::identifier::Identifier;
 use dam_core::metric::LogProducer;
 use dam_macros::{cleanup, identifiable, log_producer, time_managed};
 
-use crate::{
+use dam_rs::{
     channel::{
         utils::{dequeue, enqueue},
         ChannelElement, Receiver, Sender,
@@ -13,7 +13,7 @@ use crate::{
 
 use super::primitive::Token;
 
-#[log_producer]
+// #[log_producer]
 #[time_managed]
 #[identifiable]
 pub struct Scatter<ValType: Clone, StopType: Clone> {
@@ -45,11 +45,11 @@ where
                                 curr_in.clone(),
                             )
                             .unwrap();
-                            Self::log(format!(
-                                "tg: {:?}, tkn: {:?}",
-                                target_idx,
-                                curr_in.data.clone()
-                            ));
+                            // Self::log(format!(
+                            //     "tg: {:?}, tkn: {:?}",
+                            //     target_idx,
+                            //     curr_in.data.clone()
+                            // ));
                             // Round robin send
                             target_idx = (target_idx + 1) % self.targets.len();
                         }
@@ -58,11 +58,11 @@ where
                             let mut cnt = 0;
                             self.targets.iter_mut().for_each(|target| {
                                 enqueue(&mut self.time, target, channel_elem.clone()).unwrap();
-                                Self::log(format!(
-                                    "tg: {:?}, tkn: {:?}",
-                                    cnt,
-                                    curr_in.data.clone()
-                                ));
+                                // Self::log(format!(
+                                //     "tg: {:?}, tkn: {:?}",
+                                //     cnt,
+                                //     curr_in.data.clone()
+                                // ));
                                 cnt += 1;
                             });
                             // target_idx = 0;
@@ -109,7 +109,7 @@ where
 
 #[time_managed]
 #[identifiable]
-#[log_producer]
+// #[log_producer]
 pub struct Gather<ValType: Clone, StopType: Clone> {
     targets: Vec<Receiver<Token<ValType, StopType>>>,
     merged: Sender<Token<ValType, StopType>>,

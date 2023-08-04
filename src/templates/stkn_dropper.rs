@@ -2,7 +2,7 @@ use dam_core::identifier::Identifier;
 use dam_core::TimeManager;
 use dam_macros::{cleanup, identifiable, time_managed};
 
-use crate::{
+use dam_rs::{
     channel::{
         utils::{dequeue, enqueue},
         ChannelElement, Receiver, Sender,

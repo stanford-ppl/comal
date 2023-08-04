@@ -1,30 +1,31 @@
 #[cfg(test)]
 mod tests {
 
-    use std::{fs, path::Path};
+    use dam_rs::templates::{test::config::Data, sam::test::config::Data};
+use std::{fs, path::Path};
 
     use dam_core::identifier::Identifiable;
 
-    use crate::context::broadcast_context::BroadcastContext;
-    use crate::context::generator_context::GeneratorContext;
+    use dam_rs::context::broadcast_context::BroadcastContext;
+    use dam_rs::context::generator_context::GeneratorContext;
 
     
-    use crate::simulation::Program;
-    use crate::templates::ops::{ALUDivOp, ALUMulOp, ALUSubOp};
-    use crate::templates::sam::accumulator::{MaxReduce, Reduce, ReduceData, Spacc1, Spacc1Data};
-    use crate::templates::sam::alu::{make_alu, make_unary_alu};
-    use crate::templates::sam::array::{Array, ArrayData};
-    use crate::templates::sam::crd_manager::{CrdDrop, CrdManagerData};
-    use crate::templates::sam::joiner::{CrdJoinerData, Intersect};
-    use crate::templates::sam::primitive::{ALUExpOp, Token};
-    use crate::templates::sam::rd_scanner::{CompressedCrdRdScan, RdScanData};
-    use crate::templates::sam::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
-    use crate::templates::sam::scatter_gather::{Gather, Scatter};
-    use crate::templates::sam::test::config::Data;
-    use crate::templates::sam::utils::read_inputs;
+    use dam_rs::simulation::Program;
+    // use crate::templates::ops::{ALUDivOp, ALUMulOp, ALUSubOp};
+    // use crate::templates::sam::accumulator::{MaxReduce, Reduce, ReduceData, Spacc1, Spacc1Data};
+    // use crate::templates::sam::alu::{make_alu, make_unary_alu};
+    // use crate::templates::sam::array::{Array, ArrayData};
+    // use crate::templates::sam::crd_manager::{CrdDrop, CrdManagerData};
+    // use crate::templates::sam::joiner::{CrdJoinerData, Intersect};
+    // use crate::templates::sam::primitive::{ALUExpOp, Token};
+    // use crate::templates::sam::rd_scanner::{CompressedCrdRdScan, RdScanData};
+    // use crate::templates::sam::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
+    // use crate::templates::sam::scatter_gather::{Gather, Scatter};
+    // use crate::templates::sam::test::config::Data;
+    // use crate::templates::sam::utils::read_inputs;
 
-    use crate::templates::sam::wr_scanner::{CompressedWrScan, ValsWrScan};
-    use crate::token_vec;
+    // use crate::templates::sam::wr_scanner::{CompressedWrScan, ValsWrScan};
+    // use crate::token_vec;
 
     #[test]
     fn test_fixed_multihead_attention() {

@@ -2,10 +2,10 @@ use core::hash::Hash;
 use std::collections::BTreeMap;
 
 // use crate::{channel::utils::peek_next, context::Context};
-// use dam_core::identifier::Identifier;
-// use dam_core::metric::LogProducer;
-// use dam_core::TimeManager;
-// use dam_macros::{cleanup, identifiable, log_producer, time_managed};
+use dam_core::identifier::Identifier;
+use dam_core::metric::LogProducer;
+use dam_core::TimeManager;
+use dam_macros::{cleanup, identifiable, log_producer, time_managed};
 
 // use crate::{
 //     channel::{
@@ -146,7 +146,7 @@ impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType> Cleanable
 
 #[time_managed]
 #[identifiable]
-#[log_producer]
+// #[log_producer]
 pub struct Spacc1<CrdType: Clone, ValType: Clone, StopType: Clone> {
     spacc1_data: Spacc1Data<CrdType, ValType, StopType>,
 }

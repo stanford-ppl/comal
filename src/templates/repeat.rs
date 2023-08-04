@@ -3,7 +3,7 @@ use dam_core::metric::LogProducer;
 use dam_core::TimeManager;
 use dam_macros::{cleanup, identifiable, log_producer, time_managed};
 
-use crate::{
+use dam_rs::{
     channel::{
         utils::{dequeue, enqueue, peek_next},
         ChannelElement, Receiver, Sender,
@@ -28,7 +28,7 @@ impl<ValType: DAMType, StopType: DAMType> Cleanable for RepeatData<ValType, Stop
     }
 }
 
-#[log_producer]
+// #[log_producer]
 #[time_managed]
 #[identifiable]
 pub struct Repeat<ValType: Clone, StopType: Clone> {
@@ -69,7 +69,7 @@ where
             match dequeue(&mut self.time, &mut self.repeat_data.in_repsig) {
                 Ok(curr_in) => {
                     let curr_ref = in_ref.unwrap().data;
-                    Self::log(format!("in_ref: {:?}", curr_ref.clone()));
+                    // Self::log(format!("in_ref: {:?}", curr_ref.clone()));
                     match curr_in.data {
                         Repsiggen::Repeat => {
                             let channel_elem =

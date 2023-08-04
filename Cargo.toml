@@ -7,5 +7,11 @@ edition = "2021"
 
 [dependencies]
 dam-rs = {git="ssh://git@github.com/stanford-ppl/DAM-RS.git", branch="dev"}
+dam-core = {git="ssh://git@github.com/stanford-ppl/DAM-RS.git", branch="dev"}
+dam-macros = {git="ssh://git@github.com/stanford-ppl/DAM-RS.git", branch="dev"}
 num = "0.4.1"
+serde_derive = "1.0.181"
+serde = "1.0.181"
+toml = "0.7.6"
+home = "0.5.5"
 # dam_rs = {git="git@github.com:stanford-ppl/DAM-RS.git", branch="dev"}

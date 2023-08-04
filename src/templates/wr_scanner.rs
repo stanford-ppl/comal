@@ -1,7 +1,7 @@
 use dam_core::{identifier::Identifier, TimeManager};
 use dam_macros::{cleanup, identifiable, time_managed};
 
-use crate::{
+use dam_rs::{
     channel::{utils::dequeue, Receiver},
     context::Context,
     types::{Cleanable, DAMType},

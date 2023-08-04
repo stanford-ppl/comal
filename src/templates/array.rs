@@ -1,5 +1,5 @@
 use dam_core::{identifier::Identifier, TimeManager};
-use dam_rs::dam_macros::{cleanup, identifiable, time_managed};
+use dam_macros::{cleanup, identifiable, time_managed};
 
 use dam_rs::{
     channel::{
