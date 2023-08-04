@@ -146,7 +146,7 @@ impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType> Cleanable
 
 #[time_managed]
 #[identifiable]
-// #[log_producer]
+#[log_producer]
 pub struct Spacc1<CrdType: Clone, ValType: Clone, StopType: Clone> {
     spacc1_data: Spacc1Data<CrdType, ValType, StopType>,
 }

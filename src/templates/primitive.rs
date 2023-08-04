@@ -1,9 +1,12 @@
 use core::fmt;
+use std::borrow::BorrowMut;
+use std::default;
 
-use dam_rs::types::DAMType;
-use dam_rs::RegisterALUOp;
 use dam_rs::templates::ops::ALUOp;
 use dam_rs::templates::ops::PipelineRegister;
+use dam_rs::types::DAMType;
+use dam_rs::RegisterALUOp;
+use frunk::prelude::LiftInto;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Token<ValType, StopType> {
@@ -44,11 +47,11 @@ impl<T: num::Float> Exp for T {
     }
 }
 
-impl<ValType: DAMType, StopType> From<ValType> for Token<ValType, StopType> {
-    fn from(value: ValType) -> Self {
-        Self::Val(value)
-    }
-}
+// impl<ValType: DAMType, StopType> From<ValType> for Token<ValType, StopType> {
+//     fn from(value: ValType) -> Self {
+//         Self::Val(value)
+//     }
+// }
 
 impl<ValType: DAMType, StopType: DAMType> fmt::Debug for Token<ValType, StopType> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -105,13 +108,16 @@ impl TryFrom<&str> for Repsiggen {
 macro_rules! token_vec {
     [$toktype: tt; $stoptype: tt; $($val:expr),*] => {
         ({
-            let mut res = Vec::new();
-            $(
-                {
-                    res.push(Token::<$toktype, $stoptype>::try_from($val).unwrap());
-                }
-            )*
-            res
+            use crate::templates::primitive::Token;
+            let hl = frunk::hlist![$($val),*];
+            let mapped = hl.map(
+                frunk::poly_fn![
+                    |f: &'static str| -> Token<$toktype, $stoptype> {Token::<$toktype, $stoptype>::try_from(f).unwrap()},
+                    |v: $toktype| -> Token<$toktype, $stoptype> {Token::<$toktype, $stoptype>::Val(v)},
+                    ]
+            );
+            let result = vec![];
+            mapped.foldl(|mut acc: Vec<_>, x| {acc.push(x); acc}, result)
         })
     };
 }

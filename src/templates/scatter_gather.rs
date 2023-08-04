@@ -109,7 +109,7 @@ where
 
 #[time_managed]
 #[identifiable]
-// #[log_producer]
+#[log_producer]
 pub struct Gather<ValType: Clone, StopType: Clone> {
     targets: Vec<Receiver<Token<ValType, StopType>>>,
     merged: Sender<Token<ValType, StopType>>,

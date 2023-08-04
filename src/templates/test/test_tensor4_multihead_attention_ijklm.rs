@@ -8,7 +8,7 @@ mod tests {
 
     use crate::context::print_context::PrintContext;
     use crate::simulation::Program;
-    use crate::templates::ops::{ALUDivOp, ALUMulOp, ALUSubOp};
+    use crate::templates::ops::*;
     use crate::templates::sam::accumulator::{MaxReduce, Reduce, ReduceData, Spacc1, Spacc1Data};
     use crate::templates::sam::alu::{make_alu, make_unary_alu};
     use crate::templates::sam::array::{Array, ArrayData};

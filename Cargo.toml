@@ -14,4 +14,6 @@ serde_derive = "1.0.181"
 serde = "1.0.181"
 toml = "0.7.6"
 home = "0.5.5"
+frunk = "0.4.2"
+linkme = "0.3.14"
 # dam_rs = {git="git@github.com:stanford-ppl/DAM-RS.git", branch="dev"}
