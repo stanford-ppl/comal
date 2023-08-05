@@ -1,0 +1,472 @@
+name: "X=ss01,B=ss01,C=ss10\""
+operators {
+  name: "fiberlookup"
+  id: 21
+  fiber_lookup {
+    output_ref {
+      id {
+        id: 4
+      }
+    }
+    output_crd {
+      id {
+        id: 1
+      }
+    }
+    index: "i"
+    tensor: "B"
+    format: "compressed"
+    src: true
+    root: true
+    label: "FiberLookup i: B0\\ncompressed"
+  }
+}
+operators {
+  name: "broadcast"
+  id: 20
+  broadcast {
+    input {
+      name: "crd"
+    }
+    label: "broadcast"
+  }
+}
+operators {
+  name: "repsiggen"
+  id: 19
+  repeatsig {
+    input_crd {
+      id {
+        id: 4
+      }
+      name: "crd"
+    }
+    output_rep_sig {
+      id {
+        id: 5
+      }
+    }
+    label: "RepeatSignalGenerator i"
+    index: "i"
+  }
+}
+operators {
+  name: "repeat"
+  id: 18
+  repeat {
+    output_ref {
+      id {
+        id: 6
+      }
+    }
+    input_rep_sig {
+      id {
+        id: 5
+      }
+      name: "repsig"
+    }
+    label: "Repeat i: C"
+    index: "i"
+    root: true
+    tensor: "C"
+  }
+}
+operators {
+  name: "fiberlookup"
+  id: 17
+  fiber_lookup {
+    input_ref {
+      id {
+        id: 6
+      }
+      name: "ref"
+    }
+    output_ref {
+      id {
+        id: 9
+      }
+    }
+    output_crd {
+      id {
+        id: 7
+      }
+    }
+    index: "j"
+    tensor: "C"
+    mode: 1
+    format: "compressed"
+    src: true
+    label: "FiberLookup j: C1\\ncompressed"
+  }
+}
+operators {
+  name: "broadcast"
+  id: 16
+  broadcast {
+    input {
+      name: "crd"
+    }
+    label: "broadcast"
+  }
+}
+operators {
+  name: "repsiggen"
+  id: 15
+  repeatsig {
+    input_crd {
+      id {
+        id: 9
+      }
+      name: "crd"
+    }
+    output_rep_sig {
+      id {
+        id: 10
+      }
+    }
+    label: "RepeatSignalGenerator j"
+    index: "j"
+  }
+}
+operators {
+  name: "repeat"
+  id: 14
+  repeat {
+    input_ref {
+      id {
+        id: 4
+      }
+      name: "ref"
+    }
+    output_ref {
+      id {
+        id: 11
+      }
+    }
+    input_rep_sig {
+      id {
+        id: 10
+      }
+      name: "repsig"
+    }
+    label: "Repeat j: B"
+    index: "j"
+    tensor: "B"
+  }
+}
+operators {
+  name: "fiberlookup"
+  id: 13
+  fiber_lookup {
+    input_ref {
+      id {
+        id: 9
+      }
+      name: "ref"
+    }
+    output_ref {
+      id {
+        id: 21
+      }
+    }
+    output_crd {
+      id {
+        id: 20
+      }
+      name: "in-C"
+    }
+    index: "k"
+    tensor: "C"
+    format: "compressed"
+    src: true
+    label: "FiberLookup k: C0\\ncompressed"
+  }
+}
+operators {
+  name: "fiberlookup"
+  id: 12
+  fiber_lookup {
+    input_ref {
+      id {
+        id: 11
+      }
+      name: "ref"
+    }
+    output_ref {
+      id {
+        id: 19
+      }
+    }
+    output_crd {
+      id {
+        id: 12
+      }
+      name: "in-B"
+    }
+    index: "k"
+    tensor: "B"
+    mode: 1
+    format: "compressed"
+    src: true
+    label: "FiberLookup k: B1\\ncompressed"
+  }
+}
+operators {
+  name: "intersect"
+  id: 11
+  joiner {
+    input_pairs {
+      crd {
+        id {
+          id: 12
+        }
+        name: "crd_in-B"
+      }
+      ref {
+        id {
+          id: 19
+        }
+        name: "ref_in-B"
+      }
+    }
+    input_pairs {
+      crd {
+        id {
+          id: 20
+        }
+        name: "crd_in-C"
+      }
+      ref {
+        id {
+          id: 21
+        }
+        name: "ref_in-C"
+      }
+    }
+    index: "k"
+    label: "intersect k"
+    output_ref1 {
+      id {
+        id: 14
+      }
+      name: "out-B"
+    }
+    output_ref2 {
+      id {
+        id: 14
+      }
+      name: "out-C"
+    }
+    output_crd {
+      id {
+        id: 13
+      }
+      name: "in-k"
+    }
+  }
+}
+operators {
+  name: "crddrop"
+  id: 10
+  coord_drop {
+    input_inner_crd {
+      id {
+        id: 13
+      }
+      name: "crd_in-k"
+    }
+    input_outer_crd {
+      id {
+        id: 7
+      }
+      name: "crd_j"
+    }
+    output_outer_crd {
+      id {
+        id: 8
+      }
+      name: "outer-j"
+    }
+    inner_crd: "k"
+    outer_crd: "j"
+    label: "CrdDrop j,k"
+  }
+}
+operators {
+  name: "crddrop"
+  id: 9
+  coord_drop {
+    input_inner_crd {
+      id {
+        id: 8
+      }
+      name: "crd_outer-j"
+    }
+    input_outer_crd {
+      id {
+        id: 1
+      }
+      name: "crd_i"
+    }
+    output_inner_crd {
+      id {
+        id: 3
+      }
+      name: "inner-j"
+    }
+    output_outer_crd {
+      id {
+        id: 2
+      }
+      name: "outer-i"
+    }
+    inner_crd: "j"
+    outer_crd: "i"
+    label: "CrdDrop i,j"
+  }
+}
+operators {
+  name: "arrayvals"
+  id: 8
+  array {
+    tensor: "C"
+    input_ref {
+      id {
+        id: 14
+      }
+      name: "ref_out-C"
+    }
+    output_val {
+      id {
+        id: 18
+      }
+      name: "val"
+    }
+    label: "Array Vals: C"
+  }
+}
+operators {
+  name: "arrayvals"
+  id: 7
+  array {
+    tensor: "B"
+    input_ref {
+      id {
+        id: 14
+      }
+      name: "ref_out-B"
+    }
+    output_val {
+      id {
+        id: 15
+      }
+      name: "val"
+    }
+    label: "Array Vals: B"
+  }
+}
+operators {
+  name: "mul"
+  id: 6
+  alu {
+    vals {
+      inputs {
+        id {
+          id: 15
+        }
+        name: "val"
+      }
+      inputs {
+        id {
+          id: 18
+        }
+        name: "val"
+      }
+      output {
+        id {
+          id: 16
+        }
+        name: "val"
+      }
+    }
+    stages {
+      inputs: 0
+      inputs: 1
+      op: MUL
+    }
+    label: "Mul"
+  }
+}
+operators {
+  name: "reduce"
+  id: 5
+  reduce {
+    input_val {
+      id {
+        id: 16
+      }
+      name: "val"
+    }
+    output_val {
+      id {
+        id: 17
+      }
+      name: "reduce_val"
+    }
+  }
+}
+operators {
+  name: "fiberwrite"
+  id: 3
+  fiber_write {
+    input_crd {
+      id {
+        id: 2
+      }
+      name: "crd_outer-i"
+    }
+    index: "i"
+    tensor: "X"
+    format: "compressed"
+    segsize: "2"
+    crdsize: "B0_dim"
+    sink: true
+    label: "FiberWrite i: X0\\ncompressed"
+  }
+}
+operators {
+  name: "fiberwrite"
+  id: 2
+  fiber_write {
+    input_crd {
+      id {
+        id: 3
+      }
+      name: "crd_inner-j"
+    }
+    index: "j"
+    tensor: "X"
+    format: "compressed"
+    segsize: "B0_dim+1"
+    crdsize: "B0_dim*C1_dim"
+    sink: true
+    label: "FiberWrite j: X1\\ncompressed"
+  }
+}
+operators {
+  name: "valwrite"
+  id: 1
+  val_write {
+    input_val {
+      id {
+        id: 17
+      }
+      name: "val"
+    }
+    label: "FiberWrite Vals: X"
+    crdsize: "1*B0_dim*C1_dim"
+    tensor: "X"
+    sink: true
+  }
+}
+

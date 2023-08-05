@@ -1,25 +1,78 @@
 use std::time::Instant;
 use std::{fs, path::Path};
 
+use comal::templates::joiner::Union;
+use comal::templates::stkn_dropper::StknDrop;
+use comal::token_vec;
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+
+use dam_rs::context::broadcast_context::BroadcastContext;
 use dam_rs::context::generator_context::GeneratorContext;
 
-use comal::templates::alu::make_alu;
-use comal::templates::array::{Array, ArrayData};
-
-use comal::templates::joiner::{CrdJoinerData, Union};
-use comal::templates::primitive::Token;
-use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
-
 use comal::config::Data;
+use comal::templates::accumulator::{MaxReduce, Reduce, ReduceData, Spacc1, Spacc1Data};
+use comal::templates::alu::{make_alu, make_unary_alu};
+use comal::templates::array::{Array, ArrayData};
+use comal::templates::crd_manager::{CrdDrop, CrdManagerData};
+use comal::templates::joiner::{CrdJoinerData, Intersect};
+use comal::templates::primitive::{ALUExpOp, Token};
+use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
+use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
+use comal::templates::scatter_gather::{Gather, Scatter};
 use comal::templates::utils::read_inputs;
 use dam_rs::simulation::Program;
-use dam_rs::templates::ops::*;
+use dam_rs::templates::ops::{ALUAddOp, ALUDivOp, ALUMulOp, ALUSubOp};
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
-use comal::token_vec;
-#[test]
-fn test_mat_elemadd() {
-    let test_name = "mat_elemadd2";
+
+/*
+let q0_seg = read_inputs::<u32>(&q0_seg_filename);
+    let q0_crd = read_inputs::<u32>(&q0_crd_filename);
+    let q1_seg = read_inputs::<u32>(&q1_seg_filename);
+    let q1_crd = read_inputs::<u32>(&q1_crd_filename);
+    let q2_seg = read_inputs::<u32>(&q2_seg_filename);
+    let q2_crd = read_inputs::<u32>(&q2_crd_filename);
+    let q3_seg = read_inputs::<u32>(&q3_seg_filename);
+    let q3_crd = read_inputs::<u32>(&q3_crd_filename);
+    let q_vals = read_inputs::<f32>(&q_vals_filename);
+
+    let k0_seg = read_inputs::<u32>(&k0_seg_filename);
+    let k0_crd = read_inputs::<u32>(&k0_crd_filename);
+    let k1_seg = read_inputs::<u32>(&k1_seg_filename);
+    let k1_crd = read_inputs::<u32>(&k1_crd_filename);
+    let k2_seg = read_inputs::<u32>(&k2_seg_filename);
+    let k2_crd = read_inputs::<u32>(&k2_crd_filename);
+    let k3_seg = read_inputs::<u32>(&k3_seg_filename);
+    let k3_crd = read_inputs::<u32>(&k3_crd_filename);
+    let k_vals = read_inputs::<f32>(&k_vals_filename);
+
+    let v0_seg = read_inputs::<u32>(&v0_seg_filename);
+    let v0_crd = read_inputs::<u32>(&v0_crd_filename);
+    let v1_seg = read_inputs::<u32>(&v1_seg_filename);
+    let v1_crd = read_inputs::<u32>(&v1_crd_filename);
+    let v2_seg = read_inputs::<u32>(&v2_seg_filename);
+    let v2_crd = read_inputs::<u32>(&v2_crd_filename);
+    let v3_seg = read_inputs::<u32>(&v3_seg_filename);
+    let v3_crd = read_inputs::<u32>(&v3_crd_filename);
+    let v_vals = read_inputs::<f32>(&v_vals_filename);
+*/
+
+#[derive(Clone)]
+struct TestData {
+    b0_seg: Vec<u32>,
+    b0_crd: Vec<u32>,
+    b1_seg: Vec<u32>,
+    b1_crd: Vec<u32>,
+    b_vals: Vec<f32>,
+
+    c0_seg: Vec<u32>,
+    c0_crd: Vec<u32>,
+    c1_seg: Vec<u32>,
+    c1_crd: Vec<u32>,
+    c_vals: Vec<f32>,
+}
+
+fn load_data(test_name: &str) -> TestData {
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
@@ -30,26 +83,42 @@ fn test_mat_elemadd() {
     let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
     let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
     let b_vals_filename = base_path.join("tensor_B_mode_vals");
+
     let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
     let c0_crd_filename = base_path.join("tensor_C_mode_0_crd");
     let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
     let c1_crd_filename = base_path.join("tensor_C_mode_1_crd");
     let c_vals_filename = base_path.join("tensor_C_mode_vals");
 
-    let b0_seg = read_inputs::<u32>(&b0_seg_filename);
-    let b0_crd = read_inputs::<u32>(&b0_crd_filename);
-    let b1_seg = read_inputs::<u32>(&b1_seg_filename);
-    let b1_crd = read_inputs::<u32>(&b1_crd_filename);
-    let b_vals = read_inputs::<f32>(&b_vals_filename);
-    let c0_seg = read_inputs::<u32>(&c0_seg_filename);
-    let c0_crd = read_inputs::<u32>(&c0_crd_filename);
-    let c1_seg = read_inputs::<u32>(&c1_seg_filename);
-    let c1_crd = read_inputs::<u32>(&c1_crd_filename);
-    let c_vals = read_inputs::<f32>(&c_vals_filename);
+    TestData {
+        b0_seg: read_inputs(&b0_seg_filename),
+        b0_crd: read_inputs(&b0_crd_filename),
+        b1_seg: read_inputs(&b1_seg_filename),
+        b1_crd: read_inputs(&b1_crd_filename),
+        b_vals: read_inputs(&b_vals_filename),
 
-    let chan_size = 4096;
+        c0_seg: read_inputs(&b0_seg_filename),
+        c0_crd: read_inputs(&b0_crd_filename),
+        c1_seg: read_inputs(&b1_seg_filename),
+        c1_crd: read_inputs(&b1_crd_filename),
+        c_vals: read_inputs(&b_vals_filename),
+    }
+}
 
+fn test_mat_elemadd<'a>(test_data: TestData, chan_size: usize) -> Program<'a> {
     let mut parent = Program::default();
+
+    let b0_crd = test_data.b0_crd;
+    let b0_seg = test_data.b0_seg;
+    let b1_crd = test_data.b1_crd;
+    let b1_seg = test_data.b1_seg;
+    let b_vals = test_data.b_vals;
+
+    let c0_crd = test_data.c0_crd;
+    let c0_seg = test_data.c0_seg;
+    let c1_crd = test_data.c1_crd;
+    let c1_seg = test_data.c1_seg;
+    let c_vals = test_data.c_vals;
 
     // fiberlookup_bi
     let (bi_out_ref_sender, bi_out_ref_receiver) = parent.bounded(chan_size);
@@ -182,15 +251,44 @@ fn test_mat_elemadd() {
     parent.add_child(xvals);
 
     let now = Instant::now();
+    parent.set_inference(true);
     parent.print_graph();
     parent.init();
     let elapsed = now.elapsed();
     println!("Elapsed: {:.2?}", elapsed);
     parent.run();
-    parent.set_inference(true);
 
-    // dbg!(x0_wrscanner.crd_arr);
-    // dbg!(xvals.out_val);
-
-    // let fil = formatted_dir.to_str().unwrap();
+    parent
 }
+
+pub fn mat_elemadd_benchmark_large(c: &mut Criterion) {
+    const CHAN_SIZE: usize = 1 << 10;
+    let data = load_data("mat_elemadd2");
+    let mut group = c.benchmark_group("mat_elemadd");
+    group.sample_size(10).bench_function("mat_elemadd", |b| {
+        b.iter(|| test_mat_elemadd(data.clone(), CHAN_SIZE));
+    });
+}
+
+// pub fn mha_par_benchmark_channels(c: &mut Criterion) {
+//     let mut group = c.benchmark_group("MHA_chan_sweep");
+//     let data = load_data("mat_elemadd2");
+//     for chan_factor in 5..12 {
+//         let chan_size = 1 << chan_factor;
+//         group.bench_with_input(
+//             BenchmarkId::from_parameter(chan_size),
+//             &chan_size,
+//             |b, &chan_size| {
+//                 b.iter_batched(
+//                     || data.clone(),
+//                     |cp| test_par_multihead_attention(cp, chan_size),
+//                     BatchSize::LargeInput,
+//                 );
+//             },
+//         );
+//     }
+//     group.finish();
+// }
+
+criterion_group!(elemadd_benches, mat_elemadd_benchmark_large,);
+criterion_main!(elemadd_benches);
