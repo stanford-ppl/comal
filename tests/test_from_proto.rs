@@ -14,32 +14,40 @@ use prost::Message;
 
 fn get_crd_id(stream: &Option<CrdStream>) -> u64 {
     return stream
+        .as_ref()
         .expect("Undefined crdstream")
         .id
+        .as_ref()
         .expect("Error getting id")
         .id;
 }
 
 fn get_ref_id(stream: &Option<RefStream>) -> u64 {
     return stream
+        .as_ref()
         .expect("Undefined crdstream")
         .id
+        .as_ref()
         .expect("Error getting id")
         .id;
 }
 
 fn get_val_id(stream: &Option<ValStream>) -> u64 {
     return stream
+        .as_ref()
         .expect("Undefined crdstream")
         .id
+        .as_ref()
         .expect("Error getting id")
         .id;
 }
 
 fn get_repsig_id(stream: &Option<RepSigStream>) -> u64 {
     return stream
+        .as_ref()
         .expect("Undefined crdstream")
         .id
+        .as_ref()
         .expect("Error getting id")
         .id;
 }
