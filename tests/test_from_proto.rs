@@ -4,7 +4,7 @@ use std::{fs, path::Path};
 use comal::config::Data;
 use comal::templates::joiner::{CrdJoinerData, Intersect, Union};
 use comal::templates::primitive::{Repsiggen, Token};
-use comal::templates::rd_scanner::RdScanData;
+use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::tortilla::operation::Op;
 use comal::tortilla::{CrdStream, Operation, ProgramGraph, RefStream, RepSigStream, ValStream};
 use dam_rs::channel::Receiver;
@@ -133,6 +133,7 @@ fn test_matmul_proto() {
                     out_crd,
                     out_ref,
                 };
+                // parent.add_child(CompressedCrdRdScan::new(f_data, ));
             }
             Op::FiberWrite(_) => todo!(),
             Op::Repeat(_) => todo!(),
