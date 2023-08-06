@@ -97,11 +97,11 @@ fn load_data(test_name: &str) -> TestData {
         b1_crd: read_inputs(&b1_crd_filename),
         b_vals: read_inputs(&b_vals_filename),
 
-        c0_seg: read_inputs(&b0_seg_filename),
-        c0_crd: read_inputs(&b0_crd_filename),
-        c1_seg: read_inputs(&b1_seg_filename),
-        c1_crd: read_inputs(&b1_crd_filename),
-        c_vals: read_inputs(&b_vals_filename),
+        c0_seg: read_inputs(&c0_seg_filename),
+        c0_crd: read_inputs(&c0_crd_filename),
+        c1_seg: read_inputs(&c1_seg_filename),
+        c1_crd: read_inputs(&c1_crd_filename),
+        c_vals: read_inputs(&c_vals_filename),
     }
 }
 
