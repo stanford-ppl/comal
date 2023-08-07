@@ -12,7 +12,7 @@ pub fn read_inputs<T>(file_path: &PathBuf) -> Vec<T>
 where
     T: std::str::FromStr,
 {
-    let file = File::open(file_path).expect("file wasn't found.");
+    let file = File::open(file_path).expect(format!("file {:?} wasn't found.", file_path).as_str());
     let reader = BufReader::new(file);
 
     let v: Vec<T> = reader

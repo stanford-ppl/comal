@@ -161,12 +161,6 @@ where
                                         channel_elem.clone(),
                                     )
                                     .unwrap();
-                                    enqueue(
-                                        &mut self.time,
-                                        &mut self.crd_drop_data.out_crd_inner,
-                                        channel_elem,
-                                    )
-                                    .unwrap();
                                     return;
                                 }
                                 _ => {

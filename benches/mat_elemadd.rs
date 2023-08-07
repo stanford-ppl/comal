@@ -2,26 +2,26 @@ use std::time::Instant;
 use std::{fs, path::Path};
 
 use comal::templates::joiner::Union;
-use comal::templates::stkn_dropper::StknDrop;
-use comal::token_vec;
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
-use dam_rs::context::broadcast_context::BroadcastContext;
+use comal::token_vec;
+use criterion::{criterion_group, criterion_main, Criterion};
+
+
 use dam_rs::context::generator_context::GeneratorContext;
 
 use comal::config::Data;
-use comal::templates::accumulator::{MaxReduce, Reduce, ReduceData, Spacc1, Spacc1Data};
-use comal::templates::alu::{make_alu, make_unary_alu};
+
+use comal::templates::alu::{make_alu};
 use comal::templates::array::{Array, ArrayData};
-use comal::templates::crd_manager::{CrdDrop, CrdManagerData};
-use comal::templates::joiner::{CrdJoinerData, Intersect};
-use comal::templates::primitive::{ALUExpOp, Token};
+
+use comal::templates::joiner::{CrdJoinerData};
+use comal::templates::primitive::{Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
-use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
-use comal::templates::scatter_gather::{Gather, Scatter};
+
+
 use comal::templates::utils::read_inputs;
 use dam_rs::simulation::Program;
-use dam_rs::templates::ops::{ALUAddOp, ALUDivOp, ALUMulOp, ALUSubOp};
+use dam_rs::templates::ops::{ALUAddOp};
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 
