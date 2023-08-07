@@ -69,7 +69,6 @@ where
             match dequeue(&mut self.time, &mut self.repeat_data.in_repsig) {
                 Ok(curr_in) => {
                     let curr_ref = in_ref.unwrap().data;
-                    // Self::log(format!("in_ref: {:?}", curr_ref.clone()));
                     match curr_in.data {
                         Repsiggen::Repeat => {
                             let channel_elem =
@@ -174,45 +173,39 @@ where
     fn run(&mut self) {
         loop {
             match dequeue(&mut self.time, &mut self.rep_sig_gen_data.input) {
-                Ok(curr_in) => {
-                    // dbg!(curr_in.data.clone());
-                    match curr_in.data {
-                        Token::Val(_) | Token::Empty => {
-                            let channel_elem =
-                                ChannelElement::new(self.time.tick() + 1, Repsiggen::Repeat);
-                            enqueue(
-                                &mut self.time,
-                                &mut self.rep_sig_gen_data.out_repsig,
-                                channel_elem,
-                            )
-                            .unwrap();
-                            // dbg!(Repsiggen::Repeat);
-                        }
-                        Token::Stop(_) => {
-                            let channel_elem =
-                                ChannelElement::new(self.time.tick() + 1, Repsiggen::Stop);
-                            enqueue(
-                                &mut self.time,
-                                &mut self.rep_sig_gen_data.out_repsig,
-                                channel_elem,
-                            )
-                            .unwrap();
-                            // dbg!(Repsiggen::Stop);
-                        }
-                        Token::Done => {
-                            let channel_elem =
-                                ChannelElement::new(self.time.tick() + 1, Repsiggen::Done);
-                            enqueue(
-                                &mut self.time,
-                                &mut self.rep_sig_gen_data.out_repsig,
-                                channel_elem,
-                            )
-                            .unwrap();
-                            // dbg!(Repsiggen::Done);
-                            return;
-                        }
+                Ok(curr_in) => match curr_in.data {
+                    Token::Val(_) | Token::Empty => {
+                        let channel_elem =
+                            ChannelElement::new(self.time.tick() + 1, Repsiggen::Repeat);
+                        enqueue(
+                            &mut self.time,
+                            &mut self.rep_sig_gen_data.out_repsig,
+                            channel_elem,
+                        )
+                        .unwrap();
                     }
-                }
+                    Token::Stop(_) => {
+                        let channel_elem =
+                            ChannelElement::new(self.time.tick() + 1, Repsiggen::Stop);
+                        enqueue(
+                            &mut self.time,
+                            &mut self.rep_sig_gen_data.out_repsig,
+                            channel_elem,
+                        )
+                        .unwrap();
+                    }
+                    Token::Done => {
+                        let channel_elem =
+                            ChannelElement::new(self.time.tick() + 1, Repsiggen::Done);
+                        enqueue(
+                            &mut self.time,
+                            &mut self.rep_sig_gen_data.out_repsig,
+                            channel_elem,
+                        )
+                        .unwrap();
+                        return;
+                    }
+                },
                 Err(_) => {
                     panic!("Unexpected end of stream");
                 }

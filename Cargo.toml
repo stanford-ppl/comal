@@ -29,3 +29,7 @@ prost-build = "0.11.9"
 [[bench]]
 name = "mat_elemadd"
 harness = false
+
+[[bench]]
+name = "bench_proto"
+harness = false

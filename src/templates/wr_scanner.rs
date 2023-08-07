@@ -1,4 +1,7 @@
-use dam_core::{identifier::Identifier, TimeManager};
+use dam_core::{
+    identifier::{Identifier},
+    TimeManager,
+};
 use dam_macros::{cleanup, identifiable, time_managed};
 
 use dam_rs::{
@@ -71,7 +74,9 @@ where
                         // panic!("Reached panic in wr scanner");
                         continue;
                     }
-                    Token::Done => return,
+                    Token::Done => {
+                        return;
+                    }
                 },
                 Err(_) => {
                     panic!("Unexpected end of stream");
