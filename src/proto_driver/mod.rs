@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
-
 use self::proto_headers::tortilla::operation::*;
 
 use super::templates::accumulator::{Reduce, ReduceData, Spacc1, Spacc1Data};
@@ -18,6 +17,7 @@ use super::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use super::templates::utils::read_inputs;
 use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
+use crate::proto_driver::alu::Conn;
 
 use dam_rs::channel::{Receiver, Sender};
 use dam_rs::context::broadcast_context::BroadcastContext;
@@ -25,7 +25,6 @@ use dam_rs::context::generator_context::GeneratorContext;
 use dam_rs::simulation::Program;
 use dam_rs::templates::ops::{ALUAddOp, ALUDivOp, ALUMulOp, ALUSubOp};
 use dam_rs::types::DAMType;
-
 
 use proto_headers::tortilla::*;
 
