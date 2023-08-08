@@ -46,7 +46,7 @@ fn bench_proto<M: criterion::measurement::Measurement>(
 
 fn bench_proto_sweep<M: criterion::measurement::Measurement>(
     bench_group: &mut BenchmarkGroup<M>,
-    data_dir_name: String,
+    dir_lst: Vec<&str>,
     proto_filename: String,
 ) {
     let config_file = home::home_dir().unwrap().join("sam_config.toml");
@@ -54,13 +54,7 @@ fn bench_proto_sweep<M: criterion::measurement::Measurement>(
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
 
-    for dir_name in [
-        "sddmm_100",
-        "sddmm_200",
-        "sddmm_300",
-        "sddmm_400",
-        "sddmm_500",
-    ] {
+    for dir_name in dir_lst {
         bench_group.bench_with_input(
             BenchmarkId::from_parameter(dir_name),
             &dir_name,
@@ -89,7 +83,7 @@ fn bench_proto_sweep<M: criterion::measurement::Measurement>(
 
 pub fn bench_sddmm(c: &mut Criterion) {
     let mut group = c.benchmark_group("SDDMM");
-    let data_dir_name = "sddmm_100".to_string();
+    let data_dir_name = "sddmm".to_string();
     let proto_filename = "sddmm.bin".to_string();
     bench_proto(&mut group, data_dir_name, proto_filename);
     group.finish();
@@ -97,11 +91,31 @@ pub fn bench_sddmm(c: &mut Criterion) {
 
 pub fn bench_sddmm_sweep(c: &mut Criterion) {
     let mut group = c.benchmark_group("SDDMM");
-    let data_dir_name = "sddmm_100".to_string();
-    let proto_filename = "comal.bin".to_string();
-    bench_proto(&mut group, data_dir_name, proto_filename);
+    let proto_filename = "sddmm.bin".to_string();
+    let dir_lst = vec![
+        "sddmm_100",
+        "sddmm_200",
+        "sddmm_300",
+        "sddmm_400",
+        "sddmm_500",
+    ];
+    bench_proto_sweep(&mut group, dir_lst, proto_filename);
     group.finish();
 }
 
-criterion_group!(sam_benches, bench_sddmm_sweep,);
+pub fn bench_add_sweep(c: &mut Criterion) {
+    let mut group = c.benchmark_group("add");
+    let proto_filename = "matadd.bin".to_string();
+    let dir_lst = vec![
+        "matadd_1000",
+        "matadd_2000",
+        "matadd_3000",
+        "matadd_4000",
+        "matadd_5000",
+    ];
+    bench_proto_sweep(&mut group, dir_lst, proto_filename);
+    group.finish();
+}
+
+criterion_group!(sam_benches, bench_add_sweep,);
 criterion_main!(sam_benches);
