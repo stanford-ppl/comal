@@ -33,3 +33,7 @@ harness = false
 [[bench]]
 name = "bench_proto"
 harness = false
+
+[[bench]]
+name = "matmul"
+harness = false
