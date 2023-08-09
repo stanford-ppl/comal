@@ -107,7 +107,7 @@ fn load_data(test_name: &str) -> TestData {
     }
 }
 
-fn matmul<'a>(test_data: TestData, chan_size: usize) -> Program<'a> {
+fn matmul<'a>(test_data: TestData, chan_size: usize, with_flavor: bool) -> Program<'a> {
     let mut parent = Program::default();
 
     let b0_crd = test_data.b0_crd;
@@ -308,7 +308,7 @@ fn matmul<'a>(test_data: TestData, chan_size: usize) -> Program<'a> {
     parent.add_child(red);
     parent.add_child(xvals);
 
-    parent.set_inference(true);
+    parent.set_inference(with_flavor);
     parent.init();
     parent.run();
 
@@ -326,6 +326,7 @@ fn matmul<'a>(test_data: TestData, chan_size: usize) -> Program<'a> {
 
 pub fn matmul_sweep(c: &mut Criterion) {
     let mut group = c.benchmark_group("matmul_ijk");
+    let with_flavor = true;
     let dir_lst = vec![
         "matmul_100",
         "matmul_200",
@@ -342,7 +343,7 @@ pub fn matmul_sweep(c: &mut Criterion) {
             |b, data| {
                 b.iter_batched(
                     || data.clone(),
-                    |cp| matmul(data.clone(), 2048),
+                    |cp| matmul(data.clone(), 2048, with_flavor),
                     BatchSize::LargeInput,
                 );
             },
@@ -351,5 +352,26 @@ pub fn matmul_sweep(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(matmul_benches, matmul_sweep,);
+pub fn matmul_sweep_flavor(c: &mut Criterion) {
+    let mut group = c.benchmark_group("matmul_flavor");
+    let data = load_data("matmul_500");
+    let flavors = vec![false, true];
+    for with_flavor in flavors {
+        // let chan_size = 1 << chan_factor;
+        group.sample_size(10).bench_with_input(
+            BenchmarkId::from_parameter(with_flavor),
+            &with_flavor,
+            |b, &with_flavor| {
+                b.iter_batched(
+                    || data.clone(),
+                    |cp| matmul(data.clone(), 2048, with_flavor),
+                    BatchSize::LargeInput,
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(matmul_benches, matmul_sweep_flavor,);
 criterion_main!(matmul_benches);

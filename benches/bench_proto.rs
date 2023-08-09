@@ -117,5 +117,19 @@ pub fn bench_add_sweep(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(sam_benches, bench_add_sweep,);
+pub fn bench_matmul_sweep(c: &mut Criterion) {
+    let mut group = c.benchmark_group("matmul");
+    let proto_filename = "matmul.bin".to_string();
+    let dir_lst = vec![
+        "matmul_100",
+        "matmul_200",
+        "matmul_300",
+        "matmul_400",
+        "matmul_500",
+    ];
+    bench_proto_sweep(&mut group, dir_lst, proto_filename);
+    group.finish();
+}
+
+criterion_group!(sam_benches, bench_matmul_sweep,);
 criterion_main!(sam_benches);

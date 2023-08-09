@@ -131,6 +131,7 @@ fn test_par_multihead_attention<'a, ValType>(
     chan_size: usize,
     softmax_chan_size: usize,
     par_factor: usize,
+    with_flavor: bool,
     min_val: ValType,
 ) -> Program<'a>
 where
@@ -850,7 +851,7 @@ where
     let xvals = ValsWrScan::<ValType, u32>::new(out_final_val_receiver);
     // let xvals = ValsWrScan::<f32, u32>::new(out_spacc_val_receiver);
     parent.add_child(xvals);
-    parent.set_inference(true);
+    parent.set_inference(with_flavor);
     parent.init();
     parent.run();
 
@@ -863,7 +864,8 @@ pub fn mha_par_benchmark_large(c: &mut Criterion) {
     const SOFTMAX_CHAN_SIZE: usize = 1 << 15;
     let mut group = c.benchmark_group("mha");
     group.sample_size(10);
-    let data = load_data::<f32>("tensor4_mha");
+    // let data = load_data::<f32>("tensor4_mha");
+    let with_flavor = true;
 
     let dir_lst = vec![
         "tensor4_mha64",
@@ -876,7 +878,16 @@ pub fn mha_par_benchmark_large(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(dir), &dir, |b, &dir| {
             b.iter_batched(
                 || load_data(dir),
-                |cp| test_par_multihead_attention(cp, CHAN_SIZE, SOFTMAX_CHAN_SIZE, 1, f32::MIN),
+                |cp| {
+                    test_par_multihead_attention(
+                        cp,
+                        CHAN_SIZE,
+                        SOFTMAX_CHAN_SIZE,
+                        1,
+                        with_flavor,
+                        f32::MIN,
+                    )
+                },
                 BatchSize::LargeInput,
             );
         });
@@ -888,6 +899,7 @@ pub fn mha_par_benchmark_channels(c: &mut Criterion) {
     const SOFTMAX_CHAN_SIZE: usize = 1 << 15;
     let mut group = c.benchmark_group("MHA_chan_sweep");
     group.sample_size(10);
+    let with_flavor = true;
     let data = load_data::<f32>("tensor4_mha");
     for chan_factor in 5..12 {
         let chan_size = 1 << chan_factor;
@@ -898,7 +910,48 @@ pub fn mha_par_benchmark_channels(c: &mut Criterion) {
                 b.iter_batched(
                     || data.clone(),
                     |cp| {
-                        test_par_multihead_attention(cp, chan_size, SOFTMAX_CHAN_SIZE, 16, f32::MIN)
+                        test_par_multihead_attention(
+                            cp,
+                            chan_size,
+                            SOFTMAX_CHAN_SIZE,
+                            16,
+                            with_flavor,
+                            f32::MIN,
+                        )
+                    },
+                    BatchSize::LargeInput,
+                );
+            },
+        );
+    }
+    group.finish();
+}
+
+pub fn mha_flavor_benchmark_large(c: &mut Criterion) {
+    const CHAN_SIZE: usize = 1 << 10;
+    const SOFTMAX_CHAN_SIZE: usize = 1 << 15;
+    let mut group = c.benchmark_group("mha_flavor");
+    group.sample_size(10);
+    let data = load_data::<f32>("tensor4_mha256");
+
+    let flavor_lst = vec![false, true];
+
+    for with_flavor in flavor_lst {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(with_flavor),
+            &with_flavor,
+            |b, &with_flavor| {
+                b.iter_batched(
+                    || data.clone(),
+                    |cp| {
+                        test_par_multihead_attention(
+                            cp,
+                            CHAN_SIZE,
+                            SOFTMAX_CHAN_SIZE,
+                            1,
+                            with_flavor,
+                            f32::MIN,
+                        )
                     },
                     BatchSize::LargeInput,
                 );
@@ -928,5 +981,5 @@ pub fn mha_par_benchmark_channels(c: &mut Criterion) {
 //     group.finish();
 // }
 
-criterion_group!(sam_benches, mha_par_benchmark_large,);
+criterion_group!(sam_benches, mha_flavor_benchmark_large,);
 criterion_main!(sam_benches);
