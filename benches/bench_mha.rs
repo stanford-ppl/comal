@@ -23,7 +23,7 @@ use dam_rs::context::generator_context::GeneratorContext;
 use comal::templates::primitive::Token;
 use dam_rs::simulation::Program;
 use dam_rs::templates::ops::{ALUDivOp, ALUMulOp, ALUSubOp};
-use dam_rs::types::unevaluated::Unevaluated;
+
 use dam_rs::types::DAMType;
 
 #[derive(Clone)]

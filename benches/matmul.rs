@@ -1,9 +1,6 @@
-use std::time::Instant;
 use std::{fs, path::Path};
 
-use comal::proto_driver::proto_headers::tortilla::FiberWrite;
 use comal::templates::accumulator::{Reduce, ReduceData};
-use comal::templates::joiner::{Intersect, Union};
 
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use comal::token_vec;
@@ -17,15 +14,15 @@ use comal::config::Data;
 use comal::templates::alu::make_alu;
 use comal::templates::array::{Array, ArrayData};
 
-use comal::templates::joiner::CrdJoinerData;
+use comal::templates::joiner::{CrdJoinerData, Intersect};
 use comal::templates::primitive::{Repsiggen, Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 
 use comal::templates::utils::read_inputs;
 use dam_rs::simulation::Program;
-use dam_rs::templates::ops::{ALUAddOp, ALUMulOp};
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
+use dam_rs::templates::ops::ALUMulOp;
 
 /*
 let q0_seg = read_inputs::<u32>(&q0_seg_filename);
@@ -343,7 +340,7 @@ pub fn matmul_sweep(c: &mut Criterion) {
             |b, data| {
                 b.iter_batched(
                     || data.clone(),
-                    |cp| matmul(data.clone(), 2048, with_flavor),
+                    |_cp| matmul(data.clone(), 2048, with_flavor),
                     BatchSize::LargeInput,
                 );
             },
@@ -364,7 +361,7 @@ pub fn matmul_sweep_flavor(c: &mut Criterion) {
             |b, &with_flavor| {
                 b.iter_batched(
                     || data.clone(),
-                    |cp| matmul(data.clone(), 2048, with_flavor),
+                    |_cp| matmul(data.clone(), 2048, with_flavor),
                     BatchSize::LargeInput,
                 );
             },

@@ -19,7 +19,6 @@ use super::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use super::templates::utils::read_inputs;
 use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
-use crate::proto_driver::alu::Conn;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 
 use dam_rs::channel::{Receiver, Sender};

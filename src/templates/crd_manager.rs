@@ -69,7 +69,7 @@ where
         loop {
             let ocrd = peek_next(&mut self.time, &mut self.crd_drop_data.in_crd_outer).unwrap();
             let mut has_crd = false;
-            let mut prev_ocrd_stkn = false;
+            // let mut prev_ocrd_stkn = false;
             match ocrd.data.clone() {
                 Token::Val(val) => loop {
                     let icrd = dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_inner)
@@ -81,7 +81,6 @@ where
                         chan_elem,
                     )
                     .unwrap();
-                    prev_ocrd_stkn = false;
                     match icrd.data {
                         Token::Val(_) => {
                             has_crd = true;
@@ -110,13 +109,13 @@ where
                                     .unwrap();
                                 }
                             }
-                            has_crd = false;
+                            // has_crd = false;
+                            // prev_ocrd_stkn = false;
                             dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer).unwrap();
                             break;
                         }
                         Token::Done => {
                             assert!(ocrd.data.clone() == Token::Done);
-                            dbg!("INSIDE INNER");
                             return;
                         }
                         _ => {
@@ -132,21 +131,21 @@ where
                         chan_elem,
                     )
                     .unwrap();
-                    if prev_ocrd_stkn {
-                        let icrd =
-                            dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_inner).unwrap();
-                        let chan_elem =
-                            ChannelElement::new(self.time.tick() + 1, icrd.data.clone());
-                        enqueue(
-                            &mut self.time,
-                            &mut self.crd_drop_data.out_crd_inner,
-                            chan_elem,
-                        )
-                        .unwrap();
-                    } else {
-                        dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer).unwrap();
-                    }
-                    prev_ocrd_stkn = true;
+                    // if prev_ocrd_stkn {
+                    //     let icrd =
+                    //         dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_inner).unwrap();
+                    //     let chan_elem =
+                    //         ChannelElement::new(self.time.tick() + 1, icrd.data.clone());
+                    //     enqueue(
+                    //         &mut self.time,
+                    //         &mut self.crd_drop_data.out_crd_inner,
+                    //         chan_elem,
+                    //     )
+                    //     .unwrap();
+                    // } else {
+                    dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer).unwrap();
+                    // }
+                    // prev_ocrd_stkn = true;
                 }
                 Token::Done => {
                     let icrd =
