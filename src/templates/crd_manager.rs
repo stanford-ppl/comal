@@ -66,115 +66,112 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        // let mut get_next_ocrd = false;
-        let mut has_crd = false;
-        // let icrd_vec: Vec<Token<ValType, StopType>> = Vec::new();
         loop {
-            let out_ocrd = peek_next(&mut self.time, &mut self.crd_drop_data.in_crd_outer);
-            match dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_inner) {
-                Ok(curr_in) => {
-                    let curr_ocrd = out_ocrd.unwrap().data.clone();
-                    // dbg!(curr_in.data.clone());
-                    // dbg!(curr_ocrd.clone());
-                    let in_channel_elem =
-                        ChannelElement::new(self.time.tick() + 1, curr_in.data.clone());
+            let ocrd = peek_next(&mut self.time, &mut self.crd_drop_data.in_crd_outer).unwrap();
+            let mut has_crd = false;
+            let mut prev_ocrd_stkn = false;
+            match ocrd.data.clone() {
+                Token::Val(val) => loop {
+                    let icrd = dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_inner)
+                        .expect("Error getting icrd");
+                    let chan_elem = ChannelElement::new(self.time.tick() + 1, icrd.data.clone());
                     enqueue(
                         &mut self.time,
                         &mut self.crd_drop_data.out_crd_inner,
-                        in_channel_elem,
+                        chan_elem,
                     )
                     .unwrap();
-                    match curr_ocrd.clone() {
-                        Token::Stop(tkn) => {
-                            let channel_elem =
-                                ChannelElement::new(self.time.tick() + 1, Token::Stop(tkn.clone()));
-                            enqueue(
-                                &mut self.time,
-                                &mut self.crd_drop_data.out_crd_outer,
-                                channel_elem,
-                            )
-                            .unwrap();
-                            dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer).unwrap();
-                        }
-                        _ => (),
-                    }
-                    match curr_in.data {
+                    prev_ocrd_stkn = false;
+                    match icrd.data {
                         Token::Val(_) => {
                             has_crd = true;
-                            continue;
                         }
                         Token::Stop(_) => {
                             if has_crd {
-                                let channel_elem =
-                                    ChannelElement::new(self.time.tick() + 1, curr_ocrd.clone());
+                                let chan_elem =
+                                    ChannelElement::new(self.time.tick() + 1, Token::Val(val));
                                 enqueue(
                                     &mut self.time,
                                     &mut self.crd_drop_data.out_crd_outer,
-                                    channel_elem,
+                                    chan_elem,
                                 )
                                 .unwrap();
-                                has_crd = false;
-                                dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer)
-                                    .unwrap();
-                                continue;
-                            }
-
-                            match curr_ocrd.clone() {
-                                Token::Val(_) => {
-                                    dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer)
-                                        .unwrap();
-                                    has_crd = false;
-                                    continue;
-                                }
-                                Token::Stop(tkn) => {
-                                    let channel_elem = ChannelElement::new(
+                            } else {
+                                if let Token::Stop(stkn) = ocrd.data.clone() {
+                                    let chan_elem = ChannelElement::new(
                                         self.time.tick() + 1,
-                                        Token::Stop(tkn.clone()),
+                                        Token::Stop(stkn),
                                     );
                                     enqueue(
                                         &mut self.time,
                                         &mut self.crd_drop_data.out_crd_outer,
-                                        channel_elem,
+                                        chan_elem,
                                     )
                                     .unwrap();
-                                    dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer)
-                                        .unwrap();
-                                    has_crd = false;
-                                }
-                                _ => {
-                                    panic!("Invalid empty or done token found in crdDrop");
                                 }
                             }
+                            has_crd = false;
+                            dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer).unwrap();
+                            break;
                         }
                         Token::Done => {
-                            // dbg!(curr_ocrd);
-                            let ocrd =
-                                dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer)
-                                    .unwrap();
-                            match ocrd.data {
-                                Token::Done => {
-                                    let channel_elem =
-                                        ChannelElement::new(self.time.tick() + 1, Token::Done);
-                                    enqueue(
-                                        &mut self.time,
-                                        &mut self.crd_drop_data.out_crd_outer,
-                                        channel_elem.clone(),
-                                    )
-                                    .unwrap();
-                                    return;
-                                }
-                                _ => {
-                                    panic!("Out crd should be done token");
-                                }
-                            }
+                            assert!(ocrd.data.clone() == Token::Done);
+                            dbg!("INSIDE INNER");
+                            return;
                         }
                         _ => {
-                            panic!("Invalid token reached");
+                            panic!("Unexpected token");
                         }
                     }
+                },
+                Token::Stop(stkn) => {
+                    let chan_elem = ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn));
+                    enqueue(
+                        &mut self.time,
+                        &mut self.crd_drop_data.out_crd_outer,
+                        chan_elem,
+                    )
+                    .unwrap();
+                    if prev_ocrd_stkn {
+                        let icrd =
+                            dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_inner).unwrap();
+                        let chan_elem =
+                            ChannelElement::new(self.time.tick() + 1, icrd.data.clone());
+                        enqueue(
+                            &mut self.time,
+                            &mut self.crd_drop_data.out_crd_inner,
+                            chan_elem,
+                        )
+                        .unwrap();
+                    } else {
+                        dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_outer).unwrap();
+                    }
+                    prev_ocrd_stkn = true;
                 }
-                Err(_) => {
-                    panic!("Unexpected end of stream");
+                Token::Done => {
+                    let icrd =
+                        dequeue(&mut self.time, &mut self.crd_drop_data.in_crd_inner).unwrap();
+                    if let Token::Done = icrd.data.clone() {
+                        let chan_elem =
+                            ChannelElement::new(self.time.tick() + 1, icrd.data.clone());
+                        enqueue(
+                            &mut self.time,
+                            &mut self.crd_drop_data.out_crd_inner,
+                            chan_elem,
+                        )
+                        .unwrap();
+                    }
+                    let chan_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
+                    enqueue(
+                        &mut self.time,
+                        &mut self.crd_drop_data.out_crd_outer,
+                        chan_elem,
+                    )
+                    .unwrap();
+                    return;
+                }
+                _ => {
+                    panic!("Unexpected token found");
                 }
             }
             self.time.incr_cycles(1);
@@ -303,147 +300,149 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         context::{checker_context::CheckerContext, generator_context::GeneratorContext},
-//         simulation::Program,
-//         templates::sam::primitive::Token,
-//         token_vec,
-//     };
+#[cfg(test)]
+mod tests {
+    use dam_rs::context::checker_context::CheckerContext;
+    use dam_rs::context::generator_context::GeneratorContext;
+    use dam_rs::simulation::Program;
 
-//     use super::CrdManagerData;
-//     use super::{CrdDrop, CrdHold};
+    use crate::templates::primitive::Token;
+    use crate::token_vec;
 
-//     #[test]
-//     fn crd_drop_1d_test() {
-//         let in_ocrd = || token_vec!(u32; u32; 0, 1, "S0", "D").into_iter();
-//         let in_icrd = || token_vec!(u32; u32; 1, "S0", "S1", "D").into_iter();
-//         let out_ocrd = || token_vec!(u32; u32; 0, "S0", "D").into_iter();
-//         crd_drop_test(in_ocrd, in_icrd, out_ocrd);
-//     }
+    use super::CrdManagerData;
+    use super::{CrdDrop, CrdHold};
 
-//     #[test]
-//     fn crd_drop_1d_test1() {
-//         let in_ocrd = || token_vec!(u32; u32; 0, 1, 2, 3, "S0", "D").into_iter();
-//         let in_icrd = || token_vec!(u32; u32; 1, "S0", 1, "S0", "S0", 1, "S1", "D").into_iter();
-//         let out_ocrd = || token_vec!(u32; u32; 0, 1, 3, "S0", "D").into_iter();
-//         crd_drop_test(in_ocrd, in_icrd, out_ocrd);
-//     }
+    #[test]
+    fn crd_drop_1d_test() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 1, "S0", "D").into_iter();
+        let in_icrd = || token_vec!(u32; u32; 1, "S0", "S1", "D").into_iter();
+        let out_ocrd = || token_vec!(u32; u32; 0, "S0", "D").into_iter();
+        crd_drop_test(in_ocrd, in_icrd, out_ocrd);
+    }
 
-//     #[test]
-//     fn crd_drop_1d_test2() {
-//         let in_ocrd = || token_vec!(u32; u32; 1, "S0", "D").into_iter();
-//         let in_icrd = || token_vec!(u32; u32; 1, 2, "S1", "D").into_iter();
-//         let out_ocrd = || token_vec!(u32; u32; 1, "S0", "D").into_iter();
-//         crd_drop_test(in_ocrd, in_icrd, out_ocrd);
-//     }
+    #[test]
+    fn crd_drop_1d_test1() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 1, 2, 3, "S0", "D").into_iter();
+        let in_icrd = || token_vec!(u32; u32; 1, "S0", 1, "S0", "S0", 1, "S1", "D").into_iter();
+        let out_ocrd = || token_vec!(u32; u32; 0, 1, 3, "S0", "D").into_iter();
+        crd_drop_test(in_ocrd, in_icrd, out_ocrd);
+    }
 
-//     #[test]
-//     fn crd_drop_1d_test3() {
-//         let in_ocrd = || token_vec!(u32; u32; 0, 1, "S0", "D").into_iter();
-//         let in_icrd = || token_vec!(u32; u32; 1, "S0", 1, "S1", "D").into_iter();
-//         let out_ocrd = || token_vec!(u32; u32; 0, 1, "S0", "D").into_iter();
-//         crd_drop_test(in_ocrd, in_icrd, out_ocrd);
-//     }
+    #[test]
+    fn crd_drop_1d_test2() {
+        let in_ocrd = || token_vec!(u32; u32; 1, "S0", "D").into_iter();
+        let in_icrd = || token_vec!(u32; u32; 1, 2,3, "S1", "D").into_iter();
+        let out_ocrd = || token_vec!(u32; u32; 1, "S0", "D").into_iter();
+        crd_drop_test(in_ocrd, in_icrd, out_ocrd);
+    }
 
-//     #[test]
-//     fn crd_hold_1d_test() {
-//         let in_ocrd = || token_vec!(u32; u32; 0, 1, 2, "S0", "D").into_iter();
-//         let in_icrd = || token_vec!(u32; u32; 0, 2, "S0", 2, "S0", 2, "S1", "D").into_iter();
-//         let out_ocrd = || token_vec!(u32; u32; 0, 0, "S0", 1, "S0", 2, "S1", "D").into_iter();
-//         crd_hold_test(in_ocrd, in_icrd, out_ocrd);
-//     }
+    #[test]
+    fn crd_drop_1d_test3() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 1, "S0", "D").into_iter();
+        let in_icrd = || token_vec!(u32; u32; 1, "S0", 1, "S1", "D").into_iter();
+        let out_ocrd = || token_vec!(u32; u32; 0, 1, "S0", "D").into_iter();
+        crd_drop_test(in_ocrd, in_icrd, out_ocrd);
+    }
 
-//     #[test]
-//     fn crd_hold_1d_test1() {
-//         let in_ocrd = || token_vec!(u32; u32; 0, 2, "S0", 3, "S0", 4, "S1", "D").into_iter();
-//         let in_icrd = || {
-//             token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", 0, "S1", 2, 3, "S2", "D").into_iter()
-//         };
-//         let out_ocrd = || {
-//             token_vec!(u32; u32; 0, 0, 0, "S0", 2, 2, 2, "S1", 3, "S1", 4, 4, "S2", "D").into_iter()
-//         };
-//         crd_hold_test(in_ocrd, in_icrd, out_ocrd);
-//     }
+    #[test]
+    fn crd_hold_1d_test() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 1, 2, "S0", "D").into_iter();
+        let in_icrd = || token_vec!(u32; u32; 0, 2, "S0", 2, "S0", 2, "S1", "D").into_iter();
+        let out_ocrd = || token_vec!(u32; u32; 0, 0, "S0", 1, "S0", 2, "S1", "D").into_iter();
+        crd_hold_test(in_ocrd, in_icrd, out_ocrd);
+    }
 
-//     #[test]
-//     fn crd_hold_1d_test2() {
-//         let in_ocrd = || token_vec!(u32; u32; 0, 1, 2, 5, "S0", "D").into_iter();
-//         let in_icrd = || {
-//             token_vec!(u32; u32; 1, 2, 5, "S0", 2, "S0", 2, "S0", 2, 3, 4, 5, "S1", "D").into_iter()
-//         };
-//         let out_ocrd = || {
-//             token_vec!(u32; u32; 0, 0, 0, "S0", 1, "S0", 2, "S0", 5, 5, 5, 5, "S1", "D").into_iter()
-//         };
-//         crd_hold_test(in_ocrd, in_icrd, out_ocrd);
-//     }
+    #[test]
+    fn crd_hold_1d_test1() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 2, "S0", 3, "S0", 4, "S1", "D").into_iter();
+        let in_icrd = || {
+            token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", 0, "S1", 2, 3, "S2", "D").into_iter()
+        };
+        let out_ocrd = || {
+            token_vec!(u32; u32; 0, 0, 0, "S0", 2, 2, 2, "S1", 3, "S1", 4, 4, "S2", "D").into_iter()
+        };
+        crd_hold_test(in_ocrd, in_icrd, out_ocrd);
+    }
 
-//     fn crd_drop_test<IRT1, IRT2, ORT>(
-//         in_ocrd: fn() -> IRT1,
-//         in_icrd: fn() -> IRT2,
-//         out_ocrd: fn() -> ORT,
-//     ) where
-//         IRT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = Program::default();
-//         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_icrd_sender, _out_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+    #[test]
+    fn crd_hold_1d_test2() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 1, 2, 5, "S0", "D").into_iter();
+        let in_icrd = || {
+            token_vec!(u32; u32; 1, 2, 5, "S0", 2, "S0", 2, "S0", 2, 3, 4, 5, "S1", "D").into_iter()
+        };
+        let out_ocrd = || {
+            token_vec!(u32; u32; 0, 0, 0, "S0", 1, "S0", 2, "S0", 5, 5, 5, 5, "S1", "D").into_iter()
+        };
+        crd_hold_test(in_ocrd, in_icrd, out_ocrd);
+    }
 
-//         let crd_drop_data = CrdManagerData::<u32, u32> {
-//             in_crd_outer: in_ocrd_receiver,
-//             in_crd_inner: in_icrd_receiver,
-//             out_crd_outer: out_ocrd_sender,
-//             out_crd_inner: out_icrd_sender,
-//         };
+    fn crd_drop_test<IRT1, IRT2, ORT>(
+        in_ocrd: fn() -> IRT1,
+        in_icrd: fn() -> IRT2,
+        out_ocrd: fn() -> ORT,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = Program::default();
+        let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_icrd_sender, out_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
 
-//         let drop = CrdDrop::new(crd_drop_data);
-//         let ocrd_gen = GeneratorContext::new(in_ocrd, in_ocrd_sender);
-//         let icrd_gen = GeneratorContext::new(in_icrd, in_icrd_sender);
-//         let out_crd_checker = CheckerContext::new(out_ocrd, out_ocrd_receiver);
-//         parent.add_child(ocrd_gen);
-//         parent.add_child(icrd_gen);
-//         parent.add_child(out_crd_checker);
-//         parent.add_child(drop);
-//         parent.init();
-//         parent.run();
-//     }
+        let crd_drop_data = CrdManagerData::<u32, u32> {
+            in_crd_outer: in_ocrd_receiver,
+            in_crd_inner: in_icrd_receiver,
+            out_crd_outer: out_ocrd_sender,
+            out_crd_inner: out_icrd_sender,
+        };
 
-//     fn crd_hold_test<IRT1, IRT2, ORT>(
-//         in_ocrd: fn() -> IRT1,
-//         in_icrd: fn() -> IRT2,
-//         out_ocrd: fn() -> ORT,
-//     ) where
-//         IRT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = Program::default();
-//         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_icrd_sender, _out_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let drop = CrdDrop::new(crd_drop_data);
+        let ocrd_gen = GeneratorContext::new(in_ocrd, in_ocrd_sender);
+        let icrd_gen = GeneratorContext::new(in_icrd.clone(), in_icrd_sender);
+        let out_crd_checker = CheckerContext::new(out_ocrd, out_ocrd_receiver);
+        let out_icrd_checker = CheckerContext::new(in_icrd.clone(), out_icrd_receiver);
+        parent.add_child(ocrd_gen);
+        parent.add_child(icrd_gen);
+        parent.add_child(out_crd_checker);
+        parent.add_child(out_icrd_checker);
+        parent.add_child(drop);
+        parent.init();
+        parent.run();
+    }
 
-//         let crd_hold_data = CrdManagerData::<u32, u32> {
-//             in_crd_outer: in_ocrd_receiver,
-//             in_crd_inner: in_icrd_receiver,
-//             out_crd_outer: out_ocrd_sender,
-//             out_crd_inner: out_icrd_sender,
-//         };
+    fn crd_hold_test<IRT1, IRT2, ORT>(
+        in_ocrd: fn() -> IRT1,
+        in_icrd: fn() -> IRT2,
+        out_ocrd: fn() -> ORT,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = Program::default();
+        let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_icrd_sender, _out_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
 
-//         let drop = CrdHold::new(crd_hold_data);
-//         let ocrd_gen = GeneratorContext::new(in_ocrd, in_ocrd_sender);
-//         let icrd_gen = GeneratorContext::new(in_icrd, in_icrd_sender);
-//         let out_crd_checker = CheckerContext::new(out_ocrd, out_ocrd_receiver);
-//         parent.add_child(ocrd_gen);
-//         parent.add_child(icrd_gen);
-//         parent.add_child(out_crd_checker);
-//         parent.add_child(drop);
-//         parent.init();
-//         parent.run();
-//     }
-// }
+        let crd_hold_data = CrdManagerData::<u32, u32> {
+            in_crd_outer: in_ocrd_receiver,
+            in_crd_inner: in_icrd_receiver,
+            out_crd_outer: out_ocrd_sender,
+            out_crd_inner: out_icrd_sender,
+        };
+
+        let drop = CrdHold::new(crd_hold_data);
+        let ocrd_gen = GeneratorContext::new(in_ocrd, in_ocrd_sender);
+        let icrd_gen = GeneratorContext::new(in_icrd, in_icrd_sender);
+        let out_crd_checker = CheckerContext::new(out_ocrd, out_ocrd_receiver);
+        parent.add_child(ocrd_gen);
+        parent.add_child(icrd_gen);
+        parent.add_child(out_crd_checker);
+        parent.add_child(drop);
+        parent.init();
+        parent.run();
+    }
+}

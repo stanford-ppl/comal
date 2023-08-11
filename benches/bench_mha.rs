@@ -932,7 +932,7 @@ pub fn mha_flavor_benchmark_large(c: &mut Criterion) {
     const SOFTMAX_CHAN_SIZE: usize = 1 << 15;
     let mut group = c.benchmark_group("mha_flavor");
     group.sample_size(10);
-    let data = load_data::<f32>("tensor4_mha256");
+    let data = load_data::<f32>("tensor4_mha1");
 
     let flavor_lst = vec![false, true];
 

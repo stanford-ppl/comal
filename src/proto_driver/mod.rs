@@ -1,10 +1,12 @@
 pub mod proto_headers;
+pub mod util;
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use self::proto_headers::tortilla::operation::*;
+use self::util::{get_repsig_id, AsStreamID};
 
 use super::templates::accumulator::{Reduce, ReduceData, Spacc1, Spacc1Data};
 use super::templates::alu::make_alu;
@@ -18,6 +20,7 @@ use super::templates::utils::read_inputs;
 use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::proto_driver::alu::Conn;
+use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 
 use dam_rs::channel::{Receiver, Sender};
 use dam_rs::context::broadcast_context::BroadcastContext;
@@ -34,86 +37,6 @@ type ST = u32;
 type CoordType = Token<CT, ST>;
 type RefType = Token<CT, ST>;
 type ValType = Token<VT, ST>;
-
-fn get_crd_id(stream: &Option<CrdStream>) -> u64 {
-    stream.try_conv()
-}
-
-fn get_ref_id(stream: &Option<RefStream>) -> u64 {
-    stream.try_conv()
-}
-
-fn get_val_id(stream: &Option<ValStream>) -> u64 {
-    stream.try_conv()
-}
-
-fn get_repsig_id(stream: &Option<RepSigStream>) -> u64 {
-    stream.try_conv()
-}
-
-trait AsStreamID {
-    fn try_conv(&self) -> u64;
-}
-
-impl AsStreamID for Option<ValStream> {
-    fn try_conv(&self) -> u64 {
-        match self {
-            Some(stuff) => stuff.try_conv(),
-            None => 0,
-        }
-    }
-}
-
-impl AsStreamID for Option<CrdStream> {
-    fn try_conv(&self) -> u64 {
-        match self {
-            Some(stuff) => stuff.try_conv(),
-            None => 0,
-        }
-    }
-}
-
-impl AsStreamID for Option<RefStream> {
-    fn try_conv(&self) -> u64 {
-        match self {
-            Some(stuff) => stuff.try_conv(),
-            None => 0,
-        }
-    }
-}
-
-impl AsStreamID for Option<RepSigStream> {
-    fn try_conv(&self) -> u64 {
-        match self {
-            Some(stuff) => stuff.try_conv(),
-            None => 0,
-        }
-    }
-}
-
-impl AsStreamID for ValStream {
-    fn try_conv(&self) -> u64 {
-        self.id.as_ref().expect("Error getting id").id
-    }
-}
-
-impl AsStreamID for CrdStream {
-    fn try_conv(&self) -> u64 {
-        self.id.as_ref().expect("Error getting id").id
-    }
-}
-
-impl AsStreamID for RefStream {
-    fn try_conv(&self) -> u64 {
-        self.id.as_ref().expect("Error getting id").id
-    }
-}
-
-impl AsStreamID for RepSigStream {
-    fn try_conv(&self) -> u64 {
-        self.id.as_ref().expect("Error getting id").id
-    }
-}
 
 enum ChannelType<T: Clone> {
     SendType(Sender<T>),
@@ -175,19 +98,6 @@ where
 }
 
 pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> Program<'a> {
-    // let test_name = "sddmm";
-    // let filename = home::home_dir().unwrap().join("sam_config.toml");
-    // let contents = fs::read_to_string(filename).unwrap();
-    // let data: Data = toml::from_str(&contents).unwrap();
-    // let formatted_dir = data.sam_config.sam_path;
-    // let base_path = Path::new(&formatted_dir).join(&test_name);
-
-    // Set default channel size
-
-    // let txt = fs::read("comal.bin").unwrap();
-    // let msg = ProgramGraph::
-    // let msg = ComalGraph::decode(txt.as_slice()).unwrap();
-
     let mut parent = Program::default();
 
     let mut refmap: Channels<CoordType> = Channels::new();
@@ -198,10 +108,9 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> Program<'
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
             Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
-                broadcast::Conn::Crd(crd) => {
-                    let in_crd_id = crd.input.try_conv();
-                    // let in_crd_id = crd.input.try_conv();
-                    let out_crd_ids = crd.outputs.iter().map(|id| id.try_conv());
+                broadcast::Conn::Crd(in_crd) => {
+                    let in_crd_id = in_crd.input.try_conv();
+                    let out_crd_ids = in_crd.outputs.iter().map(|id| id.try_conv());
                     let receiver = crdmap.get_receiver(in_crd_id, &mut parent);
                     let mut broadcast = BroadcastContext::new(receiver);
                     out_crd_ids
@@ -209,9 +118,36 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> Program<'
                         .for_each(|id| broadcast.add_target(crdmap.get_sender(id, &mut parent)));
                     parent.add_child(broadcast);
                 }
-                broadcast::Conn::Ref(_) => todo!(),
-                broadcast::Conn::Val(_) => todo!(),
-                broadcast::Conn::Repsig(_) => todo!(),
+                broadcast::Conn::Ref(in_ref) => {
+                    let in_ref_id = in_ref.input.try_conv();
+                    let out_ref_ids = in_ref.outputs.iter().map(|id| id.try_conv());
+                    let receiver = refmap.get_receiver(in_ref_id, &mut parent);
+                    let mut broadcast = BroadcastContext::new(receiver);
+                    out_ref_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(refmap.get_sender(id, &mut parent)));
+                    parent.add_child(broadcast);
+                }
+                broadcast::Conn::Val(in_val) => {
+                    let in_val_id = in_val.input.try_conv();
+                    let out_val_ids = in_val.outputs.iter().map(|id| id.try_conv());
+                    let receiver = valmap.get_receiver(in_val_id, &mut parent);
+                    let mut broadcast = BroadcastContext::new(receiver);
+                    out_val_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(valmap.get_sender(id, &mut parent)));
+                    parent.add_child(broadcast);
+                }
+                broadcast::Conn::Repsig(in_repsig) => {
+                    let in_repsig_id = in_repsig.input.try_conv();
+                    let out_repsig_ids = in_repsig.outputs.iter().map(|id| id.try_conv());
+                    let receiver = repmap.get_receiver(in_repsig_id, &mut parent);
+                    let mut broadcast = BroadcastContext::new(receiver);
+                    out_repsig_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(repmap.get_sender(id, &mut parent)));
+                    parent.add_child(broadcast);
+                }
             },
             Op::Joiner(op) => {
                 assert!(op.input_pairs.len() == 2);
