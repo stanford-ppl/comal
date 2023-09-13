@@ -1,9 +1,19 @@
 use core::fmt;
+use std::io::Error;
+use std::marker::PhantomData;
 
 use dam_rs::templates::ops::ALUOp;
 use dam_rs::templates::ops::PipelineRegister;
 use dam_rs::types::DAMType;
+use dam_rs::types::StaticallySized;
 use dam_rs::RegisterALUOp;
+use itertools::Chunk;
+use itertools::Itertools;
+use ndarray::Array;
+use ndarray::CowArray;
+use ndarray::Dimension;
+use ndarray::IntoDimension;
+use ndarray::Shape;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Token<ValType, StopType> {
@@ -22,6 +32,104 @@ pub enum Repsiggen {
 
 pub trait Exp {
     fn exp(self) -> Self;
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct Tensor<'a, ValType: DAMType, Dim: ndarray::Dimension> {
+    pub data: ndarray::CowArray<'a, ValType, Dim>,
+}
+
+// impl<'a, A, D> FromStr for Tensor<'a, A, D>
+// where
+//     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
+//     D: Dimension,
+// {
+//     // type Err = Box<dyn std::error::Error>;
+//     type Err = Error;
+
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//     }
+// }
+
+struct PrimitiveType<T: DAMType> {
+    marker: PhantomData<T>,
+}
+
+trait Adapter<T> {
+    fn parse(&self, iter: impl Iterator<Item = String>) -> Vec<T>;
+}
+
+impl<T> Adapter<T> for PrimitiveType<T>
+where
+    T: std::str::FromStr + dam_rs::types::StaticallySized,
+{
+    fn parse(&self, iter: impl Iterator<Item = String>) -> Vec<T> {
+        iter.flat_map(|line| line.parse::<T>()) // ignores Err variant from Result of str.parse
+            .collect()
+    }
+}
+
+impl<'a, A, D> Adapter<Tensor<'a, A, D>> for PrimitiveType<Tensor<'a, A, D>>
+where
+    A: PartialEq
+        + std::fmt::Debug
+        + Clone
+        + Default
+        + Sync
+        + Send
+        + StaticallySized
+        + num::Zero
+        + std::str::FromStr,
+    D: Dimension,
+{
+    fn parse(&self, iter: impl Iterator<Item = String>) -> Vec<Tensor<'a, A, D>> {
+        let mut out_vec = vec![];
+        let chunk_size = 3;
+        // type T = impl Iterator<Item = String>;
+        (&iter.chunks(chunk_size)).into_iter().for_each(|chunk| {
+            out_vec.push(Tensor {
+                data: CowArray::from(
+                    (chunk
+                        .into_iter()
+                        .flat_map(|line| line.parse::<A>())
+                        .collect()),
+                ),
+            });
+        });
+        out_vec
+    }
+}
+
+impl<'a, A, D> DAMType for Tensor<'a, A, D>
+where
+    A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
+    D: Dimension,
+{
+    fn dam_size(&self) -> usize {
+        self.data.dim().into_dimension().size() * A::SIZE
+    }
+}
+
+impl<'a, A, D> Tensor<'a, A, D>
+where
+    A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized,
+    D: Dimension,
+{
+    fn size(&self) -> usize {
+        self.data.dim().into_dimension().size()
+    }
+}
+
+impl<'a, A, D> Default for Tensor<'a, A, D>
+where
+    A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
+    D: Dimension,
+{
+    fn default() -> Self {
+        Tensor {
+            data: CowArray::from(Array::zeros(Shape::from(D::default()))),
+        }
+    }
 }
 
 RegisterALUOp!(ALUExpOp, |(i0), ()| [i0.exp()], T: DAMType + Exp);
