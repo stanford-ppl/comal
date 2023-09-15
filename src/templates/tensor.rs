@@ -8,12 +8,12 @@ use dam_rs::types::{DAMType, StaticallySized};
 use itertools::Itertools;
 use ndarray::{
     Array, Array1, ArrayBase, CowArray, CowRepr, Dim, Dimension, IntoDimension, Ix1, LinalgScalar,
-    Shape,
+    OwnedRepr, Shape,
 };
 use num::{One, Zero};
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct Tensor<'a, ValType: DAMType, Dim: ndarray::Dimension> {
+pub struct Tensor<'a, ValType: DAMType, Dim: ndarray::Dimension, const N: usize> {
     pub data: ndarray::CowArray<'a, ValType, Dim>,
 }
 
@@ -50,19 +50,19 @@ where
     }
 }
 
-impl<'a, A> Adapter<Tensor<'a, A, Ix1>> for PrimitiveType<Tensor<'a, A, Ix1>>
+impl<'a, A, const N: usize> Adapter<Tensor<'a, A, Ix1, N>> for PrimitiveType<Tensor<'a, A, Ix1, N>>
 where
     A: DAMType + FromStr,
-    Tensor<'a, A, Dim<[usize; 1]>>: DAMType,
+    Tensor<'a, A, Dim<[usize; 1]>, N>: DAMType,
 {
     fn parse(
         &self,
         iter: std::iter::Flatten<std::io::Lines<std::io::BufReader<std::fs::File>>>,
-    ) -> Vec<Tensor<'a, A, Ix1>> {
+    ) -> Vec<Tensor<'a, A, Ix1, N>> {
         let mut out_vec = vec![];
         let float_iter = iter.flat_map(|line| line.parse::<A>());
-        for chunk in &float_iter.chunks(4) {
-            out_vec.push(Tensor::<'a, A, Ix1> {
+        for chunk in &float_iter.chunks(N) {
+            out_vec.push(Tensor::<'a, A, Ix1, N> {
                 data: CowArray::from(Array::from_vec(chunk.into_iter().collect::<Vec<_>>())),
             });
         }
@@ -70,81 +70,7 @@ where
     }
 }
 
-// impl<'a, A, D> Copy for Tensor<'a, A, D>
-// where
-//     A: PartialEq
-//         + std::fmt::Debug
-//         + Clone
-//         + Default
-//         + Sync
-//         + Send
-//         + StaticallySized
-//         + num::Zero
-//         + std::marker::Copy,
-//     D: Dimension + std::marker::Copy,
-// {
-// }
-
-// impl<'a, A, D> LinalgScalar for Tensor<'a, A, D>
-// where
-//     A: DAMType + dam_rs::types::StaticallySized,
-//     D: Dimension,
-// {
-// }
-
-// impl<'a, A, D> num_traits::identities::Zero for ArrayBase<CowRepr<'a, A>, D>
-// where
-//     A: DAMType,
-//     D: Dimension,
-// {
-// }
-
-// impl<'a, A, D> One for Tensor<'a, A, D>
-// where
-//     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
-//     D: Dimension,
-//     // ArrayBase<CowRepr<'a, A>, D>: num_traits::identities::One, // Tensor<'a, A, D>: LinalgScalar,
-// {
-//     fn one() -> Self {
-//         Tensor {
-//             data: ArrayBase::ones(),
-//         }
-//     }
-
-//     fn set_one(&mut self) {
-//         *self = One::one();
-//     }
-
-//     fn is_one(&self) -> bool
-//     where
-//         Self: PartialEq,
-//     {
-//         *self == Self::one()
-//     }
-// }
-
-// impl<'a, A, D> Zero for Tensor<'a, A, D>
-// where
-//     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
-//     D: Dimension,
-//     ArrayBase<CowRepr<'a, A>, D>: Add<Output = ArrayBase<CowRepr<'a, A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
-//     ArrayBase<CowRepr<'a, A>, D>: num_traits::identities::Zero, // Tensor<'a, A, D>: LinalgScalar,
-// {
-//     fn zero() -> Self {
-//         Tensor {
-//             data: ArrayBase::<CowRepr<'a, A>, D>::zero(),
-//         }
-//     }
-
-//     fn is_zero(&self) -> bool
-//     where
-//         Self: PartialEq,
-//     {
-//         *self == Self::zero()
-//     }
-// }
-
-impl<'a, A, D> Mul for Tensor<'a, A, D>
+impl<'a, A, D, const N: usize> Mul for Tensor<'a, A, D, N>
 where
     A: DAMType,
     D: Dimension,
@@ -162,7 +88,7 @@ where
     }
 }
 
-impl<'a, A, D> Sub for Tensor<'a, A, D>
+impl<'a, A, D, const N: usize> Sub for Tensor<'a, A, D, N>
 where
     A: PartialEq
         + std::fmt::Debug
@@ -177,43 +103,49 @@ where
     // ArrayBase<CowRepr<'a, A>, D>: Sub<Output = ArrayBase<CowRepr<'a, A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
     CowArray<'a, A, D>: Sub<Output = CowArray<'a, A, D>>, // Tensor<'a, A, D>: LinalgScalar,
                                                           // CowArray<'a, A, D>: LinalgScalar,
+                                                          // &'a ArrayBase<OwnedRepr<A>, D>:
+                                                          //     Add<&'a ArrayBase<OwnedRepr<A>, D>, Output = ArrayBase<OwnedRepr<A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
 {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        Tensor::<'a, A, D> {
+        Tensor::<'a, A, D, N> {
             // data: self.data.sub(rhs.data),
             data: self.data.sub(rhs.data),
-            // data: CowArray::from(Array::from_vec(
-            //     self.data
-            //         .iter()
-            //         .zip(rhs.data.iter())
-            //         .map(|a| a.0 + b.1)
-            //         .collect::<Vec<_>>(),
-            // )),
-        }
+        } // data: CowArray::from(Array::from_vec(
+          //     self.data
+          //         .iter()
+          //         .zip(rhs.data.iter())
+          //         .map(|a| a.0 + b.1)
+          //         .collect::<Vec<_>>(),
+          // )),
     }
 }
 
-impl<'a, A, D> Add for Tensor<'a, A, D>
+impl<'a, A, D, const N: usize> Add for Tensor<'a, A, D, N>
 where
     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
-    D: Dimension,
+    D: Dimension + 'a,
     // ArrayBase<CowRepr<'a, A>, D>: Add<Output = ArrayBase<CowRepr<'a, A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
-    CowArray<'a, A, D>: Add<Output = CowArray<'a, A, D>>, // Tensor<'a, A, D>: LinalgScalar,
-                                                          // CowArray<'a, A, D>: ,
+    // &'a CowArray<'a, A, D>: Add<&'a CowArray<'a, A, D>, Output = CowArray<'a, A, D>>, // Tensor<'a, A, D>: LinalgScalar,
+    &'a ArrayBase<OwnedRepr<A>, D>:
+        Add<&'a ArrayBase<OwnedRepr<A>, D>, Output = ArrayBase<OwnedRepr<A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
+                                                                                  // CowArray<'a, A, D>: ,
 {
     type Output = Self;
-
     fn add(self, rhs: Self) -> Self::Output {
-        Tensor::<'a, A, D> {
-            data: self.data.add(rhs.data),
-            // data: self.data + rhs.data,
+        dbg!(self.data.clone());
+        dbg!(rhs.data.clone());
+        let data = self.data.to_owned() + rhs.data.to_owned();
+        // dbg!(data.clone());
+        Tensor::<'a, A, D, N> {
+            // data: self.data.add(rhs.data),
+            data: data.into(),
         }
     }
 }
 
-impl<'a, A, D> DAMType for Tensor<'a, A, D>
+impl<'a, A, D, const N: usize> DAMType for Tensor<'a, A, D, N>
 where
     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
     D: Dimension,
@@ -223,7 +155,7 @@ where
     }
 }
 
-impl<'a, A, D> Tensor<'a, A, D>
+impl<'a, A, D, const N: usize> Tensor<'a, A, D, N>
 where
     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized,
     D: Dimension,
@@ -234,7 +166,7 @@ where
     }
 }
 
-impl<'a, A, D> Default for Tensor<'a, A, D>
+impl<'a, A, D, const N: usize> Default for Tensor<'a, A, D, N>
 where
     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
     D: Dimension,

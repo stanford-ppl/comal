@@ -12,26 +12,12 @@ fn set_tensor_path() {
     env::set_var("FROSTT_FORMATTED_PATH", "/home/rubensl/Documents/data");
 }
 
-pub fn read_inputs_vectorized<T>(
-    file_path: &PathBuf,
-    prim_type: impl Adapter<T>,
-    vec_size: usize,
-) -> Vec<T>
+pub fn read_inputs_vectorized<T>(file_path: &PathBuf, prim_type: impl Adapter<T>) -> Vec<T>
 where
     T: DAMType,
 {
     let file = File::open(file_path).expect(format!("file {:?} wasn't found", file_path).as_str());
-    let reader = BufReader::new(file);
-
-    // let mut out_vec = vec![];
-    let v = reader.lines().flatten();
-    prim_type.parse(v)
-    // let float_iter = v.flat_map(|line| line.parse::<f32>());
-    // for chunk in &float_iter.chunks(vec_size) {
-    //     out_vec.push(Tensor {
-    //         data: CowArray::from(Array::from_vec(chunk.into_iter().collect::<Vec<_>>())),
-    //     });
-    // }
+    prim_type.parse(BufReader::new(file).lines().flatten())
 }
 
 pub fn read_inputs<T>(file_path: &PathBuf) -> Vec<T>

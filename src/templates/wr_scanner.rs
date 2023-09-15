@@ -118,9 +118,7 @@ where
 
 impl<ValType, StopType> Context for ValsWrScan<ValType, StopType>
 where
-    ValType: DAMType
-        + std::ops::Mul<ValType, Output = ValType>
-        + std::ops::Add<ValType, Output = ValType>,
+    ValType: DAMType,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
 {
     fn init(&mut self) {}

@@ -20,7 +20,7 @@ use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 use ndarray::Ix1;
 
-type VT = Tensor<'static, f32, Ix1>;
+type VT = Tensor<'static, f32, Ix1, 2>;
 // type VT = f32;
 // type CT = u32;
 // type ST = u32;
@@ -30,7 +30,7 @@ type VT = Tensor<'static, f32, Ix1>;
 
 #[test]
 fn test_mat_elemadd() {
-    let test_name = "mat_elemadd_vec";
+    let test_name = "mat_elemadd1";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
@@ -52,13 +52,13 @@ fn test_mat_elemadd() {
     let b1_seg = read_inputs::<u32>(&b1_seg_filename);
     let b1_crd = read_inputs::<u32>(&b1_crd_filename);
     // let b_vals = read_inputs::<VT>(&b_vals_filename);
-    let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new(), 4);
+    let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new());
     let c0_seg = read_inputs::<u32>(&c0_seg_filename);
     let c0_crd = read_inputs::<u32>(&c0_crd_filename);
     let c1_seg = read_inputs::<u32>(&c1_seg_filename);
     let c1_crd = read_inputs::<u32>(&c1_crd_filename);
     // let c_vals = read_inputs::<VT>(&c_vals_filename);
-    let c_vals = read_inputs_vectorized(&c_vals_filename, PrimitiveType::<VT>::new(), 4);
+    let c_vals = read_inputs_vectorized(&c_vals_filename, PrimitiveType::<VT>::new());
 
     let chan_size = 4096;
 
