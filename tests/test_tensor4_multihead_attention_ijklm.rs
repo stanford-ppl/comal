@@ -1,6 +1,5 @@
 use std::{fs, path::Path};
 
-
 use dam_rs::context::broadcast_context::BroadcastContext;
 use dam_rs::context::generator_context::GeneratorContext;
 
@@ -112,9 +111,9 @@ fn test_multihead_attention() {
     // let a_vals = read_inputs::<f32>(&a_vals_filename);
 
     let mut parent = Program::default();
-    let chan_size = 4096;
+    let chan_size = 2048;
 
-    let par_factor = 8;
+    let par_factor = 10;
 
     // fiberlookup_bi
     let (qi_in_ref_sender, qi_in_ref_receiver) = parent.bounded(chan_size);
@@ -813,6 +812,7 @@ fn test_multihead_attention() {
     let xvals = ValsWrScan::<f32, u32>::new(out_final_val_receiver);
     parent.add_child(xvals);
 
+    parent.set_inference(true);
     parent.init();
     parent.run();
 

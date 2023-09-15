@@ -75,7 +75,7 @@ where
                         );
                         enqueue(&mut self.time, &mut self.array_data.out_val, channel_elem)
                             .unwrap();
-                        // dbg!(self.val_arr[idx].clone());
+                        dbg!(self.val_arr[idx].clone());
                     }
                     Token::Stop(stkn) => {
                         let channel_elem =

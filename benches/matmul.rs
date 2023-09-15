@@ -370,5 +370,5 @@ pub fn matmul_sweep_flavor(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(matmul_benches, matmul_sweep_flavor,);
+criterion_group!(matmul_benches, matmul_sweep,);
 criterion_main!(matmul_benches);

@@ -59,7 +59,7 @@ struct TestData<ValType> {
     v_vals: Vec<ValType>,
 }
 
-fn load_data<ValType: FromStr>(test_name: &str) -> TestData<ValType> {
+fn load_data<ValType: FromStr + DAMType>(test_name: &str) -> TestData<ValType> {
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
@@ -146,7 +146,8 @@ where
         + Exp
         + num::Num
         + 'a
-        + dam_rs::types::StaticallySized,
+        + dam_rs::types::StaticallySized
+        + 'static,
 {
     let mut parent = Program::default();
 
@@ -932,9 +933,9 @@ pub fn mha_flavor_benchmark_large(c: &mut Criterion) {
     const SOFTMAX_CHAN_SIZE: usize = 1 << 15;
     let mut group = c.benchmark_group("mha_flavor");
     group.sample_size(10);
-    let data = load_data::<f32>("tensor4_mha1");
+    let data = load_data::<f32>("tensor4_mha");
 
-    let flavor_lst = vec![false, true];
+    let flavor_lst = vec![true];
 
     for with_flavor in flavor_lst {
         group.bench_with_input(
@@ -948,7 +949,7 @@ pub fn mha_flavor_benchmark_large(c: &mut Criterion) {
                             cp,
                             CHAN_SIZE,
                             SOFTMAX_CHAN_SIZE,
-                            1,
+                            8,
                             with_flavor,
                             f32::MIN,
                         )

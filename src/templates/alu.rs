@@ -11,57 +11,100 @@
 use dam_rs::{
     channel::{Receiver, Sender},
     context::Context,
-    templates::{
-        ops::ALUOp,
-        pcu::*,
-    },
+    templates::{ops::ALUOp, pcu::*},
     types::DAMType,
 };
+use ndarray::LinalgScalar;
 
 use super::primitive::Token;
+
+// macro_rules! RegisterArithmeticOp {
+//     ($name: ident, $op: tt, $identity: ident) => {
+//         // use num::*;
+//         // use std::ops::*;
+//         #[allow(non_snake_case, unused_assignments, unused_mut, unused_variables)]
+//         impl<ValType: std::ops::$op<Output = ValType>, StopType: PartialEq + std::fmt::Debug>
+//             std::ops::$op<Token<ValType, StopType>> for Token<ValType, StopType>
+//         where
+//             Token<ValType, StopType>: Copy,
+//             ValType: num::Num,
+//             ValType: DAMType,
+//             StopType: DAMType,
+//         {
+//             type Output = Token<ValType, StopType>;
+//             fn $name(self, rhs: Token<ValType, StopType>) -> Token<ValType, StopType> {
+//                 match (self, rhs) {
+//                     (Token::Val(in1), Token::Val(in2)) => {
+//                         // println!("t1: {:?}", in1);
+//                         // println!("t2: {:?}", in2);
+//                         // println!("");
+//                         Token::Val(in1.$name(in2))
+//                     }
+//                     (Token::Stop(in1), Token::Stop(in2)) => {
+//                         assert_eq!(in1, in2, "Stop tokens must be the same");
+//                         Token::Stop(in1)
+//                     }
+//                     (Token::Done, Token::Done) | (Token::Empty, Token::Empty) => self,
+//                     (Token::Empty, Token::Val(val)) => {
+//                         Token::Val(num::$identity::<ValType>().$name(val))
+//                     }
+//                     (Token::Val(val), Token::Empty) => {
+//                         Token::Val(val.$name(num::$identity::<ValType>()))
+//                     }
+//                     _ => {
+//                         panic!(
+//                             "Incorrect {:?} and {:?} tokens found in {:?}",
+//                             self,
+//                             rhs,
+//                             stringify!($name)
+//                         );
+//                     }
+//                 }
+//             }
+//         }
+//     };
+// }
 
 macro_rules! RegisterArithmeticOp {
     ($name: ident, $op: tt, $identity: ident) => {
         // use num::*;
         // use std::ops::*;
         #[allow(non_snake_case, unused_assignments, unused_mut, unused_variables)]
-        impl<
-                ValType: Copy + std::ops::$op<Output = ValType>,
-                StopType: PartialEq + std::fmt::Debug,
-            > std::ops::$op<Token<ValType, StopType>> for Token<ValType, StopType>
+        impl<ValType: std::ops::$op<Output = ValType>, StopType: PartialEq + std::fmt::Debug>
+            std::ops::$op<Token<ValType, StopType>> for Token<ValType, StopType>
         where
-            Token<ValType, StopType>: Copy,
-            ValType: num::Num,
-            ValType: dam_rs::types::StaticallySized,
-            StopType: dam_rs::types::StaticallySized,
+            // Token<ValType, StopType>: Copy,
+            // ValType: num::Num,
+            ValType: DAMType,
+            StopType: DAMType,
+            // ValType: LinalgScalar,
+            // ValType: num::Zero,
+            // ValType: num::One,
         {
             type Output = Token<ValType, StopType>;
             fn $name(self, rhs: Token<ValType, StopType>) -> Token<ValType, StopType> {
                 match (self, rhs) {
-                    (Token::Val(in1), Token::Val(in2)) => {
-                        // println!("t1: {:?}", in1);
-                        // println!("t2: {:?}", in2);
-                        // println!("");
-                        Token::Val(in1.$name(in2))
-                    }
+                    (Token::Val(in1), Token::Val(in2)) => Token::Val(in1.$name(in2)),
                     (Token::Stop(in1), Token::Stop(in2)) => {
                         assert_eq!(in1, in2, "Stop tokens must be the same");
                         Token::Stop(in1)
                     }
-                    (Token::Done, Token::Done) | (Token::Empty, Token::Empty) => self,
-                    (Token::Empty, Token::Val(val)) => {
-                        Token::Val(num::$identity::<ValType>().$name(val))
-                    }
-                    (Token::Val(val), Token::Empty) => {
-                        Token::Val(val.$name(num::$identity::<ValType>()))
-                    }
+                    (Token::Done, Token::Done) => Token::Done,
+                    (Token::Empty, Token::Empty) => Token::Empty,
+                    // (Token::Empty, Token::Val(val)) => {
+                    //     Token::Val(num::$identity::<ValType>().$name(val))
+                    // }
+                    // (Token::Val(val), Token::Empty) => {
+                    //     Token::Val(val.$name(num::$identity::<ValType>()))
+                    // }
                     _ => {
-                        panic!(
-                            "Incorrect {:?} and {:?} tokens found in {:?}",
-                            self,
-                            rhs,
-                            stringify!($name)
-                        );
+                        todo!();
+                        // panic!(
+                        //     "Incorrect {:?} and {:?} tokens found in {:?}",
+                        //     self,
+                        //     rhs,
+                        //     stringify!($name)
+                        // );
                     }
                 }
             }
@@ -73,6 +116,11 @@ RegisterArithmeticOp!(add, Add, zero);
 RegisterArithmeticOp!(sub, Sub, zero);
 RegisterArithmeticOp!(mul, Mul, one);
 RegisterArithmeticOp!(div, Div, zero);
+
+// RegisterVectorArithmeticOp!(add, Add, zero);
+// RegisterVectorArithmeticOp!(sub, Sub, zero);
+// RegisterVectorArithmeticOp!(mul, Mul, one);
+// RegisterVectorArithmeticOp!(div, Div, zero);
 
 pub fn make_alu<ValType: DAMType, StopType: DAMType>(
     arg1: Receiver<Token<ValType, StopType>>,

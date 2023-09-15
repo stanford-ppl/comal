@@ -1,6 +1,7 @@
 use core::fmt;
 use std::fmt::Error;
 use std::marker::PhantomData;
+use std::ops::Mul;
 use std::str::FromStr;
 
 use dam_rs::templates::ops::ALUOp;
@@ -11,10 +12,13 @@ use dam_rs::RegisterALUOp;
 use itertools::Itertools;
 use ndarray::Array;
 use ndarray::CowArray;
+use ndarray::Dim;
 use ndarray::Dimension;
 use ndarray::IntoDimension;
 use ndarray::Ix1;
+use ndarray::LinalgScalar;
 use ndarray::Shape;
+use num::One;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Token<ValType, StopType> {
@@ -33,121 +37,6 @@ pub enum Repsiggen {
 
 pub trait Exp {
     fn exp(self) -> Self;
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct Tensor<'a, ValType: DAMType, Dim: ndarray::Dimension> {
-    pub data: ndarray::CowArray<'a, ValType, Dim>,
-}
-
-// impl<'a, A, D> FromStr for Tensor<'a, A, D>
-// where
-//     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
-//     D: Dimension,
-// {
-//     type Err = Error;
-
-//     fn from_str(s: &str) -> Result<Self, Self::Err> {
-//     }
-// }
-
-pub struct PrimitiveType<T: DAMType> {
-    pub _marker: PhantomData<T>,
-}
-
-pub trait Adapter<T> {
-    fn parse(
-        &self,
-        iter: std::iter::Flatten<std::io::Lines<std::io::BufReader<std::fs::File>>>,
-    ) -> Vec<T>;
-}
-
-impl<T> Adapter<T> for PrimitiveType<T>
-where
-    T: DAMType + std::str::FromStr,
-{
-    // fn parse(&self, iter: impl Iterator<Item = String>) -> Vec<T> {
-    fn parse(
-        &self,
-        iter: std::iter::Flatten<std::io::Lines<std::io::BufReader<std::fs::File>>>,
-    ) -> Vec<T> {
-        iter.flat_map(|line| line.parse::<T>()) // ignores Err variant from Result of str.parse
-            .collect()
-    }
-}
-
-impl<'a, A> Adapter<Tensor<'a, A, Ix1>> for PrimitiveType<Tensor<'a, A, Ix1>>
-where
-    A: PartialEq
-        + std::fmt::Debug
-        + Clone
-        + Default
-        + Sync
-        + Send
-        + StaticallySized
-        + num::Zero
-        + std::str::FromStr,
-{
-    fn parse(
-        &self,
-        iter: std::iter::Flatten<std::io::Lines<std::io::BufReader<std::fs::File>>>,
-    ) -> Vec<Tensor<'a, A, Ix1>> {
-        let mut out_vec = vec![];
-        let float_iter = iter.flat_map(|line| line.parse::<A>());
-        for chunk in &float_iter.chunks(4) {
-            out_vec.push(Tensor::<'a, A, Ix1> {
-                data: CowArray::from(Array::from_vec(chunk.into_iter().collect::<Vec<_>>())),
-            });
-        }
-        out_vec
-    }
-}
-
-// impl<'a, A, D> Copy for Tensor<'a, A, D>
-// where
-//     A: PartialEq
-//         + std::fmt::Debug
-//         + Clone
-//         + Default
-//         + Sync
-//         + Send
-//         + StaticallySized
-//         + num::Zero
-//         + std::marker::Copy,
-//     D: Dimension + std::marker::Copy,
-// {
-// }
-
-impl<'a, A, D> DAMType for Tensor<'a, A, D>
-where
-    A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
-    D: Dimension,
-{
-    fn dam_size(&self) -> usize {
-        self.data.dim().into_dimension().size() * A::SIZE
-    }
-}
-
-impl<'a, A, D> Tensor<'a, A, D>
-where
-    A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized,
-    D: Dimension,
-{
-    fn size(&self) -> usize {
-        self.data.dim().into_dimension().size()
-    }
-}
-
-impl<'a, A, D> Default for Tensor<'a, A, D>
-where
-    A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
-    D: Dimension,
-{
-    fn default() -> Self {
-        Tensor {
-            data: CowArray::from(Array::zeros(Shape::from(D::default()))),
-        }
-    }
 }
 
 RegisterALUOp!(ALUExpOp, |(i0), ()| [i0.exp()], T: DAMType + Exp);

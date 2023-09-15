@@ -1,13 +1,14 @@
 use std::time::Instant;
 use std::{fs, path::Path};
 
+use comal::templates::tensor::{PrimitiveType, Tensor};
 use dam_rs::context::generator_context::GeneratorContext;
 
 use comal::templates::alu::make_alu;
 use comal::templates::array::{Array, ArrayData};
 
 use comal::templates::joiner::{CrdJoinerData, Union};
-use comal::templates::primitive::{Tensor, Token};
+use comal::templates::primitive::Token;
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 
 use comal::config::Data;
@@ -29,7 +30,7 @@ type VT = Tensor<'static, f32, Ix1>;
 
 #[test]
 fn test_mat_elemadd() {
-    let test_name = "mat_elemadd";
+    let test_name = "mat_elemadd_vec";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
@@ -51,13 +52,13 @@ fn test_mat_elemadd() {
     let b1_seg = read_inputs::<u32>(&b1_seg_filename);
     let b1_crd = read_inputs::<u32>(&b1_crd_filename);
     // let b_vals = read_inputs::<VT>(&b_vals_filename);
-    let b_vals = read_inputs_vectorized(&b_vals_filename, 4);
+    let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new(), 4);
     let c0_seg = read_inputs::<u32>(&c0_seg_filename);
     let c0_crd = read_inputs::<u32>(&c0_crd_filename);
     let c1_seg = read_inputs::<u32>(&c1_seg_filename);
     let c1_crd = read_inputs::<u32>(&c1_crd_filename);
     // let c_vals = read_inputs::<VT>(&c_vals_filename);
-    let c_vals = read_inputs_vectorized(&c_vals_filename, 4);
+    let c_vals = read_inputs_vectorized(&c_vals_filename, PrimitiveType::<VT>::new(), 4);
 
     let chan_size = 4096;
 
@@ -155,6 +156,7 @@ fn test_mat_elemadd() {
     let arrayvals_b_data = ArrayData::<u32, VT, u32> {
         in_ref: unionj_out_ref1_receiver,
         out_val: b_out_val_sender,
+        // out_val: parent.void(),
     };
     let arrayvals_b = Array::<u32, VT, u32>::new(arrayvals_b_data, b_vals);
 
@@ -162,6 +164,7 @@ fn test_mat_elemadd() {
     let (c_out_val_sender, c_out_val_receiver) = parent.bounded::<Token<VT, u32>>(chan_size);
     let arrayvals_c_data = ArrayData::<u32, VT, u32> {
         in_ref: unionj_out_ref2_receiver,
+        // out_val: parent.void(),
         out_val: c_out_val_sender,
     };
     let arrayvals_c = Array::<u32, VT, u32>::new(arrayvals_c_data, c_vals);
@@ -174,9 +177,11 @@ fn test_mat_elemadd() {
         add_out_sender,
         ALUAddOp(),
     );
+    parent.add_child(add);
 
     // fiberwrite_Xvals
     let xvals = ValsWrScan::<VT, u32>::new(add_out_receiver);
+    parent.add_child(xvals);
 
     parent.add_child(b_gen);
     parent.add_child(c_gen);
@@ -190,8 +195,6 @@ fn test_mat_elemadd() {
     parent.add_child(x1_wrscanner);
     parent.add_child(arrayvals_b);
     parent.add_child(arrayvals_c);
-    parent.add_child(add);
-    parent.add_child(xvals);
 
     let now = Instant::now();
     parent.print_graph();

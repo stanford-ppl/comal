@@ -1,12 +1,10 @@
-use dam_core::{
-    identifier::{Identifier},
-    TimeManager,
-};
-use dam_macros::{cleanup, identifiable, time_managed};
+use dam_core::{identifier::Identifier, TimeManager};
+use dam_macros::{cleanup, identifiable, log_producer, time_managed};
 
 use dam_rs::{
     channel::{utils::dequeue, Receiver},
     context::Context,
+    metric::LogProducer,
     types::{Cleanable, DAMType},
 };
 
@@ -93,6 +91,7 @@ where
     }
 }
 
+#[log_producer]
 #[time_managed]
 #[identifiable]
 pub struct ValsWrScan<ValType: Clone, StopType: Clone> {
@@ -121,8 +120,7 @@ impl<ValType, StopType> Context for ValsWrScan<ValType, StopType>
 where
     ValType: DAMType
         + std::ops::Mul<ValType, Output = ValType>
-        + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>,
+        + std::ops::Add<ValType, Output = ValType>,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
 {
     fn init(&mut self) {}
@@ -132,6 +130,7 @@ where
             match dequeue(&mut self.time, &mut self.input) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
+                        Self::log(format!("{:?}", val.clone()));
                         self.out_val.push(val);
                     }
                     Token::Empty | Token::Stop(_) => {

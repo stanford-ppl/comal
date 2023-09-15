@@ -11,8 +11,8 @@ mod proto_driver;
 mod templates;
 
 fn main() {
-    let mut data_dir_name = "".to_string();
-    let mut proto_filename = "".to_string();
+    let mut data_dir_name = "gcn2".to_string();
+    let mut proto_filename = "gcn.bin".to_string();
     let mut with_flavor = true;
 
     {
@@ -38,7 +38,8 @@ fn main() {
     let formatted_dir = data.sam_config.sam_path;
     let base_path = Path::new(&formatted_dir).join(&data_dir_name);
 
-    let comal_contents = fs::read(proto_filename).unwrap();
+    dbg!(base_path.join(proto_filename.clone()));
+    let comal_contents = fs::read(base_path.join(proto_filename)).unwrap();
     let comal_graph = ComalGraph::decode(comal_contents.as_slice()).unwrap();
 
     let mut parent = parse_proto(comal_graph, base_path);
@@ -46,6 +47,7 @@ fn main() {
     parent.set_inference(with_flavor);
     let now = Instant::now();
     parent.init();
+    parent.print_graph_with_names();
     let elapsed = now.elapsed();
     println!("Init took: {:.2?}", elapsed);
     let now = Instant::now();

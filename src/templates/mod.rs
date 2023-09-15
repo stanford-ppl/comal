@@ -10,6 +10,7 @@ pub mod repeat;
 pub mod scatter_gather;
 pub mod shape_operator;
 pub mod stkn_dropper;
+pub mod tensor;
 pub mod utils;
 pub mod val_dropper;
 pub mod wr_scanner;
