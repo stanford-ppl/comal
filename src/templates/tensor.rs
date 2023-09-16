@@ -6,6 +6,7 @@ use std::{
 
 use dam_rs::types::{DAMType, StaticallySized};
 use itertools::Itertools;
+use ndarray::ShapeBuilder;
 use ndarray::{
     Array, Array1, ArrayBase, CowArray, CowRepr, Dim, Dimension, IntoDimension, Ix1, LinalgScalar,
     OwnedRepr, Shape,
@@ -149,6 +150,7 @@ impl<'a, A, D, const N: usize> DAMType for Tensor<'a, A, D, N>
 where
     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
     D: Dimension,
+    Tensor<'a, A, D, N>: Default,
 {
     fn dam_size(&self) -> usize {
         self.data.dim().into_dimension().size() * A::SIZE
@@ -166,14 +168,20 @@ where
     }
 }
 
-impl<'a, A, D, const N: usize> Default for Tensor<'a, A, D, N>
+impl<'a, A, const N: usize> Default for Tensor<'a, A, Ix1, N>
 where
-    A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
-    D: Dimension,
+    A: DAMType,
+    // D: Dimension, // ArrayBase<OwnedRepr<A>, Ix1>: Zero, // Add<&'a ArrayBase<OwnedRepr<A>, D>, Output = ArrayBase<OwnedRepr<A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
+    Ix1: Dimension,
 {
     fn default() -> Self {
-        Tensor {
-            data: CowArray::from(Array::zeros(Shape::from(D::default()))),
+        // let data = Array::zeros(Dim(N).into_dimension());
+
+        Tensor::<'a, A, Ix1, N> {
+            // data: CowArray::from(Array::zeros(Shape::from(Ix1(N)).into_shape())),
+            // data: data.into(),
+            // data: CowArray::from(Array::from_vec(chunk.into_iter().collect::<Vec<_>>())),
+            data: CowArray::from(Array::from_vec(vec![A::default(); N])),
         }
     }
 }

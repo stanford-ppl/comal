@@ -30,7 +30,7 @@ type VT = Tensor<'static, f32, Ix1, 2>;
 
 #[test]
 fn test_mat_elemadd() {
-    let test_name = "mat_elemadd1";
+    let test_name = "mat_elemadd_vec";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
