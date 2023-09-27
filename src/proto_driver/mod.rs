@@ -314,7 +314,8 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> Program<'
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
-                let in_outer_crd = get_crd_id(&op.input_outer_crd);
+                // let in_outer_crd = get_crd_id(&op.input_outer_crds);
+                let in_outer_crd = op.input_outer_crds[0].try_conv();
                 let in_val_id = get_val_id(&op.input_val);
 
                 let spacc_data = Spacc1Data {
@@ -332,6 +333,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> Program<'
                 parent.add_child(ValsWrScan::new(val_receiver));
             }
             Op::CoordMask(_) => unimplemented!("Custard can't output coord mask op yet"),
+            operation::Op::Func(_) => todo!(),
         }
     }
     parent
