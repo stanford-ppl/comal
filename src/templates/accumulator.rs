@@ -2,10 +2,7 @@ use core::hash::Hash;
 use std::collections::BTreeMap;
 
 // use crate::{channel::utils::peek_next, context::Context};
-use dam_core::identifier::Identifier;
-use dam_core::metric::LogProducer;
-use dam_core::TimeManager;
-use dam_macros::{cleanup, identifiable, log_producer, time_managed};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 // use crate::{
 //     channel::{
@@ -15,8 +12,6 @@ use dam_macros::{cleanup, identifiable, log_producer, time_managed};
 //     types::{Cleanable, DAMType},
 // };
 
-use dam_rs::{channel::{Receiver, Sender, utils::{dequeue, enqueue, peek_next}, ChannelElement}, types::{DAMType, Cleanable}, context::Context};
-
 use super::primitive::Token;
 
 pub struct ReduceData<ValType: Clone, StopType: Clone> {
@@ -24,15 +19,7 @@ pub struct ReduceData<ValType: Clone, StopType: Clone> {
     pub out_val: Sender<Token<ValType, StopType>>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Cleanable for ReduceData<ValType, StopType> {
-    fn cleanup(&mut self) {
-        self.in_val.cleanup();
-        self.out_val.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct Reduce<ValType: Clone, StopType: Clone> {
     reduce_data: ReduceData<ValType, StopType>,
 }
@@ -44,8 +31,7 @@ where
     pub fn new(reduce_data: ReduceData<ValType, StopType>) -> Self {
         let red = Reduce {
             reduce_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (red.reduce_data.in_val).attach_receiver(&red);
         (red.reduce_data.out_val).attach_sender(&red);
@@ -117,11 +103,6 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.reduce_data.cleanup();
-    }
 }
 
 pub struct Spacc1Data<CrdType: Clone, ValType: Clone, StopType: Clone> {
@@ -132,21 +113,7 @@ pub struct Spacc1Data<CrdType: Clone, ValType: Clone, StopType: Clone> {
     pub out_crd_inner: Sender<Token<CrdType, StopType>>,
 }
 
-impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType> Cleanable
-    for Spacc1Data<CrdType, ValType, StopType>
-{
-    fn cleanup(&mut self) {
-        self.in_val.cleanup();
-        self.in_crd_outer.cleanup();
-        self.in_crd_inner.cleanup();
-        self.out_val.cleanup();
-        self.out_crd_inner.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
-#[log_producer]
+#[context_macro]
 pub struct Spacc1<CrdType: Clone, ValType: Clone, StopType: Clone> {
     spacc1_data: Spacc1Data<CrdType, ValType, StopType>,
 }
@@ -158,8 +125,7 @@ where
     pub fn new(spacc1_data: Spacc1Data<CrdType, ValType, StopType>) -> Self {
         let red = Spacc1 {
             spacc1_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (red.spacc1_data.in_crd_outer).attach_receiver(&red);
         (red.spacc1_data.in_crd_inner).attach_receiver(&red);
@@ -244,7 +210,6 @@ where
                         );
                         enqueue(&mut self.time, &mut self.spacc1_data.out_val, val_chan_elem)
                             .unwrap();
-                        Self::log(format!("Token: {:?}", value.clone()));
                     }
                     let val_stkn_chan_elem =
                         ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
@@ -264,10 +229,6 @@ where
                     .unwrap();
                     accum_storage.clear();
                     dequeue(&mut self.time, &mut self.spacc1_data.in_crd_outer).unwrap();
-                    Self::log(format!(
-                        "Token: {:?}",
-                        Token::<ValType, StopType>::Stop(stkn.clone())
-                    ));
                 }
                 Token::Done => {
                     let icrd_chan_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
@@ -279,7 +240,6 @@ where
                     .unwrap();
                     let val_chan_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
                     enqueue(&mut self.time, &mut self.spacc1_data.out_val, val_chan_elem).unwrap();
-                    Self::log(format!("Token: {:?}", Token::<ValType, StopType>::Done));
                     return;
                 }
                 _ => {
@@ -289,15 +249,9 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.spacc1_data.cleanup();
-    }
 }
 
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct MaxReduce<ValType: Clone, StopType: Clone> {
     max_reduce_data: ReduceData<ValType, StopType>,
     min_val: ValType,
@@ -311,8 +265,7 @@ where
         let red = MaxReduce {
             max_reduce_data,
             min_val,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (red.max_reduce_data.in_val).attach_receiver(&red);
         (red.max_reduce_data.out_val).attach_sender(&red);
@@ -385,11 +338,6 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.max_reduce_data.cleanup();
     }
 }
 

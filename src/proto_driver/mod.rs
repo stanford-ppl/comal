@@ -21,12 +21,10 @@ use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 
-use dam_rs::channel::{Receiver, Sender};
-use dam_rs::context::broadcast_context::BroadcastContext;
-use dam_rs::context::generator_context::GeneratorContext;
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::{ALUAddOp, ALUDivOp, ALUMulOp, ALUSubOp};
-use dam_rs::types::DAMType;
+use dam::simulation::ProgramBuilder;
+use dam::templates::ops::*;
+use dam::utility_contexts::{BroadcastContext, GeneratorContext};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use proto_headers::tortilla::*;
 
@@ -61,11 +59,11 @@ where
         }
     }
 
-    fn new_channel(parent: &mut Program<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
+    fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
         parent.bounded(1024)
     }
 
-    pub fn get_sender(&mut self, id: u64, parent: &mut Program<'a>) -> Sender<T> {
+    pub fn get_sender(&mut self, id: u64, parent: &mut ProgramBuilder<'a>) -> Sender<T> {
         if id == 0 {
             return parent.void();
         }
@@ -81,7 +79,7 @@ where
             }
         }
     }
-    pub fn get_receiver(&mut self, id: u64, parent: &mut Program<'a>) -> Receiver<T> {
+    pub fn get_receiver(&mut self, id: u64, parent: &mut ProgramBuilder<'a>) -> Receiver<T> {
         match self.map.remove(&id) {
             Some(ChannelType::ReceiverType(res)) => res,
             Some(_) => {
@@ -96,8 +94,8 @@ where
     }
 }
 
-pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> Program<'a> {
-    let mut parent = Program::default();
+pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBuilder<'a> {
+    let mut parent = ProgramBuilder::default();
 
     let mut refmap: Channels<CoordType> = Channels::new();
     let mut crdmap: Channels<CoordType> = Channels::new();

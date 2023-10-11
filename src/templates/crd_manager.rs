@@ -1,16 +1,4 @@
-use core::panic;
-
-use dam_core::{identifier::Identifier, TimeManager};
-use dam_macros::{cleanup, identifiable, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue, peek_next},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -21,17 +9,7 @@ pub struct CrdManagerData<ValType: Clone, StopType: Clone> {
     pub out_crd_outer: Sender<Token<ValType, StopType>>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Cleanable for CrdManagerData<ValType, StopType> {
-    fn cleanup(&mut self) {
-        self.in_crd_inner.cleanup();
-        self.in_crd_outer.cleanup();
-        self.out_crd_inner.cleanup();
-        self.out_crd_outer.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct CrdDrop<ValType: Clone, StopType: Clone> {
     crd_drop_data: CrdManagerData<ValType, StopType>,
 }
@@ -43,8 +21,7 @@ where
     pub fn new(crd_drop_data: CrdManagerData<ValType, StopType>) -> Self {
         let drop = CrdDrop {
             crd_drop_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (drop.crd_drop_data.in_crd_inner).attach_receiver(&drop);
         (drop.crd_drop_data.in_crd_outer).attach_receiver(&drop);
@@ -60,8 +37,9 @@ where
     ValType: DAMType
         + std::ops::Mul<ValType, Output = ValType>
         + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>,
-    StopType: DAMType + std::ops::Add<u32, Output = StopType>,
+        + std::cmp::PartialOrd<ValType>
+        + std::cmp::PartialEq,
+    StopType: DAMType + std::ops::Add<u32, Output = StopType> + std::cmp::PartialEq,
 {
     fn init(&mut self) {}
 
@@ -176,16 +154,9 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.crd_drop_data.cleanup();
-        self.time.cleanup();
-    }
 }
 
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct CrdHold<ValType: Clone, StopType: Clone> {
     crd_hold_data: CrdManagerData<ValType, StopType>,
 }
@@ -197,8 +168,7 @@ where
     pub fn new(crd_hold_data: CrdManagerData<ValType, StopType>) -> Self {
         let hold = CrdHold {
             crd_hold_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (hold.crd_hold_data.in_crd_inner).attach_receiver(&hold);
         (hold.crd_hold_data.in_crd_outer).attach_receiver(&hold);
@@ -291,19 +261,13 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.crd_hold_data.cleanup();
-        self.time.cleanup();
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use dam_rs::context::checker_context::CheckerContext;
-    use dam_rs::context::generator_context::GeneratorContext;
-    use dam_rs::simulation::Program;
+    use dam::simulation::{InitializationOptions, ProgramBuilder, RunOptions};
+    use dam::utility_contexts::*;
+    use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
     use crate::templates::primitive::Token;
     use crate::token_vec;
@@ -384,7 +348,7 @@ mod tests {
         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
         ORT: Iterator<Item = Token<u32, u32>> + 'static,
     {
-        let mut parent = Program::default();
+        let mut parent = ProgramBuilder::default();
         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
@@ -407,8 +371,10 @@ mod tests {
         parent.add_child(out_crd_checker);
         parent.add_child(out_icrd_checker);
         parent.add_child(drop);
-        parent.init();
-        parent.run();
+        parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
     }
 
     fn crd_hold_test<IRT1, IRT2, ORT>(
@@ -420,7 +386,7 @@ mod tests {
         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
         ORT: Iterator<Item = Token<u32, u32>> + 'static,
     {
-        let mut parent = Program::default();
+        let mut parent = ProgramBuilder::default();
         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
@@ -441,7 +407,9 @@ mod tests {
         parent.add_child(icrd_gen);
         parent.add_child(out_crd_checker);
         parent.add_child(drop);
-        parent.init();
-        parent.run();
+        parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
     }
 }

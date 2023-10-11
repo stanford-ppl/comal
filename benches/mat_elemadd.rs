@@ -6,22 +6,20 @@ use comal::templates::joiner::Union;
 use comal::token_vec;
 use criterion::{criterion_group, criterion_main, Criterion};
 
-
 use dam_rs::context::generator_context::GeneratorContext;
 
 use comal::config::Data;
 
-use comal::templates::alu::{make_alu};
+use comal::templates::alu::make_alu;
 use comal::templates::array::{Array, ArrayData};
 
-use comal::templates::joiner::{CrdJoinerData};
-use comal::templates::primitive::{Token};
+use comal::templates::joiner::CrdJoinerData;
+use comal::templates::primitive::Token;
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
-
 
 use comal::templates::utils::read_inputs;
 use dam_rs::simulation::Program;
-use dam_rs::templates::ops::{ALUAddOp};
+use dam_rs::templates::ops::ALUAddOp;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 
@@ -105,7 +103,7 @@ fn load_data(test_name: &str) -> TestData {
     }
 }
 
-fn test_mat_elemadd<'a>(test_data: TestData, chan_size: usize) -> Program<'a> {
+fn test_mat_elemadd<'a>(test_data: TestData, chan_size: usize) -> ProgramBuilder<'a> {
     let mut parent = Program::default();
 
     let b0_crd = test_data.b0_crd;

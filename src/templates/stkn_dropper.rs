@@ -1,20 +1,7 @@
-use dam_core::identifier::Identifier;
-use dam_core::TimeManager;
-use dam_macros::{cleanup, identifiable, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
-
 use super::primitive::Token;
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct StknDrop<ValType: Clone, StopType: Clone> {
     pub in_val: Receiver<Token<ValType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
@@ -31,8 +18,7 @@ where
         let stkn_drop = StknDrop {
             in_val,
             out_val,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (stkn_drop).in_val.attach_receiver(&stkn_drop);
         (stkn_drop).out_val.attach_sender(&stkn_drop);
@@ -82,12 +68,5 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.in_val.cleanup();
-        self.out_val.cleanup();
-        self.time.cleanup();
     }
 }

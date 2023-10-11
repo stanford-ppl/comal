@@ -1,15 +1,4 @@
-use dam_core::identifier::Identifier;
-use dam_core::TimeManager;
-use dam_macros::{cleanup, identifiable, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue, Peekable},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -20,19 +9,7 @@ pub struct ValDropData<CrdType: Clone, ValType: Clone, StopType: Clone> {
     pub out_crd: Sender<Token<CrdType, StopType>>,
 }
 
-impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType> Cleanable
-    for ValDropData<CrdType, ValType, StopType>
-{
-    fn cleanup(&mut self) {
-        self.in_val.cleanup();
-        self.in_crd.cleanup();
-        self.out_val.cleanup();
-        self.out_crd.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct ValDrop<CrdType: Clone, ValType: Clone, StopType: Clone> {
     val_drop_data: ValDropData<CrdType, ValType, StopType>,
 }
@@ -44,8 +21,7 @@ where
     pub fn new(array_data: ValDropData<CrdType, ValType, StopType>) -> Self {
         let val_drop = ValDrop {
             val_drop_data: array_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (val_drop.val_drop_data.in_val).attach_receiver(&val_drop);
         (val_drop.val_drop_data.in_crd).attach_receiver(&val_drop);
@@ -135,12 +111,6 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.val_drop_data.cleanup();
-        self.time.cleanup();
     }
 }
 

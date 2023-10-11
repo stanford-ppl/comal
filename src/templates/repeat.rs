@@ -1,16 +1,4 @@
-use dam_core::identifier::Identifier;
-
-use dam_core::TimeManager;
-use dam_macros::{cleanup, identifiable, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue, peek_next},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::{Repsiggen, Token};
 
@@ -20,17 +8,7 @@ pub struct RepeatData<ValType: Clone, StopType: Clone> {
     pub out_ref: Sender<Token<ValType, StopType>>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Cleanable for RepeatData<ValType, StopType> {
-    fn cleanup(&mut self) {
-        self.in_ref.cleanup();
-        self.in_repsig.cleanup();
-        self.out_ref.cleanup();
-    }
-}
-
-// #[log_producer]
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct Repeat<ValType: Clone, StopType: Clone> {
     repeat_data: RepeatData<ValType, StopType>,
 }
@@ -42,8 +20,7 @@ where
     pub fn new(repeat_data: RepeatData<ValType, StopType>) -> Self {
         let repeat = Repeat {
             repeat_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (repeat.repeat_data.in_ref).attach_receiver(&repeat);
         (repeat.repeat_data.in_repsig).attach_receiver(&repeat);
@@ -116,12 +93,6 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.repeat_data.cleanup();
-        self.time.cleanup();
-    }
 }
 
 pub struct RepSigGenData<ValType: Clone, StopType: Clone> {
@@ -129,15 +100,7 @@ pub struct RepSigGenData<ValType: Clone, StopType: Clone> {
     pub out_repsig: Sender<Repsiggen>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Cleanable for RepSigGenData<ValType, StopType> {
-    fn cleanup(&mut self) {
-        self.input.cleanup();
-        self.out_repsig.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct RepeatSigGen<ValType: Clone, StopType: Clone> {
     rep_sig_gen_data: RepSigGenData<ValType, StopType>,
 }
@@ -149,8 +112,7 @@ where
     pub fn new(rep_sig_gen_data: RepSigGenData<ValType, StopType>) -> Self {
         let rep_sig_gen = RepeatSigGen {
             rep_sig_gen_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (rep_sig_gen.rep_sig_gen_data.input).attach_receiver(&rep_sig_gen);
         (rep_sig_gen.rep_sig_gen_data.out_repsig).attach_sender(&rep_sig_gen);
@@ -212,12 +174,6 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.rep_sig_gen_data.cleanup();
-        self.time.cleanup();
     }
 }
 

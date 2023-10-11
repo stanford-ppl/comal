@@ -4,7 +4,7 @@ use std::{
     str::FromStr,
 };
 
-use dam_rs::types::{DAMType, StaticallySized};
+use dam::types::{DAMType, StaticallySized};
 use itertools::Itertools;
 use ndarray::ShapeBuilder;
 use ndarray::{

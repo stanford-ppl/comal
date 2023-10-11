@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 // use std::sync::{Arc, Mutex};
 
-use dam_rs::types::DAMType;
+use dam::types::DAMType;
 
 use super::tensor::Adapter;
 

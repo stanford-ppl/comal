@@ -8,7 +8,7 @@
 //     types::{self, DAMType},
 // };
 
-use dam_rs::{
+use dam::{
     channel::{Receiver, Sender},
     context::Context,
     templates::{ops::ALUOp, pcu::*},

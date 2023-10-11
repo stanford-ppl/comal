@@ -1,15 +1,4 @@
-use dam_core::identifier::Identifier;
-use dam_core::TimeManager;
-use dam_macros::{cleanup, identifiable, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue, peek_next},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -19,23 +8,13 @@ pub struct RdScanData<ValType: Clone, StopType: Clone> {
     pub out_crd: Sender<Token<ValType, StopType>>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Cleanable for RdScanData<ValType, StopType> {
-    fn cleanup(&mut self) {
-        self.in_ref.cleanup();
-        self.out_ref.cleanup();
-        self.out_crd.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct UncompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     rd_scan_data: RdScanData<ValType, StopType>,
     meta_dim: ValType,
 }
 
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     rd_scan_data: RdScanData<ValType, StopType>,
     seg_arr: Vec<ValType>,
@@ -53,8 +32,7 @@ where
         let ucr = UncompressedCrdRdScan {
             rd_scan_data,
             meta_dim,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
@@ -77,8 +55,7 @@ where
             rd_scan_data,
             seg_arr,
             crd_arr,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
@@ -212,12 +189,6 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.rd_scan_data.cleanup();
-        self.time.cleanup();
-    }
 }
 
 impl<ValType, StopType> Context for CompressedCrdRdScan<ValType, StopType>
@@ -350,12 +321,6 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.rd_scan_data.cleanup();
-        self.time.cleanup();
     }
 }
 

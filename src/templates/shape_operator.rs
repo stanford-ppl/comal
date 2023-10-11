@@ -1,16 +1,4 @@
-use core::panic;
-
-use dam_core::{identifier::Identifier, TimeManager};
-use dam_macros::{cleanup, identifiable, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue, peek_next},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -20,16 +8,7 @@ pub struct FlattenData<ValType: Clone, StopType: Clone> {
     pub out_crd: Sender<Token<ValType, StopType>>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Cleanable for FlattenData<ValType, StopType> {
-    fn cleanup(&mut self) {
-        self.in_crd_inner.cleanup();
-        self.in_crd_outer.cleanup();
-        self.out_crd.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct Flatten<ValType: Clone, StopType: Clone> {
     flatten_data: FlattenData<ValType, StopType>,
     split_factor: u32,
@@ -43,8 +22,7 @@ where
         let flat = Flatten {
             flatten_data,
             split_factor,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (flat.flatten_data.in_crd_inner).attach_receiver(&flat);
         (flat.flatten_data.in_crd_outer).attach_receiver(&flat);
@@ -128,12 +106,6 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.flatten_data.cleanup();
-        self.time.cleanup();
     }
 }
 

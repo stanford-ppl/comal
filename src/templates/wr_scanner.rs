@@ -1,17 +1,8 @@
-use dam_core::{identifier::Identifier, TimeManager};
-use dam_macros::{cleanup, identifiable, log_producer, time_managed};
-
-use dam_rs::{
-    channel::{utils::dequeue, Receiver},
-    context::Context,
-    metric::LogProducer,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct CompressedWrScan<ValType: Clone, StopType: Clone> {
     pub input: Receiver<Token<ValType, StopType>>,
     pub seg_arr: Vec<ValType>,
@@ -27,8 +18,7 @@ where
             input,
             seg_arr: vec![],
             crd_arr: vec![],
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (cwr).input.attach_receiver(&cwr);
 
@@ -83,17 +73,9 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.input.cleanup();
-        self.time.cleanup();
-    }
 }
 
-#[log_producer]
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct ValsWrScan<ValType: Clone, StopType: Clone> {
     pub input: Receiver<Token<ValType, StopType>>,
     pub out_val: Vec<ValType>,
@@ -107,8 +89,7 @@ where
         let vals = ValsWrScan {
             input,
             out_val: vec![],
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (vals.input).attach_receiver(&vals);
 
@@ -128,7 +109,6 @@ where
             match dequeue(&mut self.time, &mut self.input) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
-                        Self::log(format!("{:?}", val.clone()));
                         self.out_val.push(val);
                     }
                     Token::Empty | Token::Stop(_) => {
@@ -142,11 +122,5 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.input.cleanup();
-        self.time.cleanup();
     }
 }

@@ -1,9 +1,4 @@
-use dam_rs::{channel::{utils::{dequeue, enqueue, peek_next}, ChannelElement, Receiver, Sender}, context::Context, types::{Cleanable, DAMType}};
-use dam_core::identifier::Identifier;
-use dam_core::TimeManager;
-use dam_macros::cleanup;
-use dam_macros::identifiable;
-use dam_macros::time_managed;
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -16,19 +11,7 @@ pub struct CrdMaskData<ValType: Clone, StopType: Clone> {
     pub out_ref_inner: Sender<Token<ValType, StopType>>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Cleanable for CrdMaskData<ValType, StopType> {
-    fn cleanup(&mut self) {
-        self.in_crd_inner.cleanup();
-        self.in_crd_outer.cleanup();
-        self.in_ref_inner.cleanup();
-        self.out_crd_inner.cleanup();
-        self.out_crd_outer.cleanup();
-        self.out_ref_inner.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct CrdMask<ValType: Clone, StopType: Clone> {
     crd_mask_data: CrdMaskData<ValType, StopType>,
     predicate: fn(Token<ValType, StopType>, Token<ValType, StopType>) -> bool,
@@ -45,8 +28,7 @@ where
         let mask = CrdMask {
             crd_mask_data,
             predicate,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (mask.crd_mask_data.in_crd_inner).attach_receiver(&mask);
         (mask.crd_mask_data.in_crd_outer).attach_receiver(&mask);
@@ -190,12 +172,6 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.crd_mask_data.cleanup();
-        self.time.cleanup();
     }
 }
 

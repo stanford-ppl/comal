@@ -4,11 +4,9 @@ use std::marker::PhantomData;
 use std::ops::Mul;
 use std::str::FromStr;
 
-use dam_rs::templates::ops::ALUOp;
-use dam_rs::templates::ops::PipelineRegister;
-use dam_rs::types::DAMType;
-use dam_rs::types::StaticallySized;
-use dam_rs::RegisterALUOp;
+use dam::templates::ops::*;
+use dam::RegisterALUOp;
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 use itertools::Itertools;
 use ndarray::Array;
 use ndarray::CowArray;

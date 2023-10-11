@@ -133,7 +133,7 @@ fn test_par_multihead_attention<'a, ValType>(
     par_factor: usize,
     with_flavor: bool,
     min_val: ValType,
-) -> Program<'a>
+) -> ProgramBuilder<'a>
 where
     ValType: DAMType
         + std::ops::Mul<Output = ValType>

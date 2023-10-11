@@ -1,21 +1,9 @@
-use dam_core::identifier::Identifier;
-use dam_core::metric::LogProducer;
-use dam_macros::{cleanup, identifiable, log_producer, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
 // #[log_producer]
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct Scatter<ValType: Clone, StopType: Clone> {
     receiver: Receiver<Token<ValType, StopType>>,
     targets: Vec<Sender<Token<ValType, StopType>>>,
@@ -78,12 +66,6 @@ where
             }
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.receiver.cleanup();
-        self.targets.iter_mut().for_each(|target| target.cleanup());
-    }
 }
 
 impl<ValType: DAMType, StopType: DAMType> Scatter<ValType, StopType>
@@ -94,8 +76,7 @@ where
         let x = Self {
             receiver,
             targets: vec![],
-            identifier: Identifier::new(),
-            time: Default::default(),
+            context_info: Default::default(),
         };
         x.receiver.attach_receiver(&x);
         x
@@ -107,9 +88,7 @@ where
     }
 }
 
-#[time_managed]
-#[identifiable]
-#[log_producer]
+#[context_macro]
 pub struct Gather<ValType: Clone, StopType: Clone> {
     targets: Vec<Receiver<Token<ValType, StopType>>>,
     merged: Sender<Token<ValType, StopType>>,
@@ -144,11 +123,7 @@ where
                         ChannelElement::new(self.time.tick() + 1, Token::Stop(out_stkn.clone()));
                     enqueue(&mut self.time, &mut self.merged, channel_elem).unwrap();
                     target_idx = (target_idx + 1) % self.targets.len();
-                    Self::log(format!(
-                        "tg: {:?}, tkn: {:?}",
-                        target_idx,
-                        Token::<ValType, StopType>::Stop(out_stkn.clone())
-                    ));
+
                     // for (idx, chan) in self.targets.iter_mut().enumerate() {
                     //     if idx == target_idx {
                     //         continue;
@@ -158,11 +133,9 @@ where
                 }
                 Token::Val(_) => {
                     let channel_elem = ChannelElement::new(self.time.tick() + 1, output.clone());
-                    Self::log(format!("tg: {:?}, tkn: {:?}", target_idx, output.clone()));
                     enqueue(&mut self.time, &mut self.merged, channel_elem).unwrap();
                 }
                 Token::Done => {
-                    Self::log(format!("tg: {:?}, tkn: {:?}", target_idx, output.clone()));
                     if target_idx == self.targets.len() - 1 {
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + 1, output.clone());
@@ -176,12 +149,6 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.merged.cleanup();
-        self.targets.iter_mut().for_each(|target| target.cleanup());
-    }
 }
 
 impl<ValType: DAMType, StopType: DAMType> Gather<ValType, StopType>
@@ -192,8 +159,7 @@ where
         let x = Self {
             merged,
             targets: vec![],
-            identifier: Identifier::new(),
-            time: Default::default(),
+            context_info: Default::default(),
         };
         x.merged.attach_sender(&x);
         x

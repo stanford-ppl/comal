@@ -1,14 +1,4 @@
-use dam_core::{identifier::Identifier, TimeManager};
-use dam_macros::{cleanup, identifiable, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue, peek_next},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -22,20 +12,7 @@ pub struct CrdJoinerData<ValType: Clone, StopType: Clone> {
     pub out_crd: Sender<Token<ValType, StopType>>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Cleanable for CrdJoinerData<ValType, StopType> {
-    fn cleanup(&mut self) {
-        self.in_crd1.cleanup();
-        self.in_ref1.cleanup();
-        self.in_crd2.cleanup();
-        self.in_ref2.cleanup();
-        self.out_ref1.cleanup();
-        self.out_ref2.cleanup();
-        self.out_crd.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct Intersect<ValType: Clone, StopType: Clone> {
     intersect_data: CrdJoinerData<ValType, StopType>,
 }
@@ -47,8 +24,7 @@ where
     pub fn new(intersect_data: CrdJoinerData<ValType, StopType>) -> Self {
         let int = Intersect {
             intersect_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (int.intersect_data.in_crd1).attach_receiver(&int);
         (int.intersect_data.in_ref1).attach_receiver(&int);
@@ -234,16 +210,9 @@ where
             self.time.incr_cycles(1);
         }
     }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.intersect_data.cleanup();
-        self.time.cleanup();
-    }
 }
 
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct Union<ValType: Clone, StopType: Clone> {
     union_data: CrdJoinerData<ValType, StopType>,
 }
@@ -255,8 +224,7 @@ where
     pub fn new(union_data: CrdJoinerData<ValType, StopType>) -> Self {
         let int = Union {
             union_data,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (int.union_data.in_crd1).attach_receiver(&int);
         (int.union_data.in_ref1).attach_receiver(&int);
@@ -480,12 +448,6 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.union_data.cleanup();
-        self.time.cleanup();
     }
 }
 

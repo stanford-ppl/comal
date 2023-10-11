@@ -1,14 +1,4 @@
-use dam_core::{identifier::Identifier, TimeManager};
-use dam_macros::{cleanup, identifiable, time_managed};
-
-use dam_rs::{
-    channel::{
-        utils::{dequeue, enqueue},
-        ChannelElement, Receiver, Sender,
-    },
-    context::Context,
-    types::{Cleanable, DAMType},
-};
+use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -17,17 +7,7 @@ pub struct ArrayData<RefType: Clone, ValType: Clone, StopType: Clone> {
     pub out_val: Sender<Token<ValType, StopType>>,
 }
 
-impl<RefType: DAMType, ValType: DAMType, StopType: DAMType> Cleanable
-    for ArrayData<RefType, ValType, StopType>
-{
-    fn cleanup(&mut self) {
-        self.in_ref.cleanup();
-        self.out_val.cleanup();
-    }
-}
-
-#[time_managed]
-#[identifiable]
+#[context_macro]
 pub struct Array<RefType: Clone, ValType: Clone, StopType: Clone> {
     array_data: ArrayData<RefType, ValType, StopType>,
     val_arr: Vec<ValType>,
@@ -41,8 +21,7 @@ where
         let arr = Array {
             array_data,
             val_arr,
-            time: TimeManager::default(),
-            identifier: Identifier::new(),
+            context_info: Default::default(),
         };
         (arr.array_data.in_ref).attach_receiver(&arr);
         (arr.array_data.out_val).attach_sender(&arr);
@@ -105,12 +84,6 @@ where
             }
             self.time.incr_cycles(1);
         }
-    }
-
-    #[cleanup(time_managed)]
-    fn cleanup(&mut self) {
-        self.array_data.cleanup();
-        self.time.cleanup();
     }
 }
 

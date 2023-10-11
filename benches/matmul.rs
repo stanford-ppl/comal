@@ -104,7 +104,7 @@ fn load_data(test_name: &str) -> TestData {
     }
 }
 
-fn matmul<'a>(test_data: TestData, chan_size: usize, with_flavor: bool) -> Program<'a> {
+fn matmul<'a>(test_data: TestData, chan_size: usize, with_flavor: bool) -> ProgramBuilder<'a> {
     let mut parent = Program::default();
 
     let b0_crd = test_data.b0_crd;
