@@ -17,14 +17,13 @@ use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
-use dam_rs::context::broadcast_context::BroadcastContext;
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::templates::primitive::Token;
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::{ALUDivOp, ALUMulOp, ALUSubOp};
+use dam::simulation::*;
+use dam::templates::ops::{ALUDivOp, ALUMulOp, ALUSubOp};
 
-use dam_rs::types::DAMType;
+use dam::types::DAMType;
 
 #[derive(Clone)]
 struct TestData<ValType> {
@@ -133,8 +132,7 @@ fn test_par_multihead_attention<'a, ValType>(
     par_factor: usize,
     with_flavor: bool,
     min_val: ValType,
-) -> ProgramBuilder<'a>
-where
+) where
     ValType: DAMType
         + std::ops::Mul<Output = ValType>
         + std::ops::Add<Output = ValType>
@@ -146,10 +144,10 @@ where
         + Exp
         + num::Num
         + 'a
-        + dam_rs::types::StaticallySized
+        + dam::types::StaticallySized
         + 'static,
 {
-    let mut parent = Program::default();
+    let mut parent = ProgramBuilder::default();
 
     let q0_seg = test_data.q0_seg;
     let q0_crd = test_data.q0_crd;
@@ -852,12 +850,22 @@ where
     let xvals = ValsWrScan::<ValType, u32>::new(out_final_val_receiver);
     // let xvals = ValsWrScan::<f32, u32>::new(out_spacc_val_receiver);
     parent.add_child(xvals);
-    parent.set_inference(with_flavor);
-    parent.init();
-    parent.run();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(with_flavor)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
 
-    // dbg!(parent.elapsed_cycles());
-    parent
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }
 
 pub fn mha_par_benchmark_large(c: &mut Criterion) {

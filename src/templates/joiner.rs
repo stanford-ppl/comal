@@ -58,10 +58,10 @@ where
         // let mut get_crd2: bool = false;
 
         loop {
-            let crd1_deq = peek_next(&mut self.time, &mut self.intersect_data.in_crd1);
-            let crd2_deq = peek_next(&mut self.time, &mut self.intersect_data.in_crd2);
-            let ref1_deq = peek_next(&mut self.time, &mut self.intersect_data.in_ref1);
-            let ref2_deq = peek_next(&mut self.time, &mut self.intersect_data.in_ref2);
+            let crd1_deq = self.intersect_data.in_crd1.peek_next(&self.time);
+            let crd2_deq = self.intersect_data.in_crd2.peek_next(&self.time);
+            let ref1_deq = self.intersect_data.in_ref1.peek_next(&self.time);
+            let ref2_deq = self.intersect_data.in_ref2.peek_next(&self.time);
 
             match (crd1_deq, crd2_deq) {
                 (Ok(crd1), Ok(crd2)) => {
@@ -71,42 +71,39 @@ where
                         (Token::Val(crd1), Token::Val(crd2)) => match (crd1, crd2) {
                             (crd1, crd2) if crd1 == crd2 => {
                                 let curr_time = self.time.tick();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.intersect_data.out_crd,
-                                    ChannelElement::new(curr_time + 1, Token::Val(crd1)),
-                                )
-                                .unwrap();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.intersect_data.out_ref1,
-                                    ChannelElement::new(curr_time + 1, ref1),
-                                )
-                                .unwrap();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.intersect_data.out_ref2,
-                                    ChannelElement::new(curr_time + 1, ref2),
-                                )
-                                .unwrap();
+                                self.intersect_data
+                                    .out_crd
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(curr_time + 1, Token::Val(crd1)),
+                                    )
+                                    .unwrap();
+                                self.intersect_data
+                                    .out_ref1
+                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                    .unwrap();
+                                self.intersect_data
+                                    .out_ref2
+                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                    .unwrap();
                                 // get_crd1 = true;
                                 // get_crd2 = true;
-                                dequeue(&mut self.time, &mut self.intersect_data.in_crd1).unwrap();
-                                dequeue(&mut self.time, &mut self.intersect_data.in_ref1).unwrap();
-                                dequeue(&mut self.time, &mut self.intersect_data.in_crd2).unwrap();
-                                dequeue(&mut self.time, &mut self.intersect_data.in_ref2).unwrap();
+                                self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
+                                self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
+                                self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
+                                self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
                             }
                             (crd1, crd2) if crd1 < crd2 => {
                                 // get_crd1 = true;
                                 // get_crd2 = false;
-                                dequeue(&mut self.time, &mut self.intersect_data.in_crd1).unwrap();
-                                dequeue(&mut self.time, &mut self.intersect_data.in_ref1).unwrap();
+                                self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
+                                self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
                             }
                             (crd1, crd2) if crd1 > crd2 => {
                                 // get_crd1 = false;
                                 // get_crd2 = true;
-                                dequeue(&mut self.time, &mut self.intersect_data.in_crd2).unwrap();
-                                dequeue(&mut self.time, &mut self.intersect_data.in_ref2).unwrap();
+                                self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
+                                self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
                             }
                             (_, _) => {
                                 panic!("Unexpected case found in val comparison");
@@ -115,87 +112,81 @@ where
                         (Token::Val(_), Token::Stop(_)) => {
                             // get_crd1 = true;
                             // get_crd2 = false;
-                            dequeue(&mut self.time, &mut self.intersect_data.in_crd1).unwrap();
-                            dequeue(&mut self.time, &mut self.intersect_data.in_ref1).unwrap();
+                            self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
+                            self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
                         }
                         (Token::Val(_), Token::Done) | (Token::Done, Token::Val(_)) => {
                             let curr_time = self.time.tick();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_crd,
-                                ChannelElement::new(curr_time + 1, Token::Done),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_ref1,
-                                ChannelElement::new(curr_time + 1, Token::Done),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_ref2,
-                                ChannelElement::new(curr_time + 1, Token::Done),
-                            )
-                            .unwrap();
+                            self.intersect_data
+                                .out_crd
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Done),
+                                )
+                                .unwrap();
+                            self.intersect_data
+                                .out_ref1
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Done),
+                                )
+                                .unwrap();
+                            self.intersect_data
+                                .out_ref2
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Done),
+                                )
+                                .unwrap();
                         }
                         (Token::Stop(_), Token::Val(_)) => {
                             // get_crd1 = false;
                             // get_crd2 = true;
-                            dequeue(&mut self.time, &mut self.intersect_data.in_crd2).unwrap();
-                            dequeue(&mut self.time, &mut self.intersect_data.in_ref2).unwrap();
+                            self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
+                            self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
                         }
                         (Token::Stop(stkn1), Token::Stop(stkn2)) => {
                             assert_eq!(stkn1, stkn2);
                             let curr_time = self.time.tick();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_crd,
-                                ChannelElement::new(curr_time + 1, Token::Stop(stkn1)),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_ref1,
-                                ChannelElement::new(curr_time + 1, ref1),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_ref2,
-                                ChannelElement::new(curr_time + 1, ref2),
-                            )
-                            .unwrap();
+                            self.intersect_data
+                                .out_crd
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn1)),
+                                )
+                                .unwrap();
+                            self.intersect_data
+                                .out_ref1
+                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                .unwrap();
+                            self.intersect_data
+                                .out_ref2
+                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                .unwrap();
                             // get_crd1 = true;
                             // get_crd2 = true;
-                            dequeue(&mut self.time, &mut self.intersect_data.in_crd1).unwrap();
-                            dequeue(&mut self.time, &mut self.intersect_data.in_ref1).unwrap();
-                            dequeue(&mut self.time, &mut self.intersect_data.in_crd2).unwrap();
-                            dequeue(&mut self.time, &mut self.intersect_data.in_ref2).unwrap();
+                            self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
+                            self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
+                            self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
+                            self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
                         }
                         (tkn @ Token::Empty, Token::Val(_))
                         | (Token::Val(_), tkn @ Token::Empty)
                         | (tkn @ Token::Done, Token::Done) => {
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, tkn.clone());
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_crd,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_ref1,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.intersect_data.out_ref2,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
+                            self.intersect_data
+                                .out_crd
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
+                            self.intersect_data
+                                .out_ref1
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
+                            self.intersect_data
+                                .out_ref2
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
                             if tkn.clone() == Token::Done {
                                 return;
                             }
@@ -257,17 +248,17 @@ where
 
         loop {
             if get_crd1 == true {
-                dequeue(&mut self.time, &mut self.union_data.in_crd1).unwrap();
-                dequeue(&mut self.time, &mut self.union_data.in_ref1).unwrap();
+                self.union_data.in_crd1.dequeue(&self.time).unwrap();
+                self.union_data.in_ref1.dequeue(&self.time).unwrap();
             }
             if get_crd2 == true {
-                dequeue(&mut self.time, &mut self.union_data.in_crd2).unwrap();
-                dequeue(&mut self.time, &mut self.union_data.in_ref2).unwrap();
+                self.union_data.in_crd2.dequeue(&self.time).unwrap();
+                self.union_data.in_ref2.dequeue(&self.time).unwrap();
             }
-            let ref1_deq = peek_next(&mut self.time, &mut self.union_data.in_ref1);
-            let ref2_deq = peek_next(&mut self.time, &mut self.union_data.in_ref2);
-            let crd1_deq = peek_next(&mut self.time, &mut self.union_data.in_crd1);
-            let crd2_deq = peek_next(&mut self.time, &mut self.union_data.in_crd2);
+            let ref1_deq = self.union_data.in_ref1.peek_next(&self.time);
+            let ref2_deq = self.union_data.in_ref2.peek_next(&self.time);
+            let crd1_deq = self.union_data.in_crd1.peek_next(&self.time);
+            let crd2_deq = self.union_data.in_crd2.peek_next(&self.time);
 
             match (crd1_deq, crd2_deq) {
                 (Ok(crd1), Ok(crd2)) => {
@@ -277,70 +268,67 @@ where
                     match (crd1.data, crd2.data) {
                         (Token::Val(crd1), Token::Val(crd2)) => match (crd1, crd2) {
                             (crd1, crd2) if crd1 == crd2 => {
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_crd,
-                                    ChannelElement::new(curr_time + 1, Token::Val(crd1)),
-                                )
-                                .unwrap();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_ref1,
-                                    ChannelElement::new(curr_time + 1, ref1),
-                                )
-                                .unwrap();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_ref2,
-                                    ChannelElement::new(curr_time + 1, ref2),
-                                )
-                                .unwrap();
+                                self.union_data
+                                    .out_crd
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(curr_time + 1, Token::Val(crd1)),
+                                    )
+                                    .unwrap();
+                                self.union_data
+                                    .out_ref1
+                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                    .unwrap();
+                                self.union_data
+                                    .out_ref2
+                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                    .unwrap();
                                 get_crd1 = true;
                                 get_crd2 = true;
-                                // dequeue(&mut self.time, &mut self.union_data.in_crd1).unwrap();
-                                // dequeue(&mut self.time, &mut self.union_data.in_ref1).unwrap();
+                                // self.union_data.in_crd1.dequeue(&self.time).unwrap();
+                                // self.union_data.in_ref1.dequeue(&self.time).unwrap();
                             }
                             (crd1, crd2) if crd1 < crd2 => {
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_crd,
-                                    ChannelElement::new(curr_time + 1, Token::Val(crd1)),
-                                )
-                                .unwrap();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_ref1,
-                                    ChannelElement::new(curr_time + 1, ref1),
-                                )
-                                .unwrap();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_ref2,
-                                    ChannelElement::new(curr_time + 1, Token::Empty),
-                                )
-                                .unwrap();
+                                self.union_data
+                                    .out_crd
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(curr_time + 1, Token::Val(crd1)),
+                                    )
+                                    .unwrap();
+                                self.union_data
+                                    .out_ref1
+                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                    .unwrap();
+                                self.union_data
+                                    .out_ref2
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(curr_time + 1, Token::Empty),
+                                    )
+                                    .unwrap();
                                 get_crd1 = true;
                                 get_crd2 = false;
                             }
                             (crd1, crd2) if crd1 > crd2 => {
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_crd,
-                                    ChannelElement::new(curr_time + 1, Token::Val(crd1)),
-                                )
-                                .unwrap();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_ref1,
-                                    ChannelElement::new(curr_time + 1, Token::Empty),
-                                )
-                                .unwrap();
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.union_data.out_ref2,
-                                    ChannelElement::new(curr_time + 1, ref2),
-                                )
-                                .unwrap();
+                                self.union_data
+                                    .out_crd
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(curr_time + 1, Token::Val(crd1)),
+                                    )
+                                    .unwrap();
+                                self.union_data
+                                    .out_ref1
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(curr_time + 1, Token::Empty),
+                                    )
+                                    .unwrap();
+                                self.union_data
+                                    .out_ref2
+                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                    .unwrap();
                                 get_crd1 = false;
                                 get_crd2 = true;
                             }
@@ -349,24 +337,24 @@ where
                             }
                         },
                         (Token::Val(crd1), Token::Stop(_)) | (Token::Val(crd1), Token::Empty) => {
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_crd,
-                                ChannelElement::new(curr_time + 1, Token::Val(crd1)),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_ref1,
-                                ChannelElement::new(curr_time + 1, ref1),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_ref2,
-                                ChannelElement::new(curr_time + 1, Token::Empty),
-                            )
-                            .unwrap();
+                            self.union_data
+                                .out_crd
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Val(crd1)),
+                                )
+                                .unwrap();
+                            self.union_data
+                                .out_ref1
+                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                .unwrap();
+                            self.union_data
+                                .out_ref2
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Empty),
+                                )
+                                .unwrap();
                             get_crd1 = true;
                             get_crd2 = false;
                         }
@@ -375,67 +363,58 @@ where
                         | (Token::Done, Token::Done) => {
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, Token::Done);
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_crd,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_ref1,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_ref2,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
+                            self.union_data
+                                .out_crd
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
+                            self.union_data
+                                .out_ref1
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
+                            self.union_data
+                                .out_ref2
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
                             return;
                         }
                         (Token::Stop(_), Token::Val(crd2)) | (Token::Empty, Token::Val(crd2)) => {
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_crd,
-                                ChannelElement::new(curr_time + 1, Token::Val(crd2)),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_ref1,
-                                ChannelElement::new(curr_time + 1, Token::Empty),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_ref2,
-                                ChannelElement::new(curr_time + 1, ref2),
-                            )
-                            .unwrap();
+                            self.union_data
+                                .out_crd
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Val(crd2)),
+                                )
+                                .unwrap();
+                            self.union_data
+                                .out_ref1
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Empty),
+                                )
+                                .unwrap();
+                            self.union_data
+                                .out_ref2
+                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                .unwrap();
                             get_crd1 = false;
                             get_crd2 = true;
                         }
                         (Token::Stop(stkn1), Token::Stop(_)) => {
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_crd,
-                                ChannelElement::new(curr_time + 1, Token::Stop(stkn1)),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_ref1,
-                                ChannelElement::new(curr_time + 1, ref1),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.union_data.out_ref2,
-                                ChannelElement::new(curr_time + 1, ref2),
-                            )
-                            .unwrap();
+                            self.union_data
+                                .out_crd
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn1)),
+                                )
+                                .unwrap();
+                            self.union_data
+                                .out_ref1
+                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                .unwrap();
+                            self.union_data
+                                .out_ref2
+                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                .unwrap();
                             get_crd1 = true;
                             get_crd2 = true;
                         }
@@ -523,7 +502,7 @@ where
 //     {
 //         let chan_size = 4;
 
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_crd1_sender, in_crd1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
 //         let (in_crd2_sender, in_crd2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
 //         let (in_ref1_sender, in_ref1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
@@ -579,7 +558,7 @@ where
 //         ORT2: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT3: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_crd1_sender, in_crd1_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (in_crd2_sender, in_crd2_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (in_ref1_sender, in_ref1_receiver) = parent.unbounded::<Token<u32, u32>>();

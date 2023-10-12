@@ -211,7 +211,7 @@ pub fn make_unary_alu<ValType: DAMType, StopType: DAMType>(
 
 //     #[test]
 //     fn alu_test() {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (arg1_send, arg1_recv) = parent.unbounded::<Token<u32, u32>>();
 //         let (arg2_send, arg2_recv) = parent.unbounded::<Token<u32, u32>>();
 //         let (pcu_out_send, pcu_out_recv) = parent.unbounded::<Token<u32, u32>>();
@@ -253,7 +253,7 @@ pub fn make_unary_alu<ValType: DAMType, StopType: DAMType>(
 
 //     #[test]
 //     fn exp_test() {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (arg1_send, arg1_recv) = parent.unbounded::<Token<f32, u32>>();
 //         let (pcu_out_send, pcu_out_recv) = parent.unbounded::<Token<f32, u32>>();
 //         let unary_alu = make_unary_alu(arg1_recv, pcu_out_send, ALUExpOp());

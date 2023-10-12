@@ -55,11 +55,10 @@ where
         let mut has_crd = false;
         // let icrd_vec: Vec<Token<ValType, StopType>> = Vec::new();
         loop {
-            let out_ocrd = peek_next(&mut self.time, &mut self.crd_mask_data.in_crd_outer);
-            match dequeue(&mut self.time, &mut self.crd_mask_data.in_crd_inner) {
+            let out_ocrd = self.crd_mask_data.in_crd_outer.peek_next(&self.time);
+            match self.crd_mask_data.in_crd_inner.dequeue(&self.time) {
                 Ok(curr_in) => {
-                    let curr_iref =
-                        dequeue(&mut self.time, &mut self.crd_mask_data.in_ref_inner).unwrap();
+                    let curr_iref = self.crd_mask_data.in_ref_inner.dequeue(&self.time).unwrap();
                     let curr_ocrd = out_ocrd.unwrap().data.clone();
                     match curr_ocrd.clone() {
                         Token::Stop(stkn) => {
@@ -67,13 +66,11 @@ where
                                 self.time.tick() + 1,
                                 Token::<ValType, StopType>::Stop(stkn.clone()),
                             );
-                            enqueue(
-                                &mut self.time,
-                                &mut self.crd_mask_data.out_crd_outer,
-                                channel_elem,
-                            )
-                            .unwrap();
-                            dequeue(&mut self.time, &mut self.crd_mask_data.in_crd_outer).unwrap();
+                            self.crd_mask_data
+                                .out_crd_outer
+                                .enqueue(&self.time, channel_elem)
+                                .unwrap();
+                            self.crd_mask_data.in_crd_outer.dequeue(&self.time).unwrap();
                         }
                         _ => (),
                     }
@@ -84,22 +81,18 @@ where
                                     self.time.tick() + 1,
                                     Token::<ValType, StopType>::Val(val.clone()),
                                 );
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.crd_mask_data.out_crd_inner,
-                                    icrd_channel_elem,
-                                )
-                                .unwrap();
+                                self.crd_mask_data
+                                    .out_crd_inner
+                                    .enqueue(&self.time, icrd_channel_elem)
+                                    .unwrap();
                                 let iref_channel_elem = ChannelElement::new(
                                     self.time.tick() + 1,
                                     curr_iref.data.clone(),
                                 );
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.crd_mask_data.out_ref_inner,
-                                    iref_channel_elem,
-                                )
-                                .unwrap();
+                                self.crd_mask_data
+                                    .out_ref_inner
+                                    .enqueue(&self.time, iref_channel_elem)
+                                    .unwrap();
                                 has_crd = true;
                             }
                         }
@@ -109,55 +102,43 @@ where
                                     self.time.tick() + 1,
                                     Token::<ValType, StopType>::Stop(stkn.clone()),
                                 );
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.crd_mask_data.out_crd_inner,
-                                    icrd_channel_elem,
-                                )
-                                .unwrap();
+                                self.crd_mask_data
+                                    .out_crd_inner
+                                    .enqueue(&self.time, icrd_channel_elem)
+                                    .unwrap();
                                 let iref_channel_elem = ChannelElement::new(
                                     self.time.tick() + 1,
                                     curr_iref.data.clone(),
                                 );
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.crd_mask_data.out_ref_inner,
-                                    iref_channel_elem,
-                                )
-                                .unwrap();
+                                self.crd_mask_data
+                                    .out_ref_inner
+                                    .enqueue(&self.time, iref_channel_elem)
+                                    .unwrap();
                                 let ocrd_channel_elem =
                                     ChannelElement::new(self.time.tick() + 1, curr_ocrd.clone());
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.crd_mask_data.out_crd_outer,
-                                    ocrd_channel_elem,
-                                )
-                                .unwrap();
+                                self.crd_mask_data
+                                    .out_crd_outer
+                                    .enqueue(&self.time, ocrd_channel_elem)
+                                    .unwrap();
                                 has_crd = false;
                             }
-                            dequeue(&mut self.time, &mut self.crd_mask_data.in_crd_outer).unwrap();
+                            self.crd_mask_data.in_crd_outer.dequeue(&self.time).unwrap();
                         }
                         Token::Done => {
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, Token::Done);
-                            enqueue(
-                                &mut self.time,
-                                &mut self.crd_mask_data.out_crd_inner,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.crd_mask_data.out_ref_inner,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.crd_mask_data.out_crd_outer,
-                                channel_elem.clone(),
-                            )
-                            .unwrap();
+                            self.crd_mask_data
+                                .out_crd_inner
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
+                            self.crd_mask_data
+                                .out_ref_inner
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
+                            self.crd_mask_data
+                                .out_crd_outer
+                                .enqueue(&self.time, channel_elem.clone())
+                                .unwrap();
                             return;
                         }
                         _ => {
@@ -245,7 +226,7 @@ where
 //         ORT2: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT3: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (mask_in_crd_sender, mask_in_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (mask_in_ocrd_sender, mask_in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (mask_in_ref_sender, mask_in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();

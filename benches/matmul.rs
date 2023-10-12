@@ -6,8 +6,7 @@ use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use comal::token_vec;
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
-use dam_rs::context::broadcast_context::BroadcastContext;
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::config::Data;
 
@@ -19,10 +18,10 @@ use comal::templates::primitive::{Repsiggen, Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 
 use comal::templates::utils::read_inputs;
-use dam_rs::simulation::Program;
+use dam::simulation::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
-use dam_rs::templates::ops::ALUMulOp;
+use dam::templates::ops::ALUMulOp;
 
 /*
 let q0_seg = read_inputs::<u32>(&q0_seg_filename);
@@ -104,8 +103,8 @@ fn load_data(test_name: &str) -> TestData {
     }
 }
 
-fn matmul<'a>(test_data: TestData, chan_size: usize, with_flavor: bool) -> ProgramBuilder<'a> {
-    let mut parent = Program::default();
+fn matmul<'a>(test_data: TestData, chan_size: usize, with_flavor: bool) {
+    let mut parent = ProgramBuilder::default();
 
     let b0_crd = test_data.b0_crd;
     let b0_seg = test_data.b0_seg;
@@ -119,7 +118,7 @@ fn matmul<'a>(test_data: TestData, chan_size: usize, with_flavor: bool) -> Progr
     let c1_seg = test_data.c1_seg;
     let c_vals = test_data.c_vals;
 
-    // let mut parent = Program::default();
+    // let mut parent = ProgramBuilder::default();
 
     let _mk_bounded = || parent.bounded::<Token<u32, u32>>(chan_size);
     let _mk_boundedf = || parent.bounded::<Token<f32, u32>>(chan_size);
@@ -305,11 +304,22 @@ fn matmul<'a>(test_data: TestData, chan_size: usize, with_flavor: bool) -> Progr
     parent.add_child(red);
     parent.add_child(xvals);
 
-    parent.set_inference(with_flavor);
-    parent.init();
-    parent.run();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(with_flavor)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
 
-    parent
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }
 
 // pub fn mat_elemadd_benchmark_large(c: &mut Criterion) {

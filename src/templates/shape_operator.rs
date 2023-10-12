@@ -45,8 +45,8 @@ where
 
     fn run(&mut self) {
         loop {
-            let out_ocrd = peek_next(&mut self.time, &mut self.flatten_data.in_crd_outer);
-            match dequeue(&mut self.time, &mut self.flatten_data.in_crd_inner) {
+            let out_ocrd = self.flatten_data.in_crd_outer.peek_next(&self.time);
+            match self.flatten_data.in_crd_inner.dequeue(&self.time) {
                 Ok(curr_in) => {
                     let curr_ocrd = out_ocrd.unwrap().data.clone();
                     match curr_in.data {
@@ -58,12 +58,10 @@ where
                                         self.time.tick() + 1,
                                         Token::<ValType, StopType>::Val(new_crd),
                                     );
-                                    enqueue(
-                                        &mut self.time,
-                                        &mut self.flatten_data.out_crd,
-                                        channel_elem,
-                                    )
-                                    .unwrap();
+                                    self.flatten_data
+                                        .out_crd
+                                        .enqueue(&self.time, channel_elem)
+                                        .unwrap();
                                 }
                                 _ => {
                                     panic!("Unexpected case found, found val icrd and control token ocrd");
@@ -77,23 +75,23 @@ where
                                         self.time.tick() + 1,
                                         Token::<ValType, StopType>::Stop(stkn),
                                     );
-                                    enqueue(
-                                        &mut self.time,
-                                        &mut self.flatten_data.out_crd,
-                                        channel_elem,
-                                    )
-                                    .unwrap();
+                                    self.flatten_data
+                                        .out_crd
+                                        .enqueue(&self.time, channel_elem)
+                                        .unwrap();
                                 }
                                 _ => (), // _ => {
                                          // panic!("Should be a stop token for ocrd");
                                          // }
                             }
-                            dequeue(&mut self.time, &mut self.flatten_data.in_crd_outer).unwrap();
+                            self.flatten_data.in_crd_outer.dequeue(&self.time).unwrap();
                         }
                         Token::Done => {
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, Token::Done);
-                            enqueue(&mut self.time, &mut self.flatten_data.out_crd, channel_elem)
+                            self.flatten_data
+                                .out_crd
+                                .enqueue(&self.time, channel_elem)
                                 .unwrap();
                             return;
                         }
@@ -139,7 +137,7 @@ where
 //         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (out_crd_sender, out_crd_receiver) = parent.unbounded::<Token<u32, u32>>();

@@ -1,9 +1,6 @@
 use std::{fs, path::Path};
 
-
-
-use dam_rs::context::broadcast_context::BroadcastContext;
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{MaxReduce, Reduce, ReduceData, Spacc1, Spacc1Data};
 use comal::templates::alu::{make_alu, make_unary_alu};
@@ -14,11 +11,10 @@ use comal::templates::primitive::{ALUExpOp, Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 
-
 use comal::config::Data;
 use comal::templates::utils::read_inputs;
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::*;
+use dam::simulation::*;
+use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
@@ -113,7 +109,7 @@ fn test_multihead_attention() {
     // let a_vals = read_inputs::<f32>(&a_vals_filename);
 
     let chan_size = 4096;
-    let mut parent = Program::default();
+    let mut parent = ProgramBuilder::default();
 
     // fiberlookup_bi
     let (qi_in_ref_sender, qi_in_ref_receiver) = parent.bounded(chan_size);
@@ -763,8 +759,22 @@ fn test_multihead_attention() {
     parent.add_child(x2_wrscanner);
     parent.add_child(x3_wrscanner);
 
-    parent.init();
-    parent.run();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
     // let fil = formatted_dir.to_str().unwrap();
     // dbg!(xvals.out_val);
     // dbg!(xvals.view().tick_lower_bound());

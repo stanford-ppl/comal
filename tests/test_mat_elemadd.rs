@@ -2,7 +2,7 @@ use std::time::Instant;
 use std::{fs, path::Path};
 
 use comal::templates::tensor::{PrimitiveType, Tensor};
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::templates::alu::make_alu;
 use comal::templates::array::{Array, ArrayData};
@@ -13,8 +13,8 @@ use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 
 use comal::config::Data;
 use comal::templates::utils::{read_inputs, read_inputs_vectorized};
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::*;
+use dam::simulation::*;
+use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
@@ -62,7 +62,7 @@ fn test_mat_elemadd() {
 
     let chan_size = 4096;
 
-    let mut parent = Program::default();
+    let mut parent = ProgramBuilder::default();
 
     // fiberlookup_bi
     let (bi_out_ref_sender, bi_out_ref_receiver) = parent.bounded(chan_size);
@@ -196,16 +196,20 @@ fn test_mat_elemadd() {
     parent.add_child(arrayvals_b);
     parent.add_child(arrayvals_c);
 
-    let now = Instant::now();
-    parent.print_graph();
-    parent.init();
-    let elapsed = now.elapsed();
-    println!("Elapsed: {:.2?}", elapsed);
-    parent.run();
-    parent.set_inference(true);
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
 
-    // dbg!(x0_wrscanner.crd_arr);
-    // dbg!(xvals.out_val);
-
-    // let fil = formatted_dir.to_str().unwrap();
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }

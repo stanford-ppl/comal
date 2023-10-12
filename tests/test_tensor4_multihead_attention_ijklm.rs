@@ -1,7 +1,6 @@
 use std::{fs, path::Path};
 
-use dam_rs::context::broadcast_context::BroadcastContext;
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{MaxReduce, Reduce, ReduceData, Spacc1, Spacc1Data};
 use comal::templates::alu::{make_alu, make_unary_alu};
@@ -15,8 +14,8 @@ use comal::templates::scatter_gather::{Gather, Scatter};
 
 use comal::config::Data;
 use comal::templates::utils::read_inputs;
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::*;
+use dam::simulation::*;
+use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
@@ -110,7 +109,7 @@ fn test_multihead_attention() {
     // let a3_crd = read_inputs::<u32>(&a3_crd_filename);
     // let a_vals = read_inputs::<f32>(&a_vals_filename);
 
-    let mut parent = Program::default();
+    let mut parent = ProgramBuilder::default();
     let chan_size = 2048;
 
     let par_factor = 10;
@@ -812,11 +811,22 @@ fn test_multihead_attention() {
     let xvals = ValsWrScan::<f32, u32>::new(out_final_val_receiver);
     parent.add_child(xvals);
 
-    parent.set_inference(true);
-    parent.init();
-    parent.run();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
 
-    dbg!(parent.elapsed_cycles());
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 
     // let fil = formatted_dir.to_str().unwrap();
     // dbg!(xvals.out_val);

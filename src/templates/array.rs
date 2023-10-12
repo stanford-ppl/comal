@@ -44,7 +44,7 @@ where
 
     fn run(&mut self) {
         loop {
-            match dequeue(&mut self.time, &mut self.array_data.in_ref) {
+            match self.array_data.in_ref.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         let idx: usize = val.try_into().unwrap();
@@ -52,14 +52,18 @@ where
                             self.time.tick() + 1,
                             Token::Val(self.val_arr[idx].clone()),
                         );
-                        enqueue(&mut self.time, &mut self.array_data.out_val, channel_elem)
+                        self.array_data
+                            .out_val
+                            .enqueue(&self.time, channel_elem)
                             .unwrap();
                         // dbg!(self.val_arr[idx].clone());
                     }
                     Token::Stop(stkn) => {
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn));
-                        enqueue(&mut self.time, &mut self.array_data.out_val, channel_elem)
+                        self.array_data
+                            .out_val
+                            .enqueue(&self.time, channel_elem)
                             .unwrap();
                     }
                     Token::Empty => {
@@ -68,12 +72,16 @@ where
                             Token::Val(ValType::default()),
                         );
                         dbg!(Token::<ValType, StopType>::Val(ValType::default()));
-                        enqueue(&mut self.time, &mut self.array_data.out_val, channel_elem)
+                        self.array_data
+                            .out_val
+                            .enqueue(&self.time, channel_elem)
                             .unwrap();
                     }
                     Token::Done => {
                         let channel_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
-                        enqueue(&mut self.time, &mut self.array_data.out_val, channel_elem)
+                        self.array_data
+                            .out_val
+                            .enqueue(&self.time, channel_elem)
                             .unwrap();
                         return;
                     }
@@ -117,7 +125,7 @@ where
 //         IRT: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let data = ArrayData::<u32, u32, u32> {

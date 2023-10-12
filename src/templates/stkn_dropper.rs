@@ -37,12 +37,12 @@ where
     fn run(&mut self) {
         let mut prev_stkn = false;
         loop {
-            let val_deq = dequeue(&mut self.time, &mut self.in_val);
+            let val_deq = self.in_val.dequeue(&self.time);
             match val_deq {
                 Ok(curr_in) => match curr_in.data {
                     tkn @ Token::Val(_) | tkn @ Token::Done => {
                         let channel_elem = ChannelElement::new(self.time.tick() + 1, tkn.clone());
-                        enqueue(&mut self.time, &mut self.out_val, channel_elem).unwrap();
+                        self.out_val.enqueue(&self.time, channel_elem).unwrap();
                         if tkn == Token::Done {
                             return;
                         }
@@ -54,7 +54,7 @@ where
                                 self.time.tick() + 1,
                                 Token::<ValType, StopType>::Stop(stkn),
                             );
-                            enqueue(&mut self.time, &mut self.out_val, channel_elem).unwrap();
+                            self.out_val.enqueue(&self.time, channel_elem).unwrap();
                             prev_stkn = true;
                         }
                     }

@@ -46,7 +46,7 @@ where
         let mut curr_crd_cnt: ValType = ValType::default();
         let mut end_fiber = false;
         loop {
-            match dequeue(&mut self.time, &mut self.input) {
+            match self.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         self.crd_arr.push(val);
@@ -106,7 +106,7 @@ where
 
     fn run(&mut self) {
         loop {
-            match dequeue(&mut self.time, &mut self.input) {
+            match self.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         self.out_val.push(val);

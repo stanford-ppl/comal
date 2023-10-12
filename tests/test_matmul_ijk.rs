@@ -1,11 +1,9 @@
 use std::{fs, path::Path};
 
-
-use dam_rs::context::broadcast_context::BroadcastContext;
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{Reduce, ReduceData};
-use comal::templates::alu::{make_alu};
+use comal::templates::alu::make_alu;
 use comal::templates::array::{Array, ArrayData};
 
 use comal::templates::joiner::{CrdJoinerData, Intersect};
@@ -13,11 +11,10 @@ use comal::templates::primitive::{Repsiggen, Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 
-
 use comal::config::Data;
 use comal::templates::utils::read_inputs;
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::*;
+use dam::simulation::*;
+use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
@@ -54,7 +51,7 @@ fn test_matmul_ijk() {
 
     let chan_size = 32784;
 
-    let mut parent = Program::default();
+    let mut parent = ProgramBuilder::default();
 
     let _mk_bounded = || parent.bounded::<Token<u32, u32>>(chan_size);
     let _mk_boundedf = || parent.bounded::<Token<f32, u32>>(chan_size);
@@ -240,12 +237,20 @@ fn test_matmul_ijk() {
     parent.add_child(red);
     parent.add_child(xvals);
 
-    parent.init();
-    parent.run();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
 
-    // dbg!(x0_wrscanner.crd_arr);
-    // dbg!(x1_wrscanner.crd_arr);
-    // dbg!(xvals.out_val);
-
-    // let fil = formatted_dir.to_str().unwrap();
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }

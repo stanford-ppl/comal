@@ -79,41 +79,42 @@ where
     fn run(&mut self) {
         // let mut curr_crd: Token<ValType, StopType>
         loop {
-            match dequeue(&mut self.time, &mut self.rd_scan_data.in_ref) {
+            match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
                     Token::Val(val) => {
                         let mut crd_count: ValType = ValType::default();
                         while crd_count < self.meta_dim {
                             let curr_time = self.time.tick();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.rd_scan_data.out_crd,
-                                ChannelElement::new(
-                                    curr_time + 1,
-                                    super::primitive::Token::Val(crd_count.clone()),
-                                ),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.rd_scan_data.out_ref,
-                                ChannelElement::new(
-                                    curr_time + 1,
-                                    super::primitive::Token::Val(
-                                        crd_count.clone() + val.clone() * self.meta_dim.clone(),
+                            self.rd_scan_data
+                                .out_crd
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        curr_time + 1,
+                                        super::primitive::Token::Val(crd_count.clone()),
                                     ),
-                                ),
-                            )
-                            .unwrap();
+                                )
+                                .unwrap();
+                            self.rd_scan_data
+                                .out_ref
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        curr_time + 1,
+                                        super::primitive::Token::Val(
+                                            crd_count.clone() + val.clone() * self.meta_dim.clone(),
+                                        ),
+                                    ),
+                                )
+                                .unwrap();
                             crd_count += 1;
                             self.time.incr_cycles(1);
                         }
-                        let next_tkn =
-                            peek_next(&mut self.time, &mut self.rd_scan_data.in_ref).unwrap();
+                        let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
                             Token::Val(_) | Token::Done => Token::Stop(StopType::default()),
                             Token::Stop(stop_tkn) => {
-                                dequeue(&mut self.time, &mut self.rd_scan_data.in_ref).unwrap();
+                                self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
                             }
                             Token::Empty => {
@@ -122,66 +123,62 @@ where
                         };
                         // dbg!(output);
                         let curr_time = self.time.tick();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_crd,
-                            ChannelElement::new(curr_time + 1, output.clone()),
-                        )
-                        .unwrap();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_ref,
-                            ChannelElement::new(curr_time + 1, output.clone()),
-                        )
-                        .unwrap();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, output.clone()),
+                            )
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, output.clone()),
+                            )
+                            .unwrap();
                     }
                     Token::Stop(token) => {
                         let curr_time = self.time.tick();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_crd,
-                            ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
-                        )
-                        .unwrap();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_ref,
-                            ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
-                        )
-                        .unwrap();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
+                            )
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
+                            )
+                            .unwrap();
                     }
                     // Could either be a done token or an empty token
                     // In the case of done token, return
                     Token::Done => {
                         let channel_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_crd,
-                            channel_elem.clone(),
-                        )
-                        .unwrap();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_ref,
-                            channel_elem.clone(),
-                        )
-                        .unwrap();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
                         return;
                     }
                     Token::Empty => {
                         let channel_elem = ChannelElement::new(self.time.tick() + 1, Token::Empty);
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_crd,
-                            channel_elem.clone(),
-                        )
-                        .unwrap();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_ref,
-                            channel_elem.clone(),
-                        )
-                        .unwrap();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
                     }
                 },
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
@@ -208,7 +205,7 @@ where
     fn run(&mut self) {
         // let mut curr_crd: Token<ValType, StopType>
         loop {
-            match dequeue(&mut self.time, &mut self.rd_scan_data.in_ref) {
+            match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
                     Token::Val(val) => {
                         let idx: usize = val.try_into().unwrap();
@@ -219,33 +216,34 @@ where
                             let coord = self.crd_arr[read_addr].clone();
                             let curr_time = self.time.tick();
                             // dbg!(coord.clone());
-                            enqueue(
-                                &mut self.time,
-                                &mut self.rd_scan_data.out_crd,
-                                ChannelElement::new(
-                                    curr_time + 1,
-                                    super::primitive::Token::Val(coord),
-                                ),
-                            )
-                            .unwrap();
-                            enqueue(
-                                &mut self.time,
-                                &mut self.rd_scan_data.out_ref,
-                                ChannelElement::new(
-                                    curr_time + 1,
-                                    super::primitive::Token::Val(curr_addr.clone()),
-                                ),
-                            )
-                            .unwrap();
+                            self.rd_scan_data
+                                .out_crd
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        curr_time + 1,
+                                        super::primitive::Token::Val(coord),
+                                    ),
+                                )
+                                .unwrap();
+                            self.rd_scan_data
+                                .out_ref
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        curr_time + 1,
+                                        super::primitive::Token::Val(curr_addr.clone()),
+                                    ),
+                                )
+                                .unwrap();
                             curr_addr += 1;
                             self.time.incr_cycles(1);
                         }
-                        let next_tkn =
-                            peek_next(&mut self.time, &mut self.rd_scan_data.in_ref).unwrap();
+                        let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
                             Token::Val(_) | Token::Done => Token::Stop(StopType::default()),
                             Token::Stop(stop_tkn) => {
-                                dequeue(&mut self.time, &mut self.rd_scan_data.in_ref).unwrap();
+                                self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
                             }
                             Token::Empty => {
@@ -254,67 +252,63 @@ where
                         };
                         // dbg!(output);
                         let curr_time = self.time.tick();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_crd,
-                            ChannelElement::new(curr_time + 1, output.clone()),
-                        )
-                        .unwrap();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_ref,
-                            ChannelElement::new(curr_time + 1, output.clone()),
-                        )
-                        .unwrap();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, output.clone()),
+                            )
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, output.clone()),
+                            )
+                            .unwrap();
                     }
                     Token::Stop(token) => {
                         let curr_time = self.time.tick();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_crd,
-                            ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
-                        )
-                        .unwrap();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_ref,
-                            ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
-                        )
-                        .unwrap();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
+                            )
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
+                            )
+                            .unwrap();
                     }
                     // Could either be a done token or an empty token
                     // In the case of done token, return
                     Token::Done => {
                         let channel_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_crd,
-                            channel_elem.clone(),
-                        )
-                        .unwrap();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_ref,
-                            channel_elem.clone(),
-                        )
-                        .unwrap();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
                         // dbg!(Token::<ValType, StopType>::Done);
                         return;
                     }
                     Token::Empty => {
                         let channel_elem = ChannelElement::new(self.time.tick() + 1, Token::Empty);
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_crd,
-                            channel_elem.clone(),
-                        )
-                        .unwrap();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rd_scan_data.out_ref,
-                            channel_elem.clone(),
-                        )
-                        .unwrap();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
                     }
                 },
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
@@ -387,7 +381,7 @@ where
 //         CRT: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let meta_dim: u32 = 32;
 //         let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
@@ -498,7 +492,7 @@ where
 //         CRT: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();

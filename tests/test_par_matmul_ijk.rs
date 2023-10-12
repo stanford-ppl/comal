@@ -1,11 +1,9 @@
 use std::{fs, path::Path};
 
-
-use dam_rs::context::broadcast_context::BroadcastContext;
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{Reduce, ReduceData};
-use comal::templates::alu::{make_alu};
+use comal::templates::alu::make_alu;
 use comal::templates::array::{Array, ArrayData};
 
 use comal::templates::joiner::{CrdJoinerData, Intersect};
@@ -16,8 +14,8 @@ use comal::templates::scatter_gather::{Gather, Scatter};
 
 use comal::config::Data;
 use comal::templates::utils::read_inputs;
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::*;
+use dam::simulation::*;
+use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
@@ -54,7 +52,7 @@ fn test_par_matmul_ijk() {
 
     let chan_size = 4096;
 
-    let mut parent = Program::default();
+    let mut parent = ProgramBuilder::default();
 
     let _mk_bounded = || parent.bounded::<Token<u32, u32>>(chan_size);
     let _mk_boundedf = || parent.bounded::<Token<f32, u32>>(chan_size);
@@ -509,8 +507,22 @@ fn test_par_matmul_ijk() {
     parent.add_child(red);
     parent.add_child(xvals);
 
-    parent.init();
-    parent.run();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 
     // dbg!(x0_wrscanner.crd_arr);
     // dbg!(x1_wrscanner.crd_arr);

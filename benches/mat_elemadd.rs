@@ -6,7 +6,7 @@ use comal::templates::joiner::Union;
 use comal::token_vec;
 use criterion::{criterion_group, criterion_main, Criterion};
 
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::config::Data;
 
@@ -18,8 +18,8 @@ use comal::templates::primitive::Token;
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 
 use comal::templates::utils::read_inputs;
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::ALUAddOp;
+use dam::simulation::*;
+use dam::templates::ops::ALUAddOp;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 
@@ -103,8 +103,8 @@ fn load_data(test_name: &str) -> TestData {
     }
 }
 
-fn test_mat_elemadd<'a>(test_data: TestData, chan_size: usize) -> ProgramBuilder<'a> {
-    let mut parent = Program::default();
+fn test_mat_elemadd<'a>(test_data: TestData, chan_size: usize) {
+    let mut parent = ProgramBuilder::default();
 
     let b0_crd = test_data.b0_crd;
     let b0_seg = test_data.b0_seg;
@@ -249,14 +249,22 @@ fn test_mat_elemadd<'a>(test_data: TestData, chan_size: usize) -> ProgramBuilder
     parent.add_child(xvals);
 
     let now = Instant::now();
-    parent.set_inference(true);
-    parent.print_graph();
-    parent.init();
-    let elapsed = now.elapsed();
-    println!("Elapsed: {:.2?}", elapsed);
-    parent.run();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
 
-    parent
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }
 
 pub fn mat_elemadd_benchmark_large(c: &mut Criterion) {

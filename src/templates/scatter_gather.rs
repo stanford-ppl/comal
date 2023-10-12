@@ -22,17 +22,14 @@ where
     fn run(&mut self) {
         let mut target_idx = 0;
         loop {
-            match dequeue(&mut self.time, &mut self.receiver) {
+            match self.receiver.dequeue(&self.time) {
                 Ok(mut curr_in) => {
                     match curr_in.data.clone() {
                         Token::Val(_) => {
                             curr_in.time = self.time.tick() + 1;
-                            enqueue(
-                                &mut self.time,
-                                &mut self.targets[target_idx],
-                                curr_in.clone(),
-                            )
-                            .unwrap();
+                            self.targets[target_idx]
+                                .enqueue(&self.time, curr_in.clone())
+                                .unwrap();
                             // Self::log(format!(
                             //     "tg: {:?}, tkn: {:?}",
                             //     target_idx,
@@ -44,8 +41,8 @@ where
                         tkn @ Token::Stop(_) | tkn @ Token::Done => {
                             let channel_elem = ChannelElement::new(self.time.tick() + 1, tkn);
                             let mut cnt = 0;
-                            self.targets.iter_mut().for_each(|target| {
-                                enqueue(&mut self.time, target, channel_elem.clone()).unwrap();
+                            self.targets.iter().for_each(|target| {
+                                target.enqueue(&self.time, channel_elem.clone()).unwrap();
                                 // Self::log(format!(
                                 //     "tg: {:?}, tkn: {:?}",
                                 //     cnt,
@@ -109,9 +106,7 @@ where
         // let mut fiber_done = vec![false; self.targets.len()];
         // let mut done_cnt = 0;
         loop {
-            let output = dequeue(&mut self.time, &mut self.targets[target_idx])
-                .unwrap()
-                .data;
+            let output = self.targets[target_idx].dequeue(&self.time).unwrap().data;
 
             match output.clone() {
                 Token::Stop(stkn) => {
@@ -121,7 +116,7 @@ where
                     }
                     let channel_elem =
                         ChannelElement::new(self.time.tick() + 1, Token::Stop(out_stkn.clone()));
-                    enqueue(&mut self.time, &mut self.merged, channel_elem).unwrap();
+                    self.merged.enqueue(&self.time, channel_elem).unwrap();
                     target_idx = (target_idx + 1) % self.targets.len();
 
                     // for (idx, chan) in self.targets.iter_mut().enumerate() {
@@ -133,13 +128,13 @@ where
                 }
                 Token::Val(_) => {
                     let channel_elem = ChannelElement::new(self.time.tick() + 1, output.clone());
-                    enqueue(&mut self.time, &mut self.merged, channel_elem).unwrap();
+                    self.merged.enqueue(&self.time, channel_elem).unwrap();
                 }
                 Token::Done => {
                     if target_idx == self.targets.len() - 1 {
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + 1, output.clone());
-                        enqueue(&mut self.time, &mut self.merged, channel_elem).unwrap();
+                        self.merged.enqueue(&self.time, channel_elem).unwrap();
                         return;
                     }
                     target_idx = (target_idx + 1) % self.targets.len();
@@ -228,7 +223,7 @@ where
 //         ORT1: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT2: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let chan_size = 128;
 
 //         let (in_ref2_sender, in_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
@@ -258,7 +253,7 @@ where
 //         ORT1: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT2: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let chan_size = 128;
 
 //         let (out_ref2_sender, out_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);

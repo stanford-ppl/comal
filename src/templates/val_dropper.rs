@@ -46,8 +46,8 @@ where
             let _ = self.val_drop_data.in_val.next_event();
             let _ = self.val_drop_data.in_crd.next_event();
 
-            let val_deq = dequeue(&mut self.time, &mut self.val_drop_data.in_val);
-            let crd_deq = dequeue(&mut self.time, &mut self.val_drop_data.in_crd);
+            let val_deq = self.val_drop_data.in_val.dequeue(&self.time);
+            let crd_deq = self.val_drop_data.in_crd.dequeue(&self.time);
             match (val_deq, crd_deq) {
                 (Ok(val), Ok(crd)) => match (val.data, crd.data) {
                     (Token::Val(value), Token::Val(coord)) if value != ValType::default() => {
@@ -55,22 +55,18 @@ where
                             self.time.tick() + 1,
                             Token::<ValType, StopType>::Val(value),
                         );
-                        enqueue(
-                            &mut self.time,
-                            &mut self.val_drop_data.out_val,
-                            val_chan_elem,
-                        )
-                        .unwrap();
+                        self.val_drop_data
+                            .out_val
+                            .enqueue(&self.time, val_chan_elem)
+                            .unwrap();
                         let crd_chan_elem = ChannelElement::new(
                             self.time.tick() + 1,
                             Token::<CrdType, StopType>::Val(coord),
                         );
-                        enqueue(
-                            &mut self.time,
-                            &mut self.val_drop_data.out_crd,
-                            crd_chan_elem,
-                        )
-                        .unwrap();
+                        self.val_drop_data
+                            .out_crd
+                            .enqueue(&self.time, crd_chan_elem)
+                            .unwrap();
                     }
                     (Token::Val(val), Token::Val(_)) if val == ValType::default() => (),
                     (tkn1 @ Token::Stop(_), tkn2 @ Token::Stop(_))
@@ -82,19 +78,15 @@ where
                             }
                         }
                         let val_chan_elem = ChannelElement::new(self.time.tick() + 1, tkn1.clone());
-                        enqueue(
-                            &mut self.time,
-                            &mut self.val_drop_data.out_val,
-                            val_chan_elem,
-                        )
-                        .unwrap();
+                        self.val_drop_data
+                            .out_val
+                            .enqueue(&self.time, val_chan_elem)
+                            .unwrap();
                         let crd_chan_elem = ChannelElement::new(self.time.tick() + 1, tkn2.clone());
-                        enqueue(
-                            &mut self.time,
-                            &mut self.val_drop_data.out_crd,
-                            crd_chan_elem,
-                        )
-                        .unwrap();
+                        self.val_drop_data
+                            .out_crd
+                            .enqueue(&self.time, crd_chan_elem)
+                            .unwrap();
                         if tkn1 == Token::Done {
                             return;
                         } else {
@@ -150,7 +142,7 @@ where
 //         ORT1: Iterator<Item = Token<f32, u32>> + 'static,
 //         ORT2: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_val_sender, in_val_receiver) = parent.unbounded::<Token<f32, u32>>();
 //         let (in_crd_sender, in_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<f32, u32>>();

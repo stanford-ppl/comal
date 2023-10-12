@@ -5,6 +5,7 @@ use comal::{
     proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph},
 };
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
+use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
 use prost::Message;
 
 fn bench_proto<M: criterion::measurement::Measurement>(
@@ -28,14 +29,26 @@ fn bench_proto<M: criterion::measurement::Measurement>(
             |b, flavor| {
                 b.iter_batched(
                     || {
-                        let mut parent = parse_proto(comal_graph.clone(), base_path.clone());
-                        parent.set_inference(*flavor);
-                        parent.init();
+                        let parent = parse_proto(comal_graph.clone(), base_path.clone());
+                        // parent.set_inference(*flavor);
+                        // parent.init();
+                        // parent
                         parent
+                            .initialize(
+                                InitializationOptionsBuilder::default()
+                                    .run_flavor_inference(*flavor)
+                                    .build()
+                                    .unwrap(),
+                            )
+                            .unwrap()
                     },
-                    |mut parent| {
-                        parent.run();
-                        parent
+                    |parent| {
+                        parent.run(
+                            RunOptionsBuilder::default()
+                                .mode(RunMode::FIFO)
+                                .build()
+                                .unwrap(),
+                        );
                     },
                     criterion::BatchSize::LargeInput,
                 );
@@ -65,14 +78,23 @@ fn bench_proto_sweep<M: criterion::measurement::Measurement>(
                         let comal_contents =
                             fs::read(base_path.join(proto_filename.clone())).unwrap();
                         let comal_graph = ComalGraph::decode(comal_contents.as_slice()).unwrap();
-                        let mut parent = parse_proto(comal_graph.clone(), base_path.clone());
-                        parent.set_inference(true);
-                        parent.init();
+                        let parent = parse_proto(comal_graph.clone(), base_path.clone());
                         parent
+                            .initialize(
+                                InitializationOptionsBuilder::default()
+                                    .run_flavor_inference(true)
+                                    .build()
+                                    .unwrap(),
+                            )
+                            .unwrap()
                     },
-                    |mut parent| {
-                        parent.run();
-                        parent
+                    |parent| {
+                        parent.run(
+                            RunOptionsBuilder::default()
+                                .mode(RunMode::FIFO)
+                                .build()
+                                .unwrap(),
+                        );
                     },
                     criterion::BatchSize::LargeInput,
                 );

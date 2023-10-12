@@ -4,6 +4,7 @@ use std::{fs, path::Path, time::Instant};
 
 use argparse::{ArgumentParser, Store, StoreFalse};
 use comal::config::Data;
+use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptions, RunOptionsBuilder};
 use prost::Message;
 use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};
 
@@ -42,16 +43,27 @@ fn main() {
     let comal_contents = fs::read(base_path.join(proto_filename)).unwrap();
     let comal_graph = ComalGraph::decode(comal_contents.as_slice()).unwrap();
 
-    let mut parent = parse_proto(comal_graph, base_path);
+    let parent = parse_proto(comal_graph, base_path);
 
-    parent.set_inference(with_flavor);
-    let now = Instant::now();
-    parent.init();
-    parent.print_graph_with_names();
-    let elapsed = now.elapsed();
-    println!("Init took: {:.2?}", elapsed);
-    let now = Instant::now();
-    parent.run();
-    let elapsed = now.elapsed();
-    println!("Run took: {:.2?}", elapsed);
+    let init_start = Instant::now();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    let init_end = Instant::now();
+    println!("Init took: {:.2?}", init_end - init_start);
+
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    let finish = Instant::now();
+    println!("Run took: {:.2?}", finish - init_end);
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }

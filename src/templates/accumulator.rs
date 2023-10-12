@@ -57,27 +57,29 @@ where
     fn run(&mut self) {
         let mut sum = ValType::default();
         loop {
-            match dequeue(&mut self.time, &mut self.reduce_data.in_val) {
+            match self.reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         sum += val;
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.reduce_data.out_val,
-                            ChannelElement::new(curr_time + 1, Token::Val(sum)),
-                        )
-                        .unwrap();
-                        sum = ValType::default();
-                        if stkn != StopType::default() {
-                            enqueue(
-                                &mut self.time,
-                                &mut self.reduce_data.out_val,
-                                ChannelElement::new(curr_time + 1, Token::Stop(stkn - 1)),
+                        self.reduce_data
+                            .out_val
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, Token::Val(sum)),
                             )
                             .unwrap();
+                        sum = ValType::default();
+                        if stkn != StopType::default() {
+                            self.reduce_data
+                                .out_val
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn - 1)),
+                                )
+                                .unwrap();
                         }
                     }
                     Token::Empty => {
@@ -85,12 +87,10 @@ where
                     }
                     Token::Done => {
                         let curr_time = self.time.tick();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.reduce_data.out_val,
-                            ChannelElement::new(curr_time + 1, Token::Done),
-                        )
-                        .unwrap();
+                        self.reduce_data
+                            .out_val
+                            .enqueue(&self.time, ChannelElement::new(curr_time + 1, Token::Done))
+                            .unwrap();
                         return;
                     }
                 },
@@ -155,9 +155,9 @@ where
     fn run(&mut self) {
         let mut accum_storage: BTreeMap<CrdType, ValType> = BTreeMap::new();
         loop {
-            let in_ocrd = peek_next(&mut self.time, &mut self.spacc1_data.in_crd_outer).unwrap();
-            let in_icrd = peek_next(&mut self.time, &mut self.spacc1_data.in_crd_inner).unwrap();
-            let in_val = peek_next(&mut self.time, &mut self.spacc1_data.in_val).unwrap();
+            let in_ocrd = self.spacc1_data.in_crd_outer.peek_next(&self.time).unwrap();
+            let in_icrd = self.spacc1_data.in_crd_inner.peek_next(&self.time).unwrap();
+            let in_val = self.spacc1_data.in_val.peek_next(&self.time).unwrap();
 
             match in_ocrd.data {
                 Token::Val(_) => {
@@ -174,8 +174,7 @@ where
                         Token::Stop(val_stkn) => match in_icrd.data {
                             Token::Stop(icrd_stkn) => {
                                 assert_eq!(val_stkn, icrd_stkn);
-                                dequeue(&mut self.time, &mut self.spacc1_data.in_crd_outer)
-                                    .unwrap();
+                                self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
                             }
                             _ => {
                                 panic!("Stop tokens must match for inner crd");
@@ -188,8 +187,8 @@ where
                             panic!("Invalid case reached");
                         }
                     }
-                    dequeue(&mut self.time, &mut self.spacc1_data.in_crd_inner).unwrap();
-                    dequeue(&mut self.time, &mut self.spacc1_data.in_val).unwrap();
+                    self.spacc1_data.in_crd_inner.dequeue(&self.time).unwrap();
+                    self.spacc1_data.in_val.dequeue(&self.time).unwrap();
                 }
                 Token::Stop(stkn) => {
                     for (key, value) in &accum_storage {
@@ -198,48 +197,45 @@ where
                             // Token::Val(accum_storage.keys().next().unwrap().clone()),
                             Token::Val(key.clone()),
                         );
-                        enqueue(
-                            &mut self.time,
-                            &mut self.spacc1_data.out_crd_inner,
-                            icrd_chan_elem,
-                        )
-                        .unwrap();
+                        self.spacc1_data
+                            .out_crd_inner
+                            .enqueue(&self.time, icrd_chan_elem)
+                            .unwrap();
                         let val_chan_elem = ChannelElement::new(
                             self.time.tick() + 1,
                             Token::<ValType, StopType>::Val(value.clone()),
                         );
-                        enqueue(&mut self.time, &mut self.spacc1_data.out_val, val_chan_elem)
+                        self.spacc1_data
+                            .out_val
+                            .enqueue(&self.time, val_chan_elem)
                             .unwrap();
                     }
                     let val_stkn_chan_elem =
                         ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
-                    enqueue(
-                        &mut self.time,
-                        &mut self.spacc1_data.out_val,
-                        val_stkn_chan_elem.clone(),
-                    )
-                    .unwrap();
+                    self.spacc1_data
+                        .out_val
+                        .enqueue(&self.time, val_stkn_chan_elem.clone())
+                        .unwrap();
                     let crd_stkn_chan_elem =
                         ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
-                    enqueue(
-                        &mut self.time,
-                        &mut self.spacc1_data.out_crd_inner,
-                        crd_stkn_chan_elem,
-                    )
-                    .unwrap();
+                    self.spacc1_data
+                        .out_crd_inner
+                        .enqueue(&self.time, crd_stkn_chan_elem)
+                        .unwrap();
                     accum_storage.clear();
-                    dequeue(&mut self.time, &mut self.spacc1_data.in_crd_outer).unwrap();
+                    self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
                 }
                 Token::Done => {
                     let icrd_chan_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
-                    enqueue(
-                        &mut self.time,
-                        &mut self.spacc1_data.out_crd_inner,
-                        icrd_chan_elem,
-                    )
-                    .unwrap();
+                    self.spacc1_data
+                        .out_crd_inner
+                        .enqueue(&self.time, icrd_chan_elem)
+                        .unwrap();
                     let val_chan_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
-                    enqueue(&mut self.time, &mut self.spacc1_data.out_val, val_chan_elem).unwrap();
+                    self.spacc1_data
+                        .out_val
+                        .enqueue(&self.time, val_chan_elem)
+                        .unwrap();
                     return;
                 }
                 _ => {
@@ -291,7 +287,7 @@ where
     fn run(&mut self) {
         let mut max_elem = self.min_val.clone();
         loop {
-            match dequeue(&mut self.time, &mut self.max_reduce_data.in_val) {
+            match self.max_reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         // max_elem = max(val, max_elem);
@@ -302,20 +298,22 @@ where
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.max_reduce_data.out_val,
-                            ChannelElement::new(curr_time + 1, Token::Val(max_elem)),
-                        )
-                        .unwrap();
-                        max_elem = ValType::default();
-                        if stkn != StopType::default() {
-                            enqueue(
-                                &mut self.time,
-                                &mut self.max_reduce_data.out_val,
-                                ChannelElement::new(curr_time + 1, Token::Stop(stkn - 1)),
+                        self.max_reduce_data
+                            .out_val
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, Token::Val(max_elem)),
                             )
                             .unwrap();
+                        max_elem = ValType::default();
+                        if stkn != StopType::default() {
+                            self.max_reduce_data
+                                .out_val
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn - 1)),
+                                )
+                                .unwrap();
                         }
                     }
                     Token::Empty => {
@@ -323,12 +321,10 @@ where
                     }
                     Token::Done => {
                         let curr_time = self.time.tick();
-                        enqueue(
-                            &mut self.time,
-                            &mut self.max_reduce_data.out_val,
-                            ChannelElement::new(curr_time + 1, Token::Done),
-                        )
-                        .unwrap();
+                        self.max_reduce_data
+                            .out_val
+                            .enqueue(&self.time, ChannelElement::new(curr_time + 1, Token::Done))
+                            .unwrap();
                         return;
                     }
                 },
@@ -395,7 +391,7 @@ where
 //         IRT: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_val_sender, in_val_receiver) = parent.unbounded();
 //         let (out_val_sender, out_val_receiver) = parent.unbounded();
 //         let data = ReduceData::<u32, u32> {
@@ -425,7 +421,7 @@ where
 //         ORT1: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT2: Iterator<Item = Token<f32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         // let mut parent.unbounded = || parent.parent.unbounded();
 //         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded();
 //         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded();
@@ -460,7 +456,7 @@ where
 //         IRT: Iterator<Item = Token<f32, u32>> + 'static,
 //         ORT: Iterator<Item = Token<f32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_val_sender, in_val_receiver) = parent.unbounded::<Token<f32, u32>>();
 //         let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<f32, u32>>();
 //         let data = ReduceData::<f32, u32> {

@@ -1,25 +1,21 @@
 use std::{fs, path::Path};
 
-
 use comal::templates::val_dropper::{ValDrop, ValDropData};
 
-use dam_rs::context::broadcast_context::BroadcastContext;
-use dam_rs::context::generator_context::GeneratorContext;
+use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{MaxReduce, Reduce, ReduceData};
 use comal::templates::alu::{make_alu, make_unary_alu};
 use comal::templates::array::{Array, ArrayData};
 
-
 use comal::templates::primitive::{ALUExpOp, Repsiggen, Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 
-
 use comal::config::Data;
 use comal::templates::utils::read_inputs;
-use dam_rs::simulation::Program;
-use dam_rs::templates::ops::*;
+use dam::simulation::*;
+use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
@@ -57,7 +53,7 @@ fn test_softmax() {
 
     // dbg!(a_vals.clone());
 
-    let mut parent = Program::default();
+    let mut parent = ProgramBuilder::default();
 
     // fiberlookup_bi
     let (bi_out_ref_sender, bi_out_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
@@ -252,8 +248,22 @@ fn test_softmax() {
     parent.add_child(xvals);
     parent.add_child(val_drop);
 
-    parent.init();
-    parent.run();
+    let initialized = parent
+        .initialize(
+            InitializationOptionsBuilder::default()
+                .run_flavor_inference(true)
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let executed = initialized.run(
+        RunOptionsBuilder::default()
+            .mode(RunMode::Simple)
+            .build()
+            .unwrap(),
+    );
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 
     // println!("{:?}", x0_wrscanner.crd_arr);
     // assert_eq!(xvals.out_val, a_vals, "assert failed");

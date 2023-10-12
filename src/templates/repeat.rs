@@ -42,43 +42,44 @@ where
 
     fn run(&mut self) {
         loop {
-            let in_ref = peek_next(&mut self.time, &mut self.repeat_data.in_ref);
-            match dequeue(&mut self.time, &mut self.repeat_data.in_repsig) {
+            let in_ref = self.repeat_data.in_ref.peek_next(&self.time);
+            match self.repeat_data.in_repsig.dequeue(&self.time) {
                 Ok(curr_in) => {
                     let curr_ref = in_ref.unwrap().data;
                     match curr_in.data {
                         Repsiggen::Repeat => {
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, curr_ref.clone());
-                            enqueue(&mut self.time, &mut self.repeat_data.out_ref, channel_elem)
+                            self.repeat_data
+                                .out_ref
+                                .enqueue(&self.time, channel_elem)
                                 .unwrap();
                         }
                         Repsiggen::Stop => {
-                            dequeue(&mut self.time, &mut self.repeat_data.in_ref).unwrap();
-                            let next_tkn =
-                                peek_next(&mut self.time, &mut self.repeat_data.in_ref).unwrap();
+                            self.repeat_data.in_ref.dequeue(&self.time).unwrap();
+                            let next_tkn = self.repeat_data.in_ref.peek_next(&self.time).unwrap();
                             let output: Token<ValType, StopType> =
                                 if let Token::Stop(stop_tkn) = next_tkn.data {
-                                    dequeue(&mut self.time, &mut self.repeat_data.in_ref).unwrap();
+                                    self.repeat_data.in_ref.dequeue(&self.time).unwrap();
                                     Token::Stop(stop_tkn + 1)
                                 } else {
                                     Token::Stop(StopType::default())
                                 };
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, output.clone());
-                            enqueue(&mut self.time, &mut self.repeat_data.out_ref, channel_elem)
+                            self.repeat_data
+                                .out_ref
+                                .enqueue(&self.time, channel_elem)
                                 .unwrap();
                         }
                         Repsiggen::Done => {
                             if let Token::Done = curr_ref {
                                 let channel_elem =
                                     ChannelElement::new(self.time.tick() + 1, Token::Done);
-                                enqueue(
-                                    &mut self.time,
-                                    &mut self.repeat_data.out_ref,
-                                    channel_elem,
-                                )
-                                .unwrap();
+                                self.repeat_data
+                                    .out_ref
+                                    .enqueue(&self.time, channel_elem)
+                                    .unwrap();
                             } else {
                                 panic!("Input reference and repeat signal must both be on Done");
                             }
@@ -134,37 +135,31 @@ where
 
     fn run(&mut self) {
         loop {
-            match dequeue(&mut self.time, &mut self.rep_sig_gen_data.input) {
+            match self.rep_sig_gen_data.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(_) | Token::Empty => {
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + 1, Repsiggen::Repeat);
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rep_sig_gen_data.out_repsig,
-                            channel_elem,
-                        )
-                        .unwrap();
+                        self.rep_sig_gen_data
+                            .out_repsig
+                            .enqueue(&self.time, channel_elem)
+                            .unwrap();
                     }
                     Token::Stop(_) => {
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + 1, Repsiggen::Stop);
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rep_sig_gen_data.out_repsig,
-                            channel_elem,
-                        )
-                        .unwrap();
+                        self.rep_sig_gen_data
+                            .out_repsig
+                            .enqueue(&self.time, channel_elem)
+                            .unwrap();
                     }
                     Token::Done => {
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + 1, Repsiggen::Done);
-                        enqueue(
-                            &mut self.time,
-                            &mut self.rep_sig_gen_data.out_repsig,
-                            channel_elem,
-                        )
-                        .unwrap();
+                        self.rep_sig_gen_data
+                            .out_repsig
+                            .enqueue(&self.time, channel_elem)
+                            .unwrap();
                         return;
                     }
                 },
@@ -239,7 +234,7 @@ where
 //         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_repsig_ref_sender, in_repsig_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (out_repsig_sender, out_repsig_receiver) = parent.unbounded::<Repsiggen>();
 //         let repsig_data = RepSigGenData::<u32, u32> {
@@ -278,7 +273,7 @@ where
 //         IRT2: Iterator<Item = Repsiggen> + 'static,
 //         ORT: Iterator<Item = Token<u32, u32>> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (in_repsig_sender, in_repsig_receiver) = parent.unbounded::<Repsiggen>();
 //         let (out_ref_sender, out_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
@@ -305,7 +300,7 @@ where
 //         IRT: Iterator<Item = Token<u32, u32>> + 'static,
 //         ORT: Iterator<Item = Repsiggen> + 'static,
 //     {
-//         let mut parent = Program::default();
+//         let mut parent = ProgramBuilder::default();
 //         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
 //         let (out_repsig_sender, out_repsig_receiver) = parent.unbounded::<Repsiggen>();
 //         let data = RepSigGenData::<u32, u32> {
