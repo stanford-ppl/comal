@@ -1,22 +1,8 @@
 use core::fmt;
 
-
-
-
-
+use dam::context_tools::*;
 use dam::templates::ops::*;
 use dam::RegisterALUOp;
-use dam::{context_tools::*};
-
-
-
-
-
-
-
-
-
-
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Token<ValType, StopType> {
@@ -26,8 +12,7 @@ pub enum Token<ValType, StopType> {
     Done,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Repsiggen {
     #[default]
     Repeat,
@@ -172,8 +157,6 @@ impl<ValType: Default, StopType: Default> Default for Token<ValType, StopType> {
         Token::Val(ValType::default())
     }
 }
-
-
 
 impl<ValType: DAMType, StopType: DAMType> DAMType for Token<ValType, StopType> {
     fn dam_size(&self) -> usize {
