@@ -1,4 +1,4 @@
-use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
+use dam::{context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -76,17 +76,13 @@ where
                                     .out_crd_outer
                                     .enqueue(&self.time, chan_elem)
                                     .unwrap();
-                            } else {
-                                if let Token::Stop(stkn) = ocrd.data.clone() {
-                                    let chan_elem = ChannelElement::new(
-                                        self.time.tick() + 1,
-                                        Token::Stop(stkn),
-                                    );
-                                    self.crd_drop_data
-                                        .out_crd_outer
-                                        .enqueue(&self.time, chan_elem)
-                                        .unwrap();
-                                }
+                            } else if let Token::Stop(stkn) = ocrd.data.clone() {
+                                let chan_elem =
+                                    ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn));
+                                self.crd_drop_data
+                                    .out_crd_outer
+                                    .enqueue(&self.time, chan_elem)
+                                    .unwrap();
                             }
                             // has_crd = false;
                             // prev_ocrd_stkn = false;
@@ -254,7 +250,6 @@ where
 mod tests {
     use dam::simulation::{InitializationOptions, ProgramBuilder, RunOptions};
     use dam::utility_contexts::*;
-    use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
 
     use crate::templates::primitive::Token;
     use crate::token_vec;
@@ -350,9 +345,9 @@ mod tests {
 
         let drop = CrdDrop::new(crd_drop_data);
         let ocrd_gen = GeneratorContext::new(in_ocrd, in_ocrd_sender);
-        let icrd_gen = GeneratorContext::new(in_icrd.clone(), in_icrd_sender);
+        let icrd_gen = GeneratorContext::new(in_icrd, in_icrd_sender);
         let out_crd_checker = CheckerContext::new(out_ocrd, out_ocrd_receiver);
-        let out_icrd_checker = CheckerContext::new(in_icrd.clone(), out_icrd_receiver);
+        let out_icrd_checker = CheckerContext::new(in_icrd, out_icrd_receiver);
         parent.add_child(ocrd_gen);
         parent.add_child(icrd_gen);
         parent.add_child(out_crd_checker);

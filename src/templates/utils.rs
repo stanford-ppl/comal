@@ -16,7 +16,7 @@ pub fn read_inputs_vectorized<T>(file_path: &PathBuf, prim_type: impl Adapter<T>
 where
     T: DAMType,
 {
-    let file = File::open(file_path).expect(format!("file {:?} wasn't found", file_path).as_str());
+    let file = File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found", file_path));
     prim_type.parse(BufReader::new(file).lines().flatten())
 }
 
@@ -24,15 +24,15 @@ pub fn read_inputs<T>(file_path: &PathBuf) -> Vec<T>
 where
     T: DAMType + std::str::FromStr,
 {
-    let file = File::open(file_path).expect(format!("file {:?} wasn't found.", file_path).as_str());
+    let file = File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found.", file_path));
     let reader = BufReader::new(file);
 
-    let v = reader
+    
+    reader
         .lines()
         .flatten() // gets rid of Err from lines
         .flat_map(|line| line.parse::<T>()) // ignores Err variant from Result of str.parse
-        .collect();
-    v
+        .collect()
     // let test = prim_type.parse(v);
     // let test = Adapter::parse(&prim_type, v);
 

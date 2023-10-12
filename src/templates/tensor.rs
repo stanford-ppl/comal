@@ -6,12 +6,12 @@ use std::{
 
 use dam::types::{DAMType, StaticallySized};
 use itertools::Itertools;
-use ndarray::ShapeBuilder;
+
 use ndarray::{
-    Array, Array1, ArrayBase, CowArray, CowRepr, Dim, Dimension, IntoDimension, Ix1, LinalgScalar,
-    OwnedRepr, Shape,
+    Array, ArrayBase, CowArray, Dim, Dimension, IntoDimension, Ix1, LinalgScalar,
+    OwnedRepr,
 };
-use num::{One, Zero};
+
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Tensor<'a, ValType: DAMType, Dim: ndarray::Dimension, const N: usize> {

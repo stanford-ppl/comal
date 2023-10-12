@@ -1,4 +1,4 @@
-use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
+use dam::{context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -76,7 +76,7 @@ where
                     }
                     match curr_in.data {
                         Token::Val(val) => {
-                            if (self.predicate)(curr_ocrd, Token::Val(val.clone())) == false {
+                            if !(self.predicate)(curr_ocrd, Token::Val(val.clone())) {
                                 let icrd_channel_elem = ChannelElement::new(
                                     self.time.tick() + 1,
                                     Token::<ValType, StopType>::Val(val.clone()),

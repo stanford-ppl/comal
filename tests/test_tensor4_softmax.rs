@@ -27,7 +27,7 @@ fn test_softmax() {
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
-    let base_path = Path::new(&formatted_dir).join(&test_name);
+    let base_path = Path::new(&formatted_dir).join(test_name);
     let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
     let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
     let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");

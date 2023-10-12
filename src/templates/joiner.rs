@@ -1,4 +1,4 @@
-use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
+use dam::{context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
 
@@ -53,7 +53,7 @@ where
 {
     fn init(&mut self) {}
 
-    fn run(&mut self) -> () {
+    fn run(&mut self) {
         // let mut get_crd1: bool = false;
         // let mut get_crd2: bool = false;
 
@@ -242,16 +242,16 @@ where
 {
     fn init(&mut self) {}
 
-    fn run(&mut self) -> () {
+    fn run(&mut self) {
         let mut get_crd1: bool = false;
         let mut get_crd2: bool = false;
 
         loop {
-            if get_crd1 == true {
+            if get_crd1 {
                 self.union_data.in_crd1.dequeue(&self.time).unwrap();
                 self.union_data.in_ref1.dequeue(&self.time).unwrap();
             }
-            if get_crd2 == true {
+            if get_crd2 {
                 self.union_data.in_crd2.dequeue(&self.time).unwrap();
                 self.union_data.in_ref2.dequeue(&self.time).unwrap();
             }

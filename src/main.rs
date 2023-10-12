@@ -4,7 +4,7 @@ use std::{fs, path::Path, time::Instant};
 
 use argparse::{ArgumentParser, Store, StoreFalse};
 use comal::config::Data;
-use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptions, RunOptionsBuilder};
+use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
 use prost::Message;
 use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};
 

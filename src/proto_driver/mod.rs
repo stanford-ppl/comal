@@ -24,7 +24,7 @@ use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
 use dam::utility_contexts::{BroadcastContext, GeneratorContext};
-use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
+use dam::{context_tools::*};
 
 use proto_headers::tortilla::*;
 

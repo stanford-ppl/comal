@@ -2,7 +2,7 @@ use core::hash::Hash;
 use std::collections::BTreeMap;
 
 // use crate::{channel::utils::peek_next, context::Context};
-use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
+use dam::{context_tools::*, dam_macros::context_macro};
 
 // use crate::{
 //     channel::{
@@ -164,7 +164,7 @@ where
                     match in_val.data {
                         Token::Val(val) => match in_icrd.data {
                             Token::Val(crd) => {
-                                *accum_storage.entry(crd).or_insert(ValType::default()) +=
+                                *accum_storage.entry(crd).or_default() +=
                                     val.clone();
                             }
                             _ => {

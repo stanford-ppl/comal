@@ -14,7 +14,7 @@ use dam::{
     templates::{ops::ALUOp, pcu::*},
     types::DAMType,
 };
-use ndarray::LinalgScalar;
+
 
 use super::primitive::Token;
 

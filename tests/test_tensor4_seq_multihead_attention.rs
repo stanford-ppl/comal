@@ -27,7 +27,7 @@ fn test_multihead_attention() {
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
-    let base_path = Path::new(&formatted_dir).join(&test_name);
+    let base_path = Path::new(&formatted_dir).join(test_name);
     let q0_seg_filename = base_path.join("tensor_Q_mode_0_seg");
     let q0_crd_filename = base_path.join("tensor_Q_mode_0_crd");
     let q1_seg_filename = base_path.join("tensor_Q_mode_1_seg");

@@ -1,22 +1,22 @@
 use core::fmt;
-use std::fmt::Error;
-use std::marker::PhantomData;
-use std::ops::Mul;
-use std::str::FromStr;
+
+
+
+
 
 use dam::templates::ops::*;
 use dam::RegisterALUOp;
-use dam::{channel::utils::*, context_tools::*, dam_macros::context_macro};
-use itertools::Itertools;
-use ndarray::Array;
-use ndarray::CowArray;
-use ndarray::Dim;
-use ndarray::Dimension;
-use ndarray::IntoDimension;
-use ndarray::Ix1;
-use ndarray::LinalgScalar;
-use ndarray::Shape;
-use num::One;
+use dam::{context_tools::*};
+
+
+
+
+
+
+
+
+
+
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Token<ValType, StopType> {
@@ -27,7 +27,9 @@ pub enum Token<ValType, StopType> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Default)]
 pub enum Repsiggen {
+    #[default]
     Repeat,
     Stop,
     Done,
@@ -86,11 +88,11 @@ impl<ValType, StopType: core::str::FromStr> TryFrom<&str> for Token<ValType, Sto
     type Error = ();
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if value.starts_with("D") {
+        if value.starts_with('D') {
             Ok(Self::Done)
-        } else if value.starts_with("N") {
+        } else if value.starts_with('N') {
             Ok(Self::Empty)
-        } else if value.starts_with("S") {
+        } else if value.starts_with('S') {
             value[1..].parse().map(Self::Stop).map_err(|_| ())
         } else {
             Err(())
@@ -102,11 +104,11 @@ impl TryFrom<&str> for Repsiggen {
     type Error = ();
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if value.starts_with("R") {
+        if value.starts_with('R') {
             Ok(Self::Repeat)
-        } else if value.starts_with("S") {
+        } else if value.starts_with('S') {
             Ok(Self::Stop)
-        } else if value.starts_with("D") {
+        } else if value.starts_with('D') {
             Ok(Self::Done)
         } else {
             Err(())
@@ -171,11 +173,7 @@ impl<ValType: Default, StopType: Default> Default for Token<ValType, StopType> {
     }
 }
 
-impl Default for Repsiggen {
-    fn default() -> Self {
-        Repsiggen::Repeat
-    }
-}
+
 
 impl<ValType: DAMType, StopType: DAMType> DAMType for Token<ValType, StopType> {
     fn dam_size(&self) -> usize {
