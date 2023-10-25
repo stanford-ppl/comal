@@ -207,7 +207,13 @@ fn test_mat_elemadd() {
 
     let executed = initialized.run(
         RunOptionsBuilder::default()
-            .mode(RunMode::Simple)
+            .mode(RunMode::Simple).logging(LoggingOptions::Mongo(
+                    MongoOptionsBuilder::default()
+                        .db("matadd".to_string())
+                        .uri("mongodb://127.0.0.1:27017".to_string())
+                        .build()
+                        .unwrap(),
+                ))
             .build()
             .unwrap(),
     );

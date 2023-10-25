@@ -21,10 +21,12 @@ use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 
+use comal::templates::alu::make_unary_alu;
+use comal::templates::primitive::ALUExpOp;
+use dam::context_tools::*;
 use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
 use dam::utility_contexts::{BroadcastContext, GeneratorContext};
-use dam::{context_tools::*};
 
 use proto_headers::tortilla::*;
 
@@ -251,22 +253,34 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     alu::Conn::Vals(val) => get_val_id(&val.output),
                     alu::Conn::Crds(_) => todo!(),
                 };
-                assert!(in_val_ids.len() == 2);
-                let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
-                let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
+                assert!(in_val_ids.len() >= 1);
                 let out_val_sender = valmap.get_sender(out_val_id, &mut parent);
-                parent.add_child(make_alu(
-                    val_receiver1,
-                    val_receiver2,
-                    out_val_sender,
-                    match op.stages[0].op() {
-                        alu::AluOp::Add => ALUAddOp(),
-                        alu::AluOp::Sub => ALUSubOp(),
-                        alu::AluOp::Mul => ALUMulOp(),
-                        alu::AluOp::Div => ALUDivOp(),
-                        _ => todo!(),
-                    },
-                ));
+                let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
+                if in_val_ids.len() == 2 {
+                    let val_receiver2 =
+                        valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
+                    parent.add_child(make_alu(
+                        val_receiver1,
+                        val_receiver2,
+                        out_val_sender,
+                        match op.stages[0].op() {
+                            alu::AluOp::Add => ALUAddOp(),
+                            alu::AluOp::Sub => ALUSubOp(),
+                            alu::AluOp::Mul => ALUMulOp(),
+                            alu::AluOp::Div => ALUDivOp(),
+                            _ => todo!(),
+                        },
+                    ));
+                } else if in_val_ids.len() == 1 {
+                    parent.add_child(make_unary_alu(
+                        val_receiver1,
+                        out_val_sender,
+                        match op.stages[0].op() {
+                            alu::AluOp::Exp => ALUExpOp(),
+                            _ => unimplemented!(),
+                        },
+                    ))
+                }
             }
             Op::Reduce(op) => {
                 let in_val_id = get_val_id(&op.input_val);

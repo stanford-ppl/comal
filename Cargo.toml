@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dam = { git = "ssh://git@github.com/stanford-ppl/DAM-RS.git", branch = "logging-dev" }
+dam = { git = "ssh://git@github.com/stanford-ppl/DAM-RS.git", branch = "dev" }
 num = "0.4.1"
 serde_derive = "1.0.181"
 serde = "1.0.181"
@@ -19,7 +19,6 @@ prost = "0.11.9"
 prost-types = "0.11.9"
 bytes = "1.4.0"
 argparse = "0.2.2"
-protobuf = "3.2.0"
 ndarray = "0.15.6"
 itertools = "0.11.0"
 num-traits = "0.2.16"
