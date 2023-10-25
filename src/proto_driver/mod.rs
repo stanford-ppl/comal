@@ -21,8 +21,7 @@ use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 
-use comal::templates::alu::make_unary_alu;
-use comal::templates::primitive::ALUExpOp;
+use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::context_tools::*;
 use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
@@ -163,8 +162,10 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     in_ref1,
                     in_crd2,
                     in_ref2,
-                    out_ref1: refmap.get_sender(get_ref_id(&op.output_ref1), &mut parent),
-                    out_ref2: refmap.get_sender(get_ref_id(&op.output_ref2), &mut parent),
+                    out_ref1: refmap
+                        .get_sender(get_ref_id(&Some(op.output_refs[0].clone())), &mut parent),
+                    out_ref2: refmap
+                        .get_sender(get_ref_id(&Some(op.output_refs[1].clone())), &mut parent),
                     out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), &mut parent),
                 };
 
@@ -175,16 +176,18 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 };
             }
             Op::FiberLookup(op) => {
-                let in_ref = if op.root {
-                    let (root_sender, root_receiver) = parent.bounded(2);
-                    parent.add_child(GeneratorContext::new(
-                        || token_vec!(u32; u32; 0, "D").into_iter(),
-                        root_sender,
-                    ));
-                    root_receiver
-                } else {
-                    refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent)
-                };
+                // let in_ref = if op.root {
+                //     let (root_sender, root_receiver) = parent.bounded(2);
+                //     parent.add_child(GeneratorContext::new(
+                //         || token_vec!(u32; u32; 0, "D").into_iter(),
+                //         root_sender,
+                //     ));
+                //     root_receiver
+                // }
+                // else {
+                //     refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent)
+                // };
+                let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent);
 
                 let f_data = RdScanData {
                     in_ref,
@@ -346,6 +349,17 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
             }
             Op::CoordMask(_) => unimplemented!("Custard can't output coord mask op yet"),
             operation::Op::Func(_) => todo!(),
+            Op::Root(op) => {
+                let in_ref = {
+                    let (root_sender, root_receiver) = parent.bounded(2);
+                    parent.add_child(GeneratorContext::new(
+                        || token_vec!(u32; u32; 0, "D").into_iter(),
+                        root_sender,
+                    ));
+                    root_receiver
+                };
+            }
+            Op::Func(_) => todo!(),
         }
     }
     parent
