@@ -93,6 +93,10 @@ where
             }
         }
     }
+
+    pub fn set_receiver(&mut self, id: u64, rcv: Receiver<T>) {
+        self.map.insert(id, ChannelType::ReceiverType(rcv));
+    }
 }
 
 pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBuilder<'a> {
@@ -102,6 +106,8 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
     let mut crdmap: Channels<CoordType> = Channels::new();
     let mut valmap: Channels<ValType> = Channels::new();
     let mut repmap: Channels<Repsiggen> = Channels::new();
+
+    let mut repsig_id_count: u64 = 0;
 
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
@@ -216,25 +222,43 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 parent.add_child(CompressedWrScan::new(receiver));
             }
             Op::Repeat(op) => {
-                let in_repsig_id = get_repsig_id(&op.input_rep_sig);
+                // let in_repsig_id = get_repsig_id(&op.input_rep_sig);
 
-                let in_ref = if op.root {
-                    let (root_sender, root_receiver) = parent.bounded(2);
-                    parent.add_child(GeneratorContext::new(
-                        || token_vec!(u32; u32; 0, "D").into_iter(),
-                        root_sender,
-                    ));
-                    root_receiver
-                } else {
-                    refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent)
+                // TODO: Need to check if input_rep_crd exists for backwards compatibility
+                // match &op.input_rep_crd {}
+                let in_rep_crd = get_crd_id(&op.input_rep_crd);
+
+                // let in_ref = if op.root {
+                //     let (root_sender, root_receiver) = parent.bounded(2);
+                //     parent.add_child(GeneratorContext::new(
+                //         || token_vec!(u32; u32; 0, "D").into_iter(),
+                //         root_sender,
+                //     ));
+                //     root_receiver
+                // } else {
+                //     refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent)
+                // };
+
+                // TODO: Do we need the repsiggen to be separate or just embed it as a nested context inside the repeat context
+
+                // FIXME: Need to materialize random channel id
+                // Might not matter since repsig, could just use a counter to avoid collision
+                let repsig_data = RepSigGenData {
+                    input: refmap.get_receiver(in_rep_crd, &mut parent),
+                    out_repsig: repmap.get_sender(repsig_id_count, &mut parent),
                 };
+
+                parent.add_child(RepeatSigGen::new(repsig_data));
+
+                let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent);
 
                 let rep_data = RepeatData {
                     in_ref,
-                    in_repsig: repmap.get_receiver(in_repsig_id, &mut parent),
+                    in_repsig: repmap.get_receiver(repsig_id_count, &mut parent),
                     out_ref: refmap.get_sender(get_ref_id(&op.output_ref), &mut parent),
                 };
                 parent.add_child(Repeat::new(rep_data));
+                repsig_id_count += 1;
             }
             Op::Repeatsig(op) => {
                 let in_crd_id = get_crd_id(&op.input_crd);
@@ -280,7 +304,11 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                         out_val_sender,
                         match op.stages[0].op() {
                             alu::AluOp::Exp => ALUExpOp(),
-                            _ => unimplemented!(),
+                            _ => {
+                                format!("{:?}", op.stages[0].op());
+                                // panic!("Not implemented");
+                                ALUExpOp()
+                            }
                         },
                     ))
                 }
@@ -350,14 +378,14 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
             Op::CoordMask(_) => unimplemented!("Custard can't output coord mask op yet"),
             operation::Op::Func(_) => todo!(),
             Op::Root(op) => {
-                let in_ref = {
-                    let (root_sender, root_receiver) = parent.bounded(2);
-                    parent.add_child(GeneratorContext::new(
-                        || token_vec!(u32; u32; 0, "D").into_iter(),
-                        root_sender,
-                    ));
-                    root_receiver
-                };
+                let out_ref_id = get_ref_id(&op.output_ref);
+                // let (root_sender, root_receiver) = parent.bounded(2);
+                let root_sender = refmap.get_sender(out_ref_id, &mut parent);
+                parent.add_child(GeneratorContext::new(
+                    || token_vec!(u32; u32; 0, "D").into_iter(),
+                    root_sender,
+                ));
+                // root_receiver
             }
             Op::Func(_) => todo!(),
         }

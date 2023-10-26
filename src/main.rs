@@ -12,8 +12,8 @@ mod proto_driver;
 mod templates;
 
 fn main() {
-    let mut data_dir_name = "gcn2".to_string();
-    let mut proto_filename = "gcn.bin".to_string();
+    let mut data_dir_name = "matmul_ijk1".to_string();
+    let mut proto_filename = "spmm.bin".to_string();
     let mut with_flavor = true;
 
     {
