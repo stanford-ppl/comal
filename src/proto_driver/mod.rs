@@ -107,7 +107,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
     let mut valmap: Channels<ValType> = Channels::new();
     let mut repmap: Channels<Repsiggen> = Channels::new();
 
-    let mut repsig_id_count: u64 = 0;
+    let mut repsig_id_count: u64 = 1;
 
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
@@ -201,6 +201,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     out_ref: refmap.get_sender(get_ref_id(&op.output_ref), &mut parent),
                 };
 
+                dbg!(op.mode);
                 if op.format == "compressed" {
                     let seg_filename =
                         base_path.join(format!("tensor_{}_mode_{}_seg", op.tensor, op.mode));
@@ -226,7 +227,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
 
                 // TODO: Need to check if input_rep_crd exists for backwards compatibility
                 // match &op.input_rep_crd {}
-                let in_rep_crd = get_crd_id(&op.input_rep_crd);
+                let in_rep_ref = get_ref_id(&op.input_rep_ref);
 
                 // let in_ref = if op.root {
                 //     let (root_sender, root_receiver) = parent.bounded(2);
@@ -244,7 +245,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 // FIXME: Need to materialize random channel id
                 // Might not matter since repsig, could just use a counter to avoid collision
                 let repsig_data = RepSigGenData {
-                    input: refmap.get_receiver(in_rep_crd, &mut parent),
+                    input: refmap.get_receiver(in_rep_ref, &mut parent),
                     out_repsig: repmap.get_sender(repsig_id_count, &mut parent),
                 };
 
@@ -282,8 +283,9 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 };
                 assert!(in_val_ids.len() >= 1);
                 let out_val_sender = valmap.get_sender(out_val_id, &mut parent);
-                let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
                 if in_val_ids.len() == 2 {
+                    let val_receiver1 =
+                        valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
                     let val_receiver2 =
                         valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
                     parent.add_child(make_alu(
@@ -299,6 +301,8 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                         },
                     ));
                 } else if in_val_ids.len() == 1 {
+                    let val_receiver1 =
+                        valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
                     parent.add_child(make_unary_alu(
                         val_receiver1,
                         out_val_sender,
