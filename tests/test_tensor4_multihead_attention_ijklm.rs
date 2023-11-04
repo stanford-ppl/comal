@@ -110,9 +110,9 @@ fn test_multihead_attention() {
     // let a_vals = read_inputs::<f32>(&a_vals_filename);
 
     let mut parent = ProgramBuilder::default();
-    let chan_size = 2048;
+    let chan_size = 4096;
 
-    let par_factor = 10;
+    let par_factor = 4;
 
     // fiberlookup_bi
     let (qi_in_ref_sender, qi_in_ref_receiver) = parent.bounded(chan_size);

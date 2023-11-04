@@ -135,8 +135,8 @@ where
 {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        dbg!(self.data.clone());
-        dbg!(rhs.data.clone());
+        // dbg!(self.data.clone());
+        // dbg!(rhs.data.clone());
         let data = self.data.to_owned() + rhs.data.to_owned();
         // dbg!(data.clone());
         Tensor::<'a, A, D, N> {

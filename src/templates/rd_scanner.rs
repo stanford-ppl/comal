@@ -1,3 +1,6 @@
+use std::fs;
+
+use crate::config::Data;
 use dam::{context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
@@ -204,6 +207,11 @@ where
 
     fn run(&mut self) {
         // let mut curr_crd: Token<ValType, StopType>
+        let filename = home::home_dir().unwrap().join("sam_config.toml");
+        let contents = fs::read_to_string(filename).unwrap();
+        let data: Data = toml::from_str(&contents).unwrap();
+        let latency = data.sam_config.fiberlookup_latency;
+        let initiation_interval = data.sam_config.fiberlookup_ii;
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -221,7 +229,7 @@ where
                                 .enqueue(
                                     &self.time,
                                     ChannelElement::new(
-                                        curr_time + 1,
+                                        curr_time + latency,
                                         super::primitive::Token::Val(coord),
                                     ),
                                 )
@@ -231,13 +239,13 @@ where
                                 .enqueue(
                                     &self.time,
                                     ChannelElement::new(
-                                        curr_time + 1,
+                                        curr_time + latency,
                                         super::primitive::Token::Val(curr_addr.clone()),
                                     ),
                                 )
                                 .unwrap();
                             curr_addr += 1;
-                            self.time.incr_cycles(1);
+                            self.time.incr_cycles(initiation_interval);
                         }
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
@@ -256,14 +264,14 @@ where
                             .out_crd
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + 1, output.clone()),
+                                ChannelElement::new(curr_time + latency, output.clone()),
                             )
                             .unwrap();
                         self.rd_scan_data
                             .out_ref
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + 1, output.clone()),
+                                ChannelElement::new(curr_time + latency, output.clone()),
                             )
                             .unwrap();
                     }
@@ -273,21 +281,21 @@ where
                             .out_crd
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
+                                ChannelElement::new(curr_time + latency, Token::Stop(token.clone() + 1)),
                             )
                             .unwrap();
                         self.rd_scan_data
                             .out_ref
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
+                                ChannelElement::new(curr_time + latency, Token::Stop(token.clone() + 1)),
                             )
                             .unwrap();
                     }
                     // Could either be a done token or an empty token
                     // In the case of done token, return
                     Token::Done => {
-                        let channel_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
+                        let channel_elem = ChannelElement::new(self.time.tick() + latency, Token::Done);
                         self.rd_scan_data
                             .out_crd
                             .enqueue(&self.time, channel_elem.clone())
@@ -300,7 +308,7 @@ where
                         return;
                     }
                     Token::Empty => {
-                        let channel_elem = ChannelElement::new(self.time.tick() + 1, Token::Empty);
+                        let channel_elem = ChannelElement::new(self.time.tick() + latency, Token::Empty);
                         self.rd_scan_data
                             .out_crd
                             .enqueue(&self.time, channel_elem.clone())
@@ -313,7 +321,7 @@ where
                 },
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
             }
-            self.time.incr_cycles(1);
+            self.time.incr_cycles(initiation_interval);
         }
     }
 }

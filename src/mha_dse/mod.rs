@@ -1,36 +1,33 @@
-use std::{fs, path::Path};
+use std::path::PathBuf;
 
-use comal::templates::stkn_dropper::StknDrop;
+use crate::templates::accumulator::MaxReduce;
+use crate::templates::scatter_gather::{Scatter, Gather};
 
-use dam::utility_contexts::*;
+use super::templates::accumulator::{Reduce, ReduceData, Spacc1, Spacc1Data};
+use super::templates::alu::make_alu;
+use super::templates::array::{Array, ArrayData};
+use super::templates::crd_manager::{CrdDrop, CrdHold, CrdManagerData};
+use super::templates::joiner::{CrdJoinerData, Intersect, Union};
+use super::templates::primitive::{Repsiggen, Token};
+use super::templates::rd_scanner::{CompressedCrdRdScan, RdScanData, UncompressedCrdRdScan};
+use super::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
+use super::templates::utils::read_inputs;
+use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
+use super::token_vec;
 
-use comal::templates::accumulator::{MaxReduce, Reduce, ReduceData, Spacc1, Spacc1Data};
-use comal::templates::alu::{make_alu, make_unary_alu};
-use comal::templates::array::{Array, ArrayData};
-use comal::templates::crd_manager::{CrdDrop, CrdManagerData};
-use comal::templates::joiner::{CrdJoinerData, Intersect};
-use comal::templates::primitive::{ALUExpOp, Token};
-use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
-use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
-use comal::templates::scatter_gather::{Gather, Scatter};
-
-use comal::config::Data;
-use comal::templates::utils::read_inputs;
-use dam::simulation::*;
+use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
+use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
+use dam::utility_contexts::{BroadcastContext, GeneratorContext};
 
-use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
-use comal::token_vec;
+type VT = f32;
+type CT = u32;
+type ST = u32;
+type CoordType = Token<CT, ST>;
+type RefType = Token<CT, ST>;
+type ValType = Token<VT, ST>;
 
-#[test]
-fn test_par_multihead_attention() {
-    // let test_name = "tensor4_mha";
-    let test_name = "tensor4_mha256";
-    let filename = home::home_dir().unwrap().join("sam_config.toml");
-    let contents = fs::read_to_string(filename).unwrap();
-    let data: Data = toml::from_str(&contents).unwrap();
-    let formatted_dir = data.sam_config.sam_path;
-    let base_path = Path::new(&formatted_dir).join(test_name);
+pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
     let q0_seg_filename = base_path.join("tensor_Q_mode_0_seg");
     let q0_crd_filename = base_path.join("tensor_Q_mode_0_crd");
     let q1_seg_filename = base_path.join("tensor_Q_mode_1_seg");
@@ -60,16 +57,6 @@ fn test_par_multihead_attention() {
     let v3_seg_filename = base_path.join("tensor_V_mode_3_seg");
     let v3_crd_filename = base_path.join("tensor_V_mode_3_crd");
     let v_vals_filename = base_path.join("tensor_V_mode_vals");
-
-    // let a0_seg.clone()_filename = base_path.join("tensor_A_mode_0_seg.clone()");
-    // let a0_crd_filename = base_path.join("tensor_A_mode_0_crd");
-    // let a1_seg.clone()_filename = base_path.join("tensor_A_mode_1_seg.clone()");
-    // let a1_crd_filename = base_path.join("tensor_A_mode_1_crd");
-    // let a2_seg.clone()_filename = base_path.join("tensor_A_mode_2_seg.clone()");
-    // let a2_crd_filename = base_path.join("tensor_A_mode_2_crd");
-    // let a3_seg.clone()_filename = base_path.join("tensor_A_mode_3_seg.clone()");
-    // let a3_crd_filename = base_path.join("tensor_A_mode_3_crd");
-    // let a_vals_filename = base_path.join("tensor_A_mode_vals");
 
     let q0_seg = read_inputs::<u32>(&q0_seg_filename);
     let q0_crd = read_inputs::<u32>(&q0_crd_filename);
@@ -101,21 +88,8 @@ fn test_par_multihead_attention() {
     let v3_crd = read_inputs::<u32>(&v3_crd_filename);
     let v_vals = read_inputs::<f32>(&v_vals_filename);
 
-    // let a0_seg.clone() = read_inputs::<u32>(&a0_seg.clone()_filename);
-    // let a0_crd = read_inputs::<u32>(&a0_crd_filename);
-    // let a1_seg.clone() = read_inputs::<u32>(&a1_seg.clone()_filename);
-    // let a1_crd = read_inputs::<u32>(&a1_crd_filename);
-    // let a2_seg.clone() = read_inputs::<u32>(&a2_seg.clone()_filename);
-    // let a2_crd = read_inputs::<u32>(&a2_crd_filename);
-    // let a3_seg.clone() = read_inputs::<u32>(&a3_seg.clone()_filename);
-    // let a3_crd = read_inputs::<u32>(&a3_crd_filename);
-    // let a_vals = read_inputs::<f32>(&a_vals_filename);
-
     let mut parent = ProgramBuilder::default();
-    let chan_size = 64;
-    let softmax_chan_size = 4096;
-
-    let par_factor = 4;
+    let chan_size = 4096;
 
     // fiberlookup_bi
     let (qi_in_ref_sender, qi_in_ref_receiver) = parent.bounded(chan_size);
@@ -296,8 +270,6 @@ fn test_par_multihead_attention() {
     };
     let intersect_j3 = Intersect::new(intersectj3_data);
     parent.add_child(intersect_j3);
-    // dbg!(intersect_j.id());
-    // dbg!(intersect_j3.id());
 
     let (bc_intersectj3_out_ref2_sender, bc_intersectj3_out_ref2_receiver) =
         parent.bounded(chan_size);
@@ -315,7 +287,7 @@ fn test_par_multihead_attention() {
         out_ref: qk_out_ref_sender,
         out_crd: qk_out_crd_sender,
     };
-    let qk_rdscanner = CompressedCrdRdScan::new(qk_data, q1_seg.clone(), q1_crd.clone());
+    let qk_rdscanner = CompressedCrdRdScan::new(qk_data, q1_seg.clone().clone(), q1_crd.clone());
     parent.add_child(qk_rdscanner);
 
     let (bc_qk_out_crd_sender, bc_qk_out_crd_receiver) = parent.bounded(chan_size);
@@ -364,44 +336,24 @@ fn test_par_multihead_attention() {
     let kk_repeat = Repeat::new(kk_repeat_data);
     parent.add_child(kk_repeat);
 
-    // let (qk_out_ref_sender1, qk_out_ref_receiver1) = parent.bounded(chan_size);
-    // let (qk_out_ref_sender2, qk_out_ref_receiver2) = parent.bounded(chan_size);
-    // let (qk_out_ref_sender3, qk_out_ref_receiver3) = parent.bounded(chan_size);
-    // let (qk_out_ref_sender4, qk_out_ref_receiver4) = parent.bounded(chan_size);
-
     let mut scat1 = Scatter::new(qk_out_ref_receiver);
     let mut scat2 = Scatter::new(out_repeat_vk_receiver);
     let mut scat3 = Scatter::new(out_repeat_kk_receiver);
     let mut scat4 = Scatter::new(bc2_qk_out_crd_receiver);
 
     let (out_final_val_sender, out_final_val_receiver) = parent.bounded(chan_size);
-    // let (out_final_ocrd_sender, out_final_ocrd_receiver) = parent.bounded(chan_size);
     let (out_final_icrd_sender, out_final_icrd_receiver) = parent.bounded(chan_size);
     let mut gat1 = Gather::new(out_final_val_sender);
     let mut gat2 = Gather::new(out_final_icrd_sender);
-    // let mut gat3 = Gather::new(out_final_ocrd_sender);
     for _ in 0..par_factor {
-        let (chunk_qk_ref_sender1, chunk_qk_ref_receiver1) = parent.bounded(chan_size);
-        let (chunk_vk_ref_sender1, chunk_vk_ref_receiver1) = parent.bounded(chan_size);
-        let (chunk_kk_ref_sender1, chunk_kk_ref_receiver1) = parent.bounded(chan_size);
-        let (chunk_qk_crd_sender1, chunk_qk_crd_receiver1) = parent.bounded(chan_size);
-        scat1.add_target(chunk_qk_ref_sender1);
-        scat2.add_target(chunk_vk_ref_sender1);
-        scat3.add_target(chunk_kk_ref_sender1);
-        scat4.add_target(chunk_qk_crd_sender1);
-
         let (chunk_qk_ref_sender, chunk_qk_ref_receiver) = parent.bounded(chan_size);
         let (chunk_vk_ref_sender, chunk_vk_ref_receiver) = parent.bounded(chan_size);
         let (chunk_kk_ref_sender, chunk_kk_ref_receiver) = parent.bounded(chan_size);
         let (chunk_qk_crd_sender, chunk_qk_crd_receiver) = parent.bounded(chan_size);
-        let stkn_dropper1 = StknDrop::new(chunk_qk_ref_receiver1, chunk_qk_ref_sender);
-        let stkn_dropper2 = StknDrop::new(chunk_vk_ref_receiver1, chunk_vk_ref_sender);
-        let stkn_dropper3 = StknDrop::new(chunk_kk_ref_receiver1, chunk_kk_ref_sender);
-        let stkn_dropper4 = StknDrop::new(chunk_qk_crd_receiver1, chunk_qk_crd_sender);
-        parent.add_child(stkn_dropper1);
-        parent.add_child(stkn_dropper2);
-        parent.add_child(stkn_dropper3);
-        parent.add_child(stkn_dropper4);
+        scat1.add_target(chunk_qk_ref_sender);
+        scat2.add_target(chunk_vk_ref_sender);
+        scat3.add_target(chunk_kk_ref_sender);
+        scat4.add_target(chunk_qk_crd_sender);
 
         let (kl_out_ref_sender, kl_out_ref_receiver) = parent.bounded(chan_size);
         let (kl_out_crd_sender, kl_out_crd_receiver) = parent.bounded(chan_size);
@@ -412,15 +364,6 @@ fn test_par_multihead_attention() {
         };
         let kl_rdscanner = CompressedCrdRdScan::new(kl_data, k1_seg.clone(), k1_crd.clone());
         parent.add_child(kl_rdscanner);
-
-        // let (bc_kl_out_crd_sender, bc_kl_out_crd_receiver) = parent.bounded(chan_size);
-        // // let (bc1_kl_out_crd_sender, bc1_kl_out_crd_receiver) =
-        // //     parent.bounded(chan_size);
-        // // let (bc2_kl_out_crd_sender, bc2_kl_out_crd_receiver) = parent.bounded(chan_size);
-        // let mut broadcast15 = BroadcastContext::new(kl_out_crd_receiver);
-        // broadcast15.add_target(bc_kl_out_crd_sender);
-        // broadcast15.add_target(bc1_kl_out_crd_sender);
-        // broadcast15.add_target(bc2_kl_out_crd_sender);
 
         let (vl_out_ref_sender, vl_out_ref_receiver) = parent.bounded(chan_size);
         let (vl_out_crd_sender, vl_out_crd_receiver) = parent.bounded(chan_size);
@@ -486,11 +429,9 @@ fn test_par_multihead_attention() {
         let repsig_l = RepeatSigGen::new(repsig_l_data);
         parent.add_child(repsig_l);
 
-        let (bc_out_repsig_l_sender, bc_out_repsig_l_receiver) = parent.bounded(softmax_chan_size);
-        let (bc1_out_repsig_l_sender, bc1_out_repsig_l_receiver) =
-            parent.bounded(softmax_chan_size);
-        let (bc2_out_repsig_l_sender, bc2_out_repsig_l_receiver) =
-            parent.bounded(softmax_chan_size);
+        let (bc_out_repsig_l_sender, bc_out_repsig_l_receiver) = parent.bounded(chan_size);
+        let (bc1_out_repsig_l_sender, bc1_out_repsig_l_receiver) = parent.bounded(chan_size);
+        let (bc2_out_repsig_l_sender, bc2_out_repsig_l_receiver) = parent.bounded(chan_size);
         let mut broadcast10 = BroadcastContext::new(out_repsig_l_receiver);
         broadcast10.add_target(bc_out_repsig_l_sender);
         broadcast10.add_target(bc1_out_repsig_l_sender);
@@ -507,8 +448,8 @@ fn test_par_multihead_attention() {
         let ql_repeat = Repeat::new(ql_repeat_data);
         parent.add_child(ql_repeat);
 
-        let (qm_out_ref_sender, qm_out_ref_receiver) = parent.bounded(softmax_chan_size);
-        let (qm_out_crd_sender, qm_out_crd_receiver) = parent.bounded(softmax_chan_size);
+        let (qm_out_ref_sender, qm_out_ref_receiver) = parent.bounded(chan_size);
+        let (qm_out_crd_sender, qm_out_crd_receiver) = parent.bounded(chan_size);
         let qm_data = RdScanData::<u32, u32> {
             in_ref: out_repeat_ql_receiver,
             out_ref: qm_out_ref_sender,
@@ -517,12 +458,9 @@ fn test_par_multihead_attention() {
         let qm_rdscanner = CompressedCrdRdScan::new(qm_data, q3_seg.clone(), q3_crd.clone());
         parent.add_child(qm_rdscanner);
 
-        let (intersectm_out_crd_sender, intersectm_out_crd_receiver) =
-            parent.bounded(softmax_chan_size);
-        let (intersectm_out_ref1_sender, intersectm_out_ref1_receiver) =
-            parent.bounded(softmax_chan_size);
-        let (intersectm_out_ref2_sender, intersectm_out_ref2_receiver) =
-            parent.bounded(softmax_chan_size);
+        let (intersectm_out_crd_sender, intersectm_out_crd_receiver) = parent.bounded(chan_size);
+        let (intersectm_out_ref1_sender, intersectm_out_ref1_receiver) = parent.bounded(chan_size);
+        let (intersectm_out_ref2_sender, intersectm_out_ref2_receiver) = parent.bounded(chan_size);
         let intersectm_data = CrdJoinerData::<u32, u32> {
             in_crd1: vm_out_crd_receiver,
             in_ref1: vm_out_ref_receiver,
@@ -551,16 +489,16 @@ fn test_par_multihead_attention() {
         parent.add_child(broadcast13);
 
         let (bc_intersectm_out_crd_sender, bc_intersectm_out_crd_receiver) =
-            parent.bounded(softmax_chan_size);
+            parent.bounded(chan_size);
         let (bc1_intersectm_out_crd_sender, bc1_intersectm_out_crd_receiver) =
-            parent.bounded(softmax_chan_size);
+            parent.bounded(chan_size);
         let mut broadcast12 = BroadcastContext::new(intersectm_out_crd_receiver);
         broadcast12.add_target(bc_intersectm_out_crd_sender);
         broadcast12.add_target(bc1_intersectm_out_crd_sender);
         parent.add_child(broadcast12);
 
         let (intersectm2_out_ref2_sender, intersectm2_out_ref2_receiver) =
-            parent.bounded(softmax_chan_size);
+            parent.bounded(chan_size);
         let intersectm2_data = CrdJoinerData::<u32, u32> {
             in_crd1: bc_km_out_crd_receiver,
             in_ref1: bc_km_out_ref_receiver,
@@ -574,13 +512,12 @@ fn test_par_multihead_attention() {
         parent.add_child(intersect_m2);
         // dbg!(intersect_m2.id());
 
-        let (intersectm3_out_crd_sender, intersectm3_out_crd_receiver) =
-            parent.bounded(softmax_chan_size);
+        let (intersectm3_out_crd_sender, intersectm3_out_crd_receiver) = parent.bounded(chan_size);
         // let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
         let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
-            parent.bounded(softmax_chan_size);
+            parent.bounded(chan_size);
         let (intersectm3_out_ref2_sender, intersectm3_out_ref2_receiver) =
-            parent.bounded(softmax_chan_size);
+            parent.bounded(chan_size);
 
         let intersectm3_data = CrdJoinerData::<u32, u32> {
             in_crd1: bc1_km_out_crd_receiver,
@@ -595,9 +532,9 @@ fn test_par_multihead_attention() {
         parent.add_child(intersect_m3);
 
         let (bc_intersectm3_out_crd_sender, bc_intersectm3_out_crd_receiver) =
-            parent.bounded(softmax_chan_size);
+            parent.bounded(chan_size);
         let (bc1_intersectm3_out_crd_sender, bc1_intersectm3_out_crd_receiver) =
-            parent.bounded(softmax_chan_size);
+            parent.bounded(chan_size);
         let mut broadcast16 = BroadcastContext::new(intersectm3_out_crd_receiver);
         broadcast16.add_target(bc_intersectm3_out_crd_sender);
         broadcast16.add_target(bc1_intersectm3_out_crd_sender);
@@ -622,7 +559,7 @@ fn test_par_multihead_attention() {
         parent.add_child(arrayvals_k);
 
         // arrayvals_v
-        let (v_out_val_sender, v_out_val_receiver) = parent.bounded(softmax_chan_size);
+        let (v_out_val_sender, v_out_val_receiver) = parent.bounded(chan_size);
         let arrayvals_v_data = ArrayData::<u32, f32, u32> {
             in_ref: intersectm2_out_ref2_receiver,
             out_val: v_out_val_sender,
@@ -641,7 +578,7 @@ fn test_par_multihead_attention() {
         parent.add_child(mul);
 
         // Reduce
-        let (red_out_sender, red_out_receiver) = parent.bounded(softmax_chan_size);
+        let (red_out_sender, red_out_receiver) = parent.bounded(chan_size);
         let red_data = ReduceData::<f32, u32> {
             in_val: mul_out_receiver,
             out_val: red_out_sender,
@@ -649,8 +586,8 @@ fn test_par_multihead_attention() {
         let red = Reduce::new(red_data);
         parent.add_child(red);
 
-        let (bc_out_red_sender, bc_out_red_receiver) = parent.bounded(softmax_chan_size);
-        let (bc1_out_red_sender, bc1_out_red_receiver) = parent.bounded(softmax_chan_size);
+        let (bc_out_red_sender, bc_out_red_receiver) = parent.bounded(chan_size);
+        let (bc1_out_red_sender, bc1_out_red_receiver) = parent.bounded(chan_size);
         let mut broadcast6 = BroadcastContext::new(red_out_receiver);
         broadcast6.add_target(bc_out_red_sender);
         broadcast6.add_target(bc1_out_red_sender);
@@ -689,8 +626,8 @@ fn test_par_multihead_attention() {
         let exp = make_unary_alu(add_out_receiver, exp_out_sender, ALUExpOp());
         parent.add_child(exp);
 
-        let (bc_exp_out_sender, bc_exp_out_receiver) = parent.bounded(softmax_chan_size);
-        let (bc1_exp_out_sender, bc1_exp_out_receiver) = parent.bounded(softmax_chan_size);
+        let (bc_exp_out_sender, bc_exp_out_receiver) = parent.bounded(chan_size);
+        let (bc1_exp_out_sender, bc1_exp_out_receiver) = parent.bounded(chan_size);
         let mut broadcast14 = BroadcastContext::new(exp_out_receiver);
         broadcast14.add_target(bc_exp_out_sender);
         broadcast14.add_target(bc1_exp_out_sender);
@@ -724,18 +661,6 @@ fn test_par_multihead_attention() {
         );
         parent.add_child(div);
 
-        // let (out_drop_val_sender, out_drop_val_receiver) = parent.bounded(chan_size);
-        // let (out_drop_crd_sender, out_drop_crd_receiver) =parent.unbounded::<Token<u32, u32>>();
-
-        // let val_drop_data = ValDropData::<u32, f32, u32> {
-        //     in_val: div_out_receiver,
-        //     in_crd: bc1_kl_out_crd_receiver,
-        //     out_val: out_drop_val_sender,
-        //     out_crd: out_drop_crd_sender,
-        // };
-
-        // let mut val_drop = ValDrop::new(val_drop_data);
-
         let (out_repsig_m_sender, out_repsig_m_receiver) = parent.bounded(chan_size);
         let repsig_m_data = RepSigGenData::<u32, u32> {
             input: bc_intersectm3_out_crd_receiver,
@@ -764,7 +689,7 @@ fn test_par_multihead_attention() {
         );
         parent.add_child(mul2);
 
-        let (drop_out_icrd_sender, drop_out_icrd_receiver) = parent.bounded(softmax_chan_size);
+        let (drop_out_icrd_sender, drop_out_icrd_receiver) = parent.bounded(chan_size);
 
         let crd_drop_data = CrdManagerData::<u32, u32> {
             in_crd_outer: chunk_qk_crd_receiver,
@@ -774,23 +699,6 @@ fn test_par_multihead_attention() {
         };
         let drop = CrdDrop::new(crd_drop_data);
         parent.add_child(drop);
-
-        // let (bc_exp_out_sender, bc_exp_out_receiver) = parent.bounded(chan_size);
-        // let (bc1_exp_out_sender, bc1_exp_out_receiver) = parent.bounded(chan_size);
-        // let mut broadcast14 = BroadcastContext::new(mul2_out_receiver);
-        // broadcast14.add_target(bc_exp_out_sender);
-        // broadcast14.add_target(bc1_exp_out_sender);
-        // parent.add_child(broadcast14);
-
-        // if i == par_factor - 1 {
-        // let (send, rcv) = parent.bounded(chan_size);
-        // let mut pc1 = PrintContext::new(bc_exp_out_receiver);
-        // pc1.add_target(parent.void());
-        // parent.add_child(pc1);
-        // } else {
-        // let broadcast = BroadcastContext::new(bc_exp_out_receiver);
-        // parent.add_child(broadcast);
-        // }
 
         let (out_spacc_val_sender, out_spacc_val_receiver) = parent.bounded(chan_size);
         let (out_spacc_icrd_sender, out_spacc_icrd_receiver) = parent.bounded(chan_size);
@@ -805,21 +713,15 @@ fn test_par_multihead_attention() {
         let spacc = Spacc1::new(spacc_data);
         parent.add_child(spacc);
 
-        // gat1.add_target(mul2_out_receiver);
-        // gat2.add_target(drop_out_icrd_receiver);
-        // gat3.add_target(bc1_intersectm3_out_crd_receiver);
-
         gat1.add_target(out_spacc_val_receiver);
         gat2.add_target(out_spacc_icrd_receiver);
     }
-
     parent.add_child(scat1);
     parent.add_child(scat2);
     parent.add_child(scat3);
     parent.add_child(scat4);
     parent.add_child(gat1);
     parent.add_child(gat2);
-    // parent.add_child(gat3);
 
     // fiberwrite_X0
     let x0_wrscanner = CompressedWrScan::new(intersecti2_out_crd_receiver);
@@ -835,38 +737,10 @@ fn test_par_multihead_attention() {
 
     // fiberwrite_X3
     let x3_wrscanner = CompressedWrScan::new(out_final_icrd_receiver);
-    // let x3_wrscanner = CompressedWrScan::new(out_spacc_icrd_receiver);
     parent.add_child(x3_wrscanner);
 
     // fiberwrite_Xvals
     let xvals = ValsWrScan::<f32, u32>::new(out_final_val_receiver);
-    // let xvals = ValsWrScan::<f32, u32>::new(out_spacc_val_receiver);
     parent.add_child(xvals);
-
-    let initialized = parent
-        .initialize(
-            InitializationOptionsBuilder::default()
-                .run_flavor_inference(true)
-                .build()
-                .unwrap(),
-        )
-        .unwrap();
-
-    let executed = initialized.run(
-        RunOptionsBuilder::default()
-            .mode(RunMode::Simple)
-            .build()
-            .unwrap(),
-    );
-    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
-
-    // let fil = formatted_dir.to_str().unwrap();
-    // dbg!(xvals.out_val);
-    // dbg!(xvals.view().tick_lower_bound());
-
-    // assert_eq!(x0_wrscanner.crd_arr, a0_crd.clone());
-    // assert_eq!(x1_wrscanner.crd_arr, a1_crd.clone());
-    // assert_eq!(x2_wrscanner.crd_arr, a2_crd.clone());
-    // assert_eq!(x3_wrscanner.crd_arr, a3_crd.clone());
-    // assert_eq!(xvals.out_val, a_vals);
+    parent
 }

@@ -71,7 +71,7 @@ where
                             self.time.tick() + 1,
                             Token::Val(ValType::default()),
                         );
-                        dbg!(Token::<ValType, StopType>::Val(ValType::default()));
+                        // dbg!(Token::<ValType, StopType>::Val(ValType::default()));
                         self.array_data
                             .out_val
                             .enqueue(&self.time, channel_elem)

@@ -8,6 +8,8 @@ pub struct Data {
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub sam_path: String,
+    pub fiberlookup_latency: u64,
+    pub fiberlookup_ii: u64,
 }
 
 #[cfg(test)]

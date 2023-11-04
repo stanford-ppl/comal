@@ -20,8 +20,8 @@ use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 use ndarray::Ix1;
 
-type VT = Tensor<'static, f32, Ix1, 2>;
-// type VT = f32;
+// type VT = Tensor<'static, f32, Ix1, 2>;
+type VT = f32;
 // type CT = u32;
 // type ST = u32;
 // type CoordType = Token<CT, ST>;
@@ -205,15 +205,21 @@ fn test_mat_elemadd() {
         )
         .unwrap();
 
+    // let executed = initialized.run(
+    //     RunOptionsBuilder::default()
+    //         .mode(RunMode::Simple).logging(LoggingOptions::Mongo(
+    //                 MongoOptionsBuilder::default()
+    //                     .db("matadd".to_string())
+    //                     .uri("mongodb://127.0.0.1:27017".to_string())
+    //                     .build()
+    //                     .unwrap(),
+    //             ))
+    //         .build()
+    //         .unwrap(),
+    // );
     let executed = initialized.run(
         RunOptionsBuilder::default()
-            .mode(RunMode::Simple).logging(LoggingOptions::Mongo(
-                    MongoOptionsBuilder::default()
-                        .db("matadd".to_string())
-                        .uri("mongodb://127.0.0.1:27017".to_string())
-                        .build()
-                        .unwrap(),
-                ))
+            .mode(RunMode::Simple)
             .build()
             .unwrap(),
     );

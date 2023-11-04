@@ -7,5 +7,10 @@
     "rust-analyzer.linkedProjects": [
         "./Cargo.toml",
     ],
-    "rust-analyzer.procMacro.attributes.enable": true
+    "rust-analyzer.procMacro.attributes.enable": true,
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "notebook.formatOnCellExecution": true,
+    "notebook.formatOnSave.enabled": true
 }
