@@ -360,7 +360,9 @@ where
                         }
                         (Token::Val(_), Token::Done)
                         | (Token::Done, Token::Val(_))
-                        | (Token::Done, Token::Done) => {
+                        | (Token::Done, Token::Done)
+                        | (Token::Done, Token::Empty)
+                        | (Token::Empty, Token::Done) => {
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, Token::Done);
                             self.union_data

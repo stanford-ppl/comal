@@ -10,6 +10,8 @@ pub struct Config {
     pub sam_path: String,
     pub fiberlookup_latency: u64,
     pub fiberlookup_ii: u64,
+    pub fiberwrite_latency: u64,
+    pub fiberwrite_ii: u64,
 }
 
 #[cfg(test)]

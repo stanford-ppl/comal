@@ -1,4 +1,3 @@
-
 use std::{fs, path::Path};
 
 use comal::templates::tensor::{PrimitiveType, Tensor};
@@ -30,8 +29,9 @@ type VT = f32;
 
 #[test]
 fn test_mat_elemadd() {
-    let test_name = "mat_elemadd_vec";
+    let test_name = "mat_elemadd";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
+    dbg!(filename.clone());
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
