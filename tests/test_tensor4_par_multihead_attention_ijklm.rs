@@ -115,7 +115,7 @@ fn test_par_multihead_attention() {
     let chan_size = 64;
     let softmax_chan_size = 4096;
 
-    let par_factor = 4;
+    let par_factor = 8;
 
     // fiberlookup_bi
     let (qi_in_ref_sender, qi_in_ref_receiver) = parent.bounded(chan_size);
@@ -858,7 +858,7 @@ fn test_par_multihead_attention() {
             .build()
             .unwrap(),
     );
-    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles().unwrap().time());
 
     // let fil = formatted_dir.to_str().unwrap();
     // dbg!(xvals.out_val);

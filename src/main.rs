@@ -78,5 +78,5 @@ fn main() {
     );
     let finish = Instant::now();
     println!("Run took: {:.2?}", finish - init_end);
-    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles().unwrap().time());
 }

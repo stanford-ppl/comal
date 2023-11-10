@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use crate::templates::accumulator::MaxReduce;
 use crate::templates::scatter_gather::{Scatter, Gather};
+use crate::templates::stkn_dropper::StknDrop;
 
 use super::templates::accumulator::{Reduce, ReduceData, Spacc1, Spacc1Data};
 use super::templates::alu::make_alu;
@@ -90,6 +91,7 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
 
     let mut parent = ProgramBuilder::default();
     let chan_size = 4096;
+    let softmax_chan_size = 4096;
 
     // fiberlookup_bi
     let (qi_in_ref_sender, qi_in_ref_receiver) = parent.bounded(chan_size);
@@ -342,18 +344,33 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
     let mut scat4 = Scatter::new(bc2_qk_out_crd_receiver);
 
     let (out_final_val_sender, out_final_val_receiver) = parent.bounded(chan_size);
+    // let (out_final_ocrd_sender, out_final_ocrd_receiver) = parent.bounded(chan_size);
     let (out_final_icrd_sender, out_final_icrd_receiver) = parent.bounded(chan_size);
     let mut gat1 = Gather::new(out_final_val_sender);
     let mut gat2 = Gather::new(out_final_icrd_sender);
+    // let mut gat3 = Gather::new(out_final_ocrd_sender);
     for _ in 0..par_factor {
+        let (chunk_qk_ref_sender1, chunk_qk_ref_receiver1) = parent.bounded(chan_size);
+        let (chunk_vk_ref_sender1, chunk_vk_ref_receiver1) = parent.bounded(chan_size);
+        let (chunk_kk_ref_sender1, chunk_kk_ref_receiver1) = parent.bounded(chan_size);
+        let (chunk_qk_crd_sender1, chunk_qk_crd_receiver1) = parent.bounded(chan_size);
+        scat1.add_target(chunk_qk_ref_sender1);
+        scat2.add_target(chunk_vk_ref_sender1);
+        scat3.add_target(chunk_kk_ref_sender1);
+        scat4.add_target(chunk_qk_crd_sender1);
+
         let (chunk_qk_ref_sender, chunk_qk_ref_receiver) = parent.bounded(chan_size);
         let (chunk_vk_ref_sender, chunk_vk_ref_receiver) = parent.bounded(chan_size);
         let (chunk_kk_ref_sender, chunk_kk_ref_receiver) = parent.bounded(chan_size);
         let (chunk_qk_crd_sender, chunk_qk_crd_receiver) = parent.bounded(chan_size);
-        scat1.add_target(chunk_qk_ref_sender);
-        scat2.add_target(chunk_vk_ref_sender);
-        scat3.add_target(chunk_kk_ref_sender);
-        scat4.add_target(chunk_qk_crd_sender);
+        let stkn_dropper1 = StknDrop::new(chunk_qk_ref_receiver1, chunk_qk_ref_sender);
+        let stkn_dropper2 = StknDrop::new(chunk_vk_ref_receiver1, chunk_vk_ref_sender);
+        let stkn_dropper3 = StknDrop::new(chunk_kk_ref_receiver1, chunk_kk_ref_sender);
+        let stkn_dropper4 = StknDrop::new(chunk_qk_crd_receiver1, chunk_qk_crd_sender);
+        parent.add_child(stkn_dropper1);
+        parent.add_child(stkn_dropper2);
+        parent.add_child(stkn_dropper3);
+        parent.add_child(stkn_dropper4);
 
         let (kl_out_ref_sender, kl_out_ref_receiver) = parent.bounded(chan_size);
         let (kl_out_crd_sender, kl_out_crd_receiver) = parent.bounded(chan_size);
@@ -364,6 +381,15 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         };
         let kl_rdscanner = CompressedCrdRdScan::new(kl_data, k1_seg.clone(), k1_crd.clone());
         parent.add_child(kl_rdscanner);
+
+        // let (bc_kl_out_crd_sender, bc_kl_out_crd_receiver) = parent.bounded(chan_size);
+        // // let (bc1_kl_out_crd_sender, bc1_kl_out_crd_receiver) =
+        // //     parent.bounded(chan_size);
+        // // let (bc2_kl_out_crd_sender, bc2_kl_out_crd_receiver) = parent.bounded(chan_size);
+        // let mut broadcast15 = BroadcastContext::new(kl_out_crd_receiver);
+        // broadcast15.add_target(bc_kl_out_crd_sender);
+        // broadcast15.add_target(bc1_kl_out_crd_sender);
+        // broadcast15.add_target(bc2_kl_out_crd_sender);
 
         let (vl_out_ref_sender, vl_out_ref_receiver) = parent.bounded(chan_size);
         let (vl_out_crd_sender, vl_out_crd_receiver) = parent.bounded(chan_size);
@@ -429,9 +455,11 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         let repsig_l = RepeatSigGen::new(repsig_l_data);
         parent.add_child(repsig_l);
 
-        let (bc_out_repsig_l_sender, bc_out_repsig_l_receiver) = parent.bounded(chan_size);
-        let (bc1_out_repsig_l_sender, bc1_out_repsig_l_receiver) = parent.bounded(chan_size);
-        let (bc2_out_repsig_l_sender, bc2_out_repsig_l_receiver) = parent.bounded(chan_size);
+        let (bc_out_repsig_l_sender, bc_out_repsig_l_receiver) = parent.bounded(softmax_chan_size);
+        let (bc1_out_repsig_l_sender, bc1_out_repsig_l_receiver) =
+            parent.bounded(softmax_chan_size);
+        let (bc2_out_repsig_l_sender, bc2_out_repsig_l_receiver) =
+            parent.bounded(softmax_chan_size);
         let mut broadcast10 = BroadcastContext::new(out_repsig_l_receiver);
         broadcast10.add_target(bc_out_repsig_l_sender);
         broadcast10.add_target(bc1_out_repsig_l_sender);
@@ -448,8 +476,8 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         let ql_repeat = Repeat::new(ql_repeat_data);
         parent.add_child(ql_repeat);
 
-        let (qm_out_ref_sender, qm_out_ref_receiver) = parent.bounded(chan_size);
-        let (qm_out_crd_sender, qm_out_crd_receiver) = parent.bounded(chan_size);
+        let (qm_out_ref_sender, qm_out_ref_receiver) = parent.bounded(softmax_chan_size);
+        let (qm_out_crd_sender, qm_out_crd_receiver) = parent.bounded(softmax_chan_size);
         let qm_data = RdScanData::<u32, u32> {
             in_ref: out_repeat_ql_receiver,
             out_ref: qm_out_ref_sender,
@@ -458,9 +486,12 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         let qm_rdscanner = CompressedCrdRdScan::new(qm_data, q3_seg.clone(), q3_crd.clone());
         parent.add_child(qm_rdscanner);
 
-        let (intersectm_out_crd_sender, intersectm_out_crd_receiver) = parent.bounded(chan_size);
-        let (intersectm_out_ref1_sender, intersectm_out_ref1_receiver) = parent.bounded(chan_size);
-        let (intersectm_out_ref2_sender, intersectm_out_ref2_receiver) = parent.bounded(chan_size);
+        let (intersectm_out_crd_sender, intersectm_out_crd_receiver) =
+            parent.bounded(softmax_chan_size);
+        let (intersectm_out_ref1_sender, intersectm_out_ref1_receiver) =
+            parent.bounded(softmax_chan_size);
+        let (intersectm_out_ref2_sender, intersectm_out_ref2_receiver) =
+            parent.bounded(softmax_chan_size);
         let intersectm_data = CrdJoinerData::<u32, u32> {
             in_crd1: vm_out_crd_receiver,
             in_ref1: vm_out_ref_receiver,
@@ -489,16 +520,16 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         parent.add_child(broadcast13);
 
         let (bc_intersectm_out_crd_sender, bc_intersectm_out_crd_receiver) =
-            parent.bounded(chan_size);
+            parent.bounded(softmax_chan_size);
         let (bc1_intersectm_out_crd_sender, bc1_intersectm_out_crd_receiver) =
-            parent.bounded(chan_size);
+            parent.bounded(softmax_chan_size);
         let mut broadcast12 = BroadcastContext::new(intersectm_out_crd_receiver);
         broadcast12.add_target(bc_intersectm_out_crd_sender);
         broadcast12.add_target(bc1_intersectm_out_crd_sender);
         parent.add_child(broadcast12);
 
         let (intersectm2_out_ref2_sender, intersectm2_out_ref2_receiver) =
-            parent.bounded(chan_size);
+            parent.bounded(softmax_chan_size);
         let intersectm2_data = CrdJoinerData::<u32, u32> {
             in_crd1: bc_km_out_crd_receiver,
             in_ref1: bc_km_out_ref_receiver,
@@ -512,12 +543,13 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         parent.add_child(intersect_m2);
         // dbg!(intersect_m2.id());
 
-        let (intersectm3_out_crd_sender, intersectm3_out_crd_receiver) = parent.bounded(chan_size);
+        let (intersectm3_out_crd_sender, intersectm3_out_crd_receiver) =
+            parent.bounded(softmax_chan_size);
         // let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
         let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
-            parent.bounded(chan_size);
+            parent.bounded(softmax_chan_size);
         let (intersectm3_out_ref2_sender, intersectm3_out_ref2_receiver) =
-            parent.bounded(chan_size);
+            parent.bounded(softmax_chan_size);
 
         let intersectm3_data = CrdJoinerData::<u32, u32> {
             in_crd1: bc1_km_out_crd_receiver,
@@ -532,9 +564,9 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         parent.add_child(intersect_m3);
 
         let (bc_intersectm3_out_crd_sender, bc_intersectm3_out_crd_receiver) =
-            parent.bounded(chan_size);
+            parent.bounded(softmax_chan_size);
         let (bc1_intersectm3_out_crd_sender, bc1_intersectm3_out_crd_receiver) =
-            parent.bounded(chan_size);
+            parent.bounded(softmax_chan_size);
         let mut broadcast16 = BroadcastContext::new(intersectm3_out_crd_receiver);
         broadcast16.add_target(bc_intersectm3_out_crd_sender);
         broadcast16.add_target(bc1_intersectm3_out_crd_sender);
@@ -559,7 +591,7 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         parent.add_child(arrayvals_k);
 
         // arrayvals_v
-        let (v_out_val_sender, v_out_val_receiver) = parent.bounded(chan_size);
+        let (v_out_val_sender, v_out_val_receiver) = parent.bounded(softmax_chan_size);
         let arrayvals_v_data = ArrayData::<u32, f32, u32> {
             in_ref: intersectm2_out_ref2_receiver,
             out_val: v_out_val_sender,
@@ -578,7 +610,7 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         parent.add_child(mul);
 
         // Reduce
-        let (red_out_sender, red_out_receiver) = parent.bounded(chan_size);
+        let (red_out_sender, red_out_receiver) = parent.bounded(softmax_chan_size);
         let red_data = ReduceData::<f32, u32> {
             in_val: mul_out_receiver,
             out_val: red_out_sender,
@@ -586,8 +618,8 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         let red = Reduce::new(red_data);
         parent.add_child(red);
 
-        let (bc_out_red_sender, bc_out_red_receiver) = parent.bounded(chan_size);
-        let (bc1_out_red_sender, bc1_out_red_receiver) = parent.bounded(chan_size);
+        let (bc_out_red_sender, bc_out_red_receiver) = parent.bounded(softmax_chan_size);
+        let (bc1_out_red_sender, bc1_out_red_receiver) = parent.bounded(softmax_chan_size);
         let mut broadcast6 = BroadcastContext::new(red_out_receiver);
         broadcast6.add_target(bc_out_red_sender);
         broadcast6.add_target(bc1_out_red_sender);
@@ -626,8 +658,8 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         let exp = make_unary_alu(add_out_receiver, exp_out_sender, ALUExpOp());
         parent.add_child(exp);
 
-        let (bc_exp_out_sender, bc_exp_out_receiver) = parent.bounded(chan_size);
-        let (bc1_exp_out_sender, bc1_exp_out_receiver) = parent.bounded(chan_size);
+        let (bc_exp_out_sender, bc_exp_out_receiver) = parent.bounded(softmax_chan_size);
+        let (bc1_exp_out_sender, bc1_exp_out_receiver) = parent.bounded(softmax_chan_size);
         let mut broadcast14 = BroadcastContext::new(exp_out_receiver);
         broadcast14.add_target(bc_exp_out_sender);
         broadcast14.add_target(bc1_exp_out_sender);
@@ -661,6 +693,18 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         );
         parent.add_child(div);
 
+        // let (out_drop_val_sender, out_drop_val_receiver) = parent.bounded(chan_size);
+        // let (out_drop_crd_sender, out_drop_crd_receiver) =parent.unbounded::<Token<u32, u32>>();
+
+        // let val_drop_data = ValDropData::<u32, f32, u32> {
+        //     in_val: div_out_receiver,
+        //     in_crd: bc1_kl_out_crd_receiver,
+        //     out_val: out_drop_val_sender,
+        //     out_crd: out_drop_crd_sender,
+        // };
+
+        // let mut val_drop = ValDrop::new(val_drop_data);
+
         let (out_repsig_m_sender, out_repsig_m_receiver) = parent.bounded(chan_size);
         let repsig_m_data = RepSigGenData::<u32, u32> {
             input: bc_intersectm3_out_crd_receiver,
@@ -689,7 +733,7 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         );
         parent.add_child(mul2);
 
-        let (drop_out_icrd_sender, drop_out_icrd_receiver) = parent.bounded(chan_size);
+        let (drop_out_icrd_sender, drop_out_icrd_receiver) = parent.bounded(softmax_chan_size);
 
         let crd_drop_data = CrdManagerData::<u32, u32> {
             in_crd_outer: chunk_qk_crd_receiver,
@@ -699,6 +743,23 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         };
         let drop = CrdDrop::new(crd_drop_data);
         parent.add_child(drop);
+
+        // let (bc_exp_out_sender, bc_exp_out_receiver) = parent.bounded(chan_size);
+        // let (bc1_exp_out_sender, bc1_exp_out_receiver) = parent.bounded(chan_size);
+        // let mut broadcast14 = BroadcastContext::new(mul2_out_receiver);
+        // broadcast14.add_target(bc_exp_out_sender);
+        // broadcast14.add_target(bc1_exp_out_sender);
+        // parent.add_child(broadcast14);
+
+        // if i == par_factor - 1 {
+        // let (send, rcv) = parent.bounded(chan_size);
+        // let mut pc1 = PrintContext::new(bc_exp_out_receiver);
+        // pc1.add_target(parent.void());
+        // parent.add_child(pc1);
+        // } else {
+        // let broadcast = BroadcastContext::new(bc_exp_out_receiver);
+        // parent.add_child(broadcast);
+        // }
 
         let (out_spacc_val_sender, out_spacc_val_receiver) = parent.bounded(chan_size);
         let (out_spacc_icrd_sender, out_spacc_icrd_receiver) = parent.bounded(chan_size);
@@ -713,9 +774,14 @@ pub fn run_mha<'a>(par_factor: u32, base_path: PathBuf) -> ProgramBuilder<'a> {
         let spacc = Spacc1::new(spacc_data);
         parent.add_child(spacc);
 
+        // gat1.add_target(mul2_out_receiver);
+        // gat2.add_target(drop_out_icrd_receiver);
+        // gat3.add_target(bc1_intersectm3_out_crd_receiver);
+
         gat1.add_target(out_spacc_val_receiver);
         gat2.add_target(out_spacc_icrd_receiver);
     }
+
     parent.add_child(scat1);
     parent.add_child(scat2);
     parent.add_child(scat3);
