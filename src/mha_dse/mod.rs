@@ -1,15 +1,15 @@
 use std::path::PathBuf;
 
 use crate::templates::accumulator::MaxReduce;
+use crate::templates::primitive::Token;
 use crate::templates::scatter_gather::{Scatter, Gather};
 
 use super::templates::accumulator::{Reduce, ReduceData, Spacc1, Spacc1Data};
 use super::templates::alu::make_alu;
 use super::templates::array::{Array, ArrayData};
-use super::templates::crd_manager::{CrdDrop, CrdHold, CrdManagerData};
-use super::templates::joiner::{CrdJoinerData, Intersect, Union};
-use super::templates::primitive::{Repsiggen, Token};
-use super::templates::rd_scanner::{CompressedCrdRdScan, RdScanData, UncompressedCrdRdScan};
+use super::templates::crd_manager::{CrdDrop, CrdManagerData};
+use super::templates::joiner::{CrdJoinerData, Intersect};
+use super::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use super::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use super::templates::utils::read_inputs;
 use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};

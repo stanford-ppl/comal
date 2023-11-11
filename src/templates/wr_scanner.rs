@@ -114,6 +114,11 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let filename = home::home_dir().unwrap().join("sam_config.toml");
+        let contents = fs::read_to_string(filename).unwrap();
+        let data: Data = toml::from_str(&contents).unwrap();
+        let latency = data.sam_config.fiberwrite_latency;
+        let initiation_interval = data.sam_config.fiberwrite_ii;
         loop {
             match self.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
@@ -123,13 +128,14 @@ where
                     Token::Empty | Token::Stop(_) => {
                         continue;
                     }
-                    Token::Done => return,
+                    Token::Done => break,
                 },
                 Err(_) => {
                     panic!("Unexpected end of stream");
                 }
             }
-            self.time.incr_cycles(1);
+            self.time.incr_cycles(initiation_interval);
         }
+        self.time.incr_cycles(latency);
     }
 }

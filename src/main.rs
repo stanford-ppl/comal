@@ -19,7 +19,7 @@ fn main() {
     let mut data_dir_name = "tensor4_mha256".to_string();
     let mut proto_filename = "op.bin".to_string();
     let mut with_flavor = true;
-    let mut run_dse = false;
+    let mut run_dse = true;
     let mut par_factor: u32 = 1;
 
     {
@@ -78,5 +78,5 @@ fn main() {
     );
     let finish = Instant::now();
     println!("Run took: {:.2?}", finish - init_end);
-    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles().unwrap());
 }

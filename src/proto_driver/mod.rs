@@ -391,7 +391,6 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 ));
                 // root_receiver
             }
-            Op::Func(_) => todo!(),
         }
     }
     parent

@@ -24,6 +24,14 @@ pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     crd_arr: Vec<ValType>,
 }
 
+#[context_macro]
+pub struct TileRdScan<ValType: Clone, StopType: Clone> {
+    rd_scan_data: RdScanData<ValType, StopType>,
+    seg_arrs: Vec<Vec<ValType>>,
+    crd_arrs: Vec<Vec<ValType>>,
+    num_tiles: usize,
+}
+
 impl<ValType: DAMType, StopType: DAMType> UncompressedCrdRdScan<ValType, StopType>
 where
     UncompressedCrdRdScan<ValType, StopType>: Context,
@@ -58,6 +66,31 @@ where
             rd_scan_data,
             seg_arr,
             crd_arr,
+            context_info: Default::default(),
+        };
+        (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
+        (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
+        (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
+
+        ucr
+    }
+}
+
+impl<ValType: DAMType, StopType: DAMType> TileRdScan<ValType, StopType>
+where
+    TileRdScan<ValType, StopType>: Context,
+{
+    pub fn new(
+        rd_scan_data: RdScanData<ValType, StopType>,
+        seg_arrs: Vec<Vec<ValType>>,
+        crd_arrs: Vec<Vec<ValType>>,
+        num_tiles: usize,
+    ) -> Self {
+        let ucr = TileRdScan {
+            rd_scan_data,
+            seg_arrs,
+            crd_arrs,
+            num_tiles,
             context_info: Default::default(),
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
@@ -191,7 +224,7 @@ where
     }
 }
 
-impl<ValType, StopType> Context for CompressedCrdRdScan<ValType, StopType>
+impl<ValType, StopType> Context for TileRdScan<ValType, StopType>
 where
     ValType: DAMType
         + std::ops::AddAssign<u32>
@@ -214,6 +247,156 @@ where
         let initiation_interval = data.sam_config.fiberlookup_ii;
         dbg!(latency);
         dbg!(initiation_interval);
+        let mut tile: usize = 0;
+        loop {
+            match self.rd_scan_data.in_ref.dequeue(&self.time) {
+                Ok(curr_ref) => match curr_ref.data {
+                    Token::Val(val) => {
+                        let idx: usize = val.try_into().unwrap();
+                        let mut curr_addr = self.seg_arrs[tile][idx].clone();
+                        let stop_addr = self.seg_arrs[tile][idx + 1].clone();
+                        while curr_addr < stop_addr {
+                            let read_addr: usize = curr_addr.clone().try_into().unwrap();
+                            let coord = self.crd_arrs[tile][read_addr].clone();
+                            let curr_time = self.time.tick();
+                            // dbg!(coord.clone());
+                            self.rd_scan_data
+                                .out_crd
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        curr_time + latency,
+                                        super::primitive::Token::Val(coord),
+                                    ),
+                                )
+                                .unwrap();
+                            self.rd_scan_data
+                                .out_ref
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        curr_time + latency,
+                                        super::primitive::Token::Val(curr_addr.clone()),
+                                    ),
+                                )
+                                .unwrap();
+                            curr_addr += 1;
+                            self.time.incr_cycles(initiation_interval);
+                        }
+                        let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
+                        let output: Token<ValType, StopType> = match next_tkn.data {
+                            Token::Val(_) | Token::Done => Token::Stop(StopType::default()),
+                            Token::Stop(stop_tkn) => {
+                                self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
+                                Token::Stop(stop_tkn + 1)
+                            }
+                            Token::Empty => {
+                                panic!("Invalid empty inside peek");
+                            }
+                        };
+                        // dbg!(output);
+                        let curr_time = self.time.tick();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + latency, output.clone()),
+                            )
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + latency, output.clone()),
+                            )
+                            .unwrap();
+                    }
+                    Token::Stop(token) => {
+                        let curr_time = self.time.tick();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(
+                                    curr_time + latency,
+                                    Token::Stop(token.clone() + 1),
+                                ),
+                            )
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(
+                                    curr_time + latency,
+                                    Token::Stop(token.clone() + 1),
+                                ),
+                            )
+                            .unwrap();
+                    }
+                    // Could either be a done token or an empty token
+                    // In the case of done token, return
+                    Token::Done => {
+                        let channel_elem =
+                            ChannelElement::new(self.time.tick() + latency, Token::Done);
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        // dbg!(Token::<ValType, StopType>::Done);
+                        tile += 1;
+                        if tile == self.num_tiles {
+                            return;
+                        }
+                    }
+                    Token::Empty => {
+                        let channel_elem =
+                            ChannelElement::new(self.time.tick() + latency, Token::Empty);
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                    }
+                },
+                Err(_) => panic!("Error: rd_scan_data dequeue error"),
+            }
+            self.time.incr_cycles(initiation_interval);
+        }
+    }
+}
+
+impl<ValType, StopType> Context for CompressedCrdRdScan<ValType, StopType>
+where
+    ValType: DAMType
+        + std::ops::AddAssign<u32>
+        + std::ops::Mul<ValType, Output = ValType>
+        + std::ops::Add<ValType, Output = ValType>
+        + std::cmp::PartialOrd<ValType>,
+    // usize: From<ValType>,
+    ValType: TryInto<usize>,
+    <ValType as TryInto<usize>>::Error: std::fmt::Debug,
+    StopType: DAMType + std::ops::Add<u32, Output = StopType>,
+{
+    fn init(&mut self) {}
+
+    fn run(&mut self) {
+        // let mut curr_crd: Token<ValType, StopType>
+        let filename = home::home_dir().unwrap().join("sam_config.toml");
+        let contents = fs::read_to_string(filename).unwrap();
+        let data: Data = toml::from_str(&contents).unwrap();
+        let latency = data.sam_config.fiberlookup_latency;
+        let initiation_interval = data.sam_config.fiberlookup_ii;
+        // dbg!(latency);
+        // dbg!(initiation_interval);
+        self.time.incr_cycles(self.seg_arr.len().try_into().unwrap());
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
