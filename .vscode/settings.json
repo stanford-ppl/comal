@@ -5,6 +5,7 @@
         "editor.formatOnSave": true
     },
     "rust-analyzer.linkedProjects": [
+        
         "./Cargo.toml",
     ],
     "rust-analyzer.procMacro.attributes.enable": true,
@@ -12,5 +13,6 @@
     "editor.formatOnPaste": true,
     "editor.formatOnSave": true,
     "notebook.formatOnCellExecution": true,
-    "notebook.formatOnSave.enabled": true
+    "notebook.formatOnSave.enabled": true,
+    "editor.formatOnType": true
 }

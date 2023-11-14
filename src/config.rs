@@ -9,7 +9,10 @@ pub struct Data {
 pub struct Config {
     pub sam_path: String,
     pub fiberlookup_latency: u64,
+    pub fiberlookup_initial: u64,
     pub fiberlookup_ii: u64,
+    pub fiberlookup_starting: u64,
+    pub fiberlookup_stop_latency: u64,
     pub fiberwrite_latency: u64,
     pub fiberwrite_ii: u64,
 }

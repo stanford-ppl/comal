@@ -2,7 +2,7 @@
 
 use std::{fs, path::Path, time::Instant};
 
-use argparse::{ArgumentParser, Store, StoreFalse};
+use argparse::{ArgumentParser, Store, StoreFalse, StoreTrue};
 use comal::config::Data;
 use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
 use prost::Message;
@@ -21,6 +21,7 @@ fn main() {
     let mut with_flavor = true;
     let mut run_dse = false;
     let mut par_factor: u32 = 1;
+    let mut outer_par_factor: u32 = 1;
 
     {
         let mut ap = ArgumentParser::new();
@@ -35,9 +36,11 @@ fn main() {
             "Run without flavor inference",
         );
         ap.refer(&mut run_dse)
-            .add_option(&["--run_dse"], Store, "Run BACO DSE on program");
+            .add_option(&["--run_dse"], StoreTrue, "Run BACO DSE on program");
         ap.refer(&mut par_factor)
             .add_option(&["--par_factor", "-f"], Store, "Par factor");
+        ap.refer(&mut outer_par_factor)
+            .add_option(&["--outer_par_factor", "-o"], Store, "Outer par factor");
         ap.refer(&mut proto_filename)
             .add_option(&["--proto_file", "-p"], Store, "Proto bin file");
         ap.parse_args_or_exit();
@@ -50,7 +53,7 @@ fn main() {
     let base_path = Path::new(&formatted_dir).join(&data_dir_name);
 
     let parent = if run_dse {
-        run_mha(par_factor, base_path)
+        run_mha(par_factor, outer_par_factor, base_path)
     } else {
         dbg!(base_path.join(proto_filename.clone()));
         let comal_contents = fs::read(base_path.join(proto_filename)).unwrap();

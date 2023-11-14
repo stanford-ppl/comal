@@ -148,14 +148,15 @@ where
                         }
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
-                            Token::Val(_) | Token::Done => Token::Stop(StopType::default()),
+                            Token::Val(_) | Token::Done | Token::Empty => {
+                                Token::Stop(StopType::default())
+                            }
                             Token::Stop(stop_tkn) => {
                                 self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
-                            }
-                            Token::Empty => {
-                                panic!("Invalid empty inside peek");
-                            }
+                            } // Token::Empty => {
+                              //     panic!("Invalid empty inside peek");
+                              // }
                         };
                         // dbg!(output);
                         let curr_time = self.time.tick();
@@ -285,14 +286,15 @@ where
                         }
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
-                            Token::Val(_) | Token::Done => Token::Stop(StopType::default()),
+                            Token::Val(_) | Token::Done | Token::Empty => {
+                                Token::Stop(StopType::default())
+                            }
                             Token::Stop(stop_tkn) => {
                                 self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
-                            }
-                            Token::Empty => {
-                                panic!("Invalid empty inside peek");
-                            }
+                            } // Token::Empty => {
+                              //     panic!("Invalid empty inside peek");
+                              // }
                         };
                         // dbg!(output);
                         let curr_time = self.time.tick();
@@ -393,11 +395,17 @@ where
         let contents = fs::read_to_string(filename).unwrap();
         let data: Data = toml::from_str(&contents).unwrap();
         let latency = data.sam_config.fiberlookup_latency;
+        let initial = data.sam_config.fiberlookup_initial;
         let initiation_interval = data.sam_config.fiberlookup_ii;
+        let starting_cost = data.sam_config.fiberlookup_starting;
+        let stop_latency = data.sam_config.fiberlookup_stop_latency;
         // dbg!(latency);
         // dbg!(initiation_interval);
         self.time
             .incr_cycles(self.seg_arr.len().try_into().unwrap());
+        self.time
+            .incr_cycles(self.crd_arr.len().try_into().unwrap());
+        self.time.incr_cycles(starting_cost);
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -405,6 +413,7 @@ where
                         let idx: usize = val.try_into().unwrap();
                         let mut curr_addr = self.seg_arr[idx].clone();
                         let stop_addr = self.seg_arr[idx + 1].clone();
+                        self.time.incr_cycles(initial);
                         while curr_addr < stop_addr {
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
                             let coord = self.crd_arr[read_addr].clone();
@@ -435,14 +444,15 @@ where
                         }
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
-                            Token::Val(_) | Token::Done => Token::Stop(StopType::default()),
+                            Token::Val(_) | Token::Done | Token::Empty => {
+                                Token::Stop(StopType::default())
+                            }
                             Token::Stop(stop_tkn) => {
                                 self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
-                            }
-                            Token::Empty => {
-                                panic!("Invalid empty inside peek");
-                            }
+                            } // Token::Empty => {
+                              //     panic!("Invalid empty inside peek");
+                              // }
                         };
                         // dbg!(output);
                         let curr_time = self.time.tick();
@@ -468,7 +478,7 @@ where
                             .enqueue(
                                 &self.time,
                                 ChannelElement::new(
-                                    curr_time + latency,
+                                    curr_time + stop_latency,
                                     Token::Stop(token.clone() + 1),
                                 ),
                             )
@@ -478,7 +488,7 @@ where
                             .enqueue(
                                 &self.time,
                                 ChannelElement::new(
-                                    curr_time + latency,
+                                    curr_time + stop_latency,
                                     Token::Stop(token.clone() + 1),
                                 ),
                             )
@@ -529,6 +539,7 @@ mod tests {
     use dam::simulation::RunMode;
     use dam::simulation::RunOptionsBuilder;
     use dam::utility_contexts::CheckerContext;
+    use dam::utility_contexts::ConsumerContext;
     use dam::utility_contexts::GeneratorContext;
 
     use crate::templates::primitive::Token;
@@ -536,61 +547,135 @@ mod tests {
 
     use super::CompressedCrdRdScan;
     use super::RdScanData;
-    use super::UncompressedCrdRdScan;
 
     #[test]
-    fn ucrd_1d_test() {
-        let in_ref = || [Token::Val(0u32), Token::Done].into_iter();
-        let out_ref = || {
-            (0u32..32)
-                .map(Token::Val)
-                .chain([Token::Stop(0), Token::Done])
-        };
-        uncompressed_rd_scan_test(in_ref, out_ref, out_ref);
+    fn crd_2d_test() {
+        let seg_arr = vec![0u32, 200];
+        let crd_arr = vec![
+            3, 13, 45, 57, 68, 84, 117, 140, 142, 155, 156, 168, 171, 177, 193, 194, 213, 219, 226,
+            229, 246, 248, 270, 278, 281, 282, 308, 314, 317, 325, 336, 341, 343, 345, 352, 356,
+            376, 378, 382, 383, 390, 400, 426, 434, 440, 441, 478, 485, 518, 520, 521, 523, 545,
+            546, 560, 561, 573, 590, 591, 606, 612, 617, 630, 654, 658, 725, 728, 733, 735, 737,
+            741, 746, 766, 778, 788, 828, 865, 869, 874, 881, 885, 890, 908, 918, 920, 922, 929,
+            932, 940, 977, 986, 1013, 1021, 1029, 1040, 1044, 1046, 1050, 1059, 1088, 1105, 1117,
+            1129, 1180, 1184, 1188, 1192, 1193, 1199, 1212, 1217, 1218, 1222, 1229, 1233, 1238,
+            1245, 1256, 1261, 1270, 1278, 1283, 1284, 1297, 1323, 1332, 1335, 1345, 1364, 1377,
+            1382, 1389, 1402, 1408, 1411, 1415, 1436, 1438, 1440, 1441, 1459, 1477, 1491, 1504,
+            1508, 1522, 1559, 1564, 1580, 1583, 1584, 1588, 1594, 1602, 1606, 1612, 1616, 1648,
+            1663, 1664, 1671, 1683, 1688, 1700, 1716, 1718, 1719, 1723, 1724, 1739, 1751, 1752,
+            1765, 1766, 1776, 1795, 1796, 1800, 1806, 1812, 1814, 1815, 1817, 1820, 1828, 1842,
+            1843, 1849, 1851, 1854, 1879, 1914, 1929, 1949, 1951, 1975, 1978, 1979, 1982, 1986,
+        ];
+        let in_ref = || token_vec!(u32; u32; "N", 0, "D").into_iter();
+
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 479);
     }
 
     #[test]
-    fn ucrd_2d_test() {
-        let in_ref = || {
-            (0u32..4)
-                .map(Token::Val)
-                .chain([Token::Stop(0), Token::Done])
-        };
-        let out_ref = || {
-            (0u32..32)
-                .map(Token::Val)
-                .chain([Token::Stop(0)])
-                .chain((32u32..64).map(Token::Val))
-                .chain([Token::Stop(0)])
-                .chain((64u32..96).map(Token::Val))
-                .chain([Token::Stop(0)])
-                .chain((96u32..128).map(Token::Val))
-                .chain([Token::Stop(1), Token::Done])
-        };
-        let out_crd = || {
-            (0u32..32)
-                .map(Token::Val)
-                .chain([Token::Stop(0)])
-                .cycle()
-                // Repeat 3 fibers with stops and another fiber without the first level stop token since it gets replaced with second level stop
-                .take(33 * 4 - 1)
-                .chain([Token::Stop(1), Token::Done])
-        };
-        uncompressed_rd_scan_test(in_ref, out_ref, out_crd);
+    fn crd_2d_test1() {
+        let seg_arr = vec![0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120];
+        let crd_arr = vec![
+            1, 2, 5, 7, 8, 9, 10, 11, 12, 13, 14, 17, 0, 1, 2, 3, 4, 5, 6, 11, 12, 13, 14, 15, 1,
+            2, 4, 5, 7, 9, 10, 11, 12, 13, 14, 17, 3, 4, 5, 6, 7, 9, 10, 11, 13, 15, 16, 17, 2, 4,
+            6, 7, 9, 10, 11, 12, 13, 14, 15, 17, 0, 1, 3, 4, 5, 7, 8, 11, 13, 15, 16, 17, 0, 1, 2,
+            4, 6, 8, 9, 10, 11, 14, 15, 17, 0, 1, 2, 3, 4, 6, 8, 10, 13, 14, 15, 16, 0, 1, 2, 4, 7,
+            8, 10, 11, 13, 14, 15, 16, 1, 2, 3, 4, 5, 6, 7, 10, 11, 14, 15, 16,
+        ];
+        let in_ref = || token_vec!(u32; u32; 4, 3, 9, "S0", "D").into_iter();
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 363);
     }
 
-    // #[test]
-    fn uncompressed_rd_scan_test<IRT, ORT, CRT>(
+    #[test]
+    fn crd_2d_test2() {
+        let seg_arr = vec![0, 16, 32, 48, 64, 80, 96];
+        let crd_arr = vec![
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+            11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3,
+            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+            14, 15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+        ];
+        let in_ref =
+            || token_vec!(u32; u32; "S0", 2, "N", "N", "S0", "S0", 5, 1, 2, "S1", "D").into_iter();
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 93);
+    }
+
+    #[test]
+    fn crd_2d_test3() {
+        let seg_arr = vec![0, 19, 38, 57, 76, 95, 114];
+        let crd_arr = vec![
+            0, 1, 4, 6, 7, 8, 9, 11, 13, 14, 15, 16, 18, 20, 21, 23, 25, 26, 27, 0, 2, 3, 4, 5, 7,
+            10, 11, 12, 13, 14, 18, 19, 20, 21, 22, 23, 24, 26, 1, 2, 3, 5, 6, 7, 9, 10, 11, 12,
+            14, 17, 18, 19, 20, 23, 24, 26, 27, 0, 2, 3, 4, 5, 6, 7, 9, 13, 15, 16, 17, 18, 19, 20,
+            22, 24, 26, 27, 0, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15, 19, 20, 21, 22, 23, 25, 26, 27,
+            1, 2, 4, 5, 6, 8, 9, 10, 11, 13, 14, 15, 16, 18, 20, 22, 23, 24, 26,
+        ];
+        let in_ref = || token_vec!(u32; u32; 0, 1, 5, "S0", "D").into_iter();
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 82);
+    }
+
+    #[test]
+    fn crd_2d_test4() {
+        let seg_arr = vec![0, 12, 24, 36, 48];
+        let crd_arr = vec![
+            0, 3, 5, 6, 8, 9, 10, 13, 14, 16, 19, 21, 3, 4, 5, 6, 8, 9, 12, 13, 14, 18, 19, 20, 0,
+            3, 5, 6, 7, 9, 13, 14, 18, 19, 21, 22, 0, 4, 5, 6, 8, 9, 10, 12, 14, 16, 18, 19,
+        ];
+        let in_ref = || token_vec!(u32; u32; 1, 1, 1, "S0", "D").into_iter();
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 61);
+    }
+
+    #[test]
+    fn crd_2d_test5() {
+        let seg_arr = vec![0, 3, 6];
+        let crd_arr = vec![0, 2, 3, 4, 5, 6];
+        let in_ref = || token_vec!(u32; u32; 0, "S0", 1, "S1", "D").into_iter();
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 262);
+    }
+
+    #[test]
+    fn crd_2d_test6() {
+        let seg_arr = vec![0, 13, 26, 39, 52, 65];
+        let crd_arr = vec![
+            0, 2, 3, 4, 6, 7, 11, 16, 17, 18, 20, 21, 22, 1, 3, 4, 5, 7, 9, 11, 12, 15, 16, 19, 20,
+            23, 1, 2, 3, 7, 11, 12, 13, 14, 18, 20, 21, 23, 24, 2, 4, 6, 7, 9, 12, 15, 16, 18, 19,
+            20, 22, 24, 0, 1, 2, 3, 4, 5, 6, 7, 8, 14, 15, 22, 23,
+        ];
+        let in_ref =
+            || token_vec!(u32; u32; "S0", 3, 1, "N", "S0", "S0", "N", 1, 2, "S1", "D").into_iter();
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 301);
+    }
+
+    #[test]
+    fn crd_2d_test7() {
+        let seg_arr = vec![0, 199];
+        let crd_arr = vec![
+            3, 9, 12, 13, 14, 21, 24, 25, 27, 31, 33, 35, 43, 45, 48, 49, 53, 58, 59, 68, 70, 71,
+            73, 76, 78, 79, 82, 83, 86, 92, 93, 99, 104, 105, 109, 111, 114, 119, 134, 139, 141,
+            145, 146, 151, 153, 157, 158, 160, 171, 172, 174, 179, 181, 182, 184, 185, 187, 190,
+            196, 199, 200, 202, 206, 208, 209, 210, 211, 213, 216, 224, 230, 232, 234, 235, 238,
+            239, 242, 253, 256, 259, 260, 265, 266, 272, 277, 281, 290, 291, 297, 298, 299, 302,
+            303, 306, 309, 310, 311, 313, 318, 319, 332, 339, 344, 354, 372, 380, 381, 383, 384,
+            386, 396, 398, 399, 402, 408, 409, 412, 419, 420, 421, 422, 428, 441, 442, 448, 449,
+            451, 452, 455, 457, 463, 469, 472, 473, 475, 477, 479, 480, 486, 488, 489, 493, 496,
+            497, 499, 500, 501, 510, 514, 517, 522, 524, 528, 530, 531, 532, 535, 536, 537, 539,
+            541, 544, 551, 554, 555, 557, 562, 563, 564, 572, 580, 585, 588, 592, 593, 596, 600,
+            602, 603, 609, 614, 615, 617, 619, 622, 623, 624, 625, 626, 628, 633, 636, 644, 647,
+            650, 651, 657, 659, 663,
+        ];
+        let in_ref =
+            || token_vec!(u32; u32; 0, 0, 0, "S0", "D").into_iter();
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 881);
+    }
+
+    fn compressed_rd_scan_calibration<IRT>(
+        seg_arr: Vec<u32>,
+        crd_arr: Vec<u32>,
         in_ref: fn() -> IRT,
-        out_ref: fn() -> ORT,
-        out_crd: fn() -> CRT,
+        actual_cycle: i64,
     ) where
         IRT: Iterator<Item = Token<u32, u32>> + 'static,
-        CRT: Iterator<Item = Token<u32, u32>> + 'static,
-        ORT: Iterator<Item = Token<u32, u32>> + 'static,
     {
         let mut parent = ProgramBuilder::default();
-        let meta_dim: u32 = 32;
         let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
@@ -599,17 +684,16 @@ mod tests {
             out_ref: ref_sender,
             out_crd: crd_sender,
         };
-        let ucr = UncompressedCrdRdScan::new(data, meta_dim);
+        let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
-        let crd_checker = CheckerContext::new(out_crd, crd_receiver);
-        let ref_checker = CheckerContext::new(out_ref, ref_receiver);
+        let crd_checker = ConsumerContext::new(crd_receiver);
+        let ref_checker = ConsumerContext::new(ref_receiver);
 
         parent.add_child(gen1);
         parent.add_child(crd_checker);
         parent.add_child(ref_checker);
-        parent.add_child(ucr);
+        parent.add_child(cr);
 
-        let init_start = Instant::now();
         let initialized = parent
             .initialize(
                 InitializationOptionsBuilder::default()
@@ -618,8 +702,6 @@ mod tests {
                     .unwrap(),
             )
             .unwrap();
-        let init_end = Instant::now();
-        println!("Init took: {:.2?}", init_end - init_start);
 
         let executed = initialized.run(
             RunOptionsBuilder::default()
@@ -627,72 +709,11 @@ mod tests {
                 .build()
                 .unwrap(),
         );
-        println!("Elapsed cycles: {:?}", executed.elapsed_cycles().unwrap());
-    }
 
-    #[test]
-    fn crd_1d_test() {
-        let seg_arr = vec![0u32, 3];
-        let crd_arr = vec![0u32, 1, 3];
-        let in_ref = || [Token::Val(0u32), Token::Done].into_iter();
-        let out_ref = || {
-            (0u32..3)
-                .map(Token::Val)
-                .chain([Token::Stop(0), Token::Done])
-        };
-        let out_crd = || {
-            vec![0u32, 1, 3]
-                .into_iter()
-                .map(Token::Val)
-                .chain([Token::Stop(0u32), Token::Done])
-        };
-        compressed_rd_scan_test(seg_arr, crd_arr, in_ref, out_ref, out_crd);
-    }
+        let diff: i64 =
+            TryInto::<i64>::try_into(executed.elapsed_cycles().unwrap()).unwrap() - actual_cycle;
 
-    #[test]
-    fn crd_2d_test() {
-        let seg_arr = vec![0u32, 3, 6];
-        let crd_arr = vec![0u32, 2, 3, 4, 5, 6];
-        let in_ref= || token_vec!(u32; u32; "S0", "S0", 1, 0, "S0", "S0", 1, "S1", "D").into_iter();
-        let out_ref = || {
-            [0u32, 1, 2]
-                .into_iter()
-                .map(Token::Val)
-                .chain([Token::Stop(0)])
-                .chain([0u32, 1, 2].into_iter().map(Token::Val))
-                .chain(
-                    [
-                        Token::Stop(1),
-                        Token::Val(3),
-                        Token::Stop(1),
-                        Token::Val(4),
-                        Token::Val(5),
-                        Token::Stop(2),
-                        Token::Done,
-                    ]
-                    .into_iter(),
-                )
-        };
-        let out_crd = || {
-            [0u32, 2, 3]
-                .into_iter()
-                .map(Token::Val)
-                .chain([Token::Stop(0)])
-                .chain([0u32, 2, 3].into_iter().map(Token::Val))
-                .chain(
-                    [
-                        Token::Stop(1),
-                        Token::Val(0),
-                        Token::Stop(1),
-                        Token::Val(2),
-                        Token::Val(3),
-                        Token::Stop(2),
-                        Token::Done,
-                    ]
-                    .into_iter(),
-                )
-        };
-        compressed_rd_scan_test(seg_arr, crd_arr, in_ref, out_ref, out_crd);
+        println!("Diff: {:?}", diff);
     }
 
     fn compressed_rd_scan_test<IRT, ORT, CRT>(
@@ -707,24 +728,26 @@ mod tests {
         ORT: Iterator<Item = Token<u32, u32>> + 'static,
     {
         let mut parent = ProgramBuilder::default();
-        // let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
-        // let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
         let data = RdScanData::<u32, u32> {
             in_ref: in_ref_receiver,
-            out_ref: parent.void(),
-            out_crd: parent.void(),
+            out_ref: ref_sender,
+            out_crd: crd_sender,
         };
         let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
-        // let crd_checker = CheckerContext::new(out_crd, crd_receiver);
-        // let ref_checker = CheckerContext::new(out_ref, ref_receiver);
+        let crd_checker = CheckerContext::new(out_crd, crd_receiver);
+        let ref_checker = CheckerContext::new(out_ref, ref_receiver);
+        // let crd_checker = ConsumerContext::new(crd_receiver);
+        // let ref_checker = ConsumerContext::new(ref_receiver);
 
         parent.add_child(gen1);
-        // parent.add_child(crd_checker);
-        // parent.add_child(ref_checker);
+        parent.add_child(crd_checker);
+        parent.add_child(ref_checker);
         parent.add_child(cr);
-        
+
         let init_start = Instant::now();
         let initialized = parent
             .initialize(
