@@ -396,7 +396,8 @@ where
         let initiation_interval = data.sam_config.fiberlookup_ii;
         // dbg!(latency);
         // dbg!(initiation_interval);
-        self.time.incr_cycles(self.seg_arr.len().try_into().unwrap());
+        self.time
+            .incr_cycles(self.seg_arr.len().try_into().unwrap());
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -519,199 +520,229 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         context::{checker_context::CheckerContext, generator_context::GeneratorContext},
-//         simulation::Program,
-//         templates::sam::primitive::Token,
-//     };
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
 
-//     use super::CompressedCrdRdScan;
-//     use super::RdScanData;
-//     use super::UncompressedCrdRdScan;
+    use dam::simulation::InitializationOptionsBuilder;
+    use dam::simulation::ProgramBuilder;
+    use dam::simulation::RunMode;
+    use dam::simulation::RunOptionsBuilder;
+    use dam::utility_contexts::CheckerContext;
+    use dam::utility_contexts::GeneratorContext;
 
-//     #[test]
-//     fn ucrd_1d_test() {
-//         let in_ref = || [Token::Val(0u32), Token::Done].into_iter();
-//         let out_ref = || {
-//             (0u32..32)
-//                 .map(Token::Val)
-//                 .chain([Token::Stop(0), Token::Done])
-//         };
-//         uncompressed_rd_scan_test(in_ref, out_ref, out_ref);
-//     }
+    use crate::templates::primitive::Token;
+    use crate::token_vec;
 
-//     #[test]
-//     fn ucrd_2d_test() {
-//         let in_ref = || {
-//             (0u32..4)
-//                 .map(Token::Val)
-//                 .chain([Token::Stop(0), Token::Done])
-//         };
-//         let out_ref = || {
-//             (0u32..32)
-//                 .map(Token::Val)
-//                 .chain([Token::Stop(0)])
-//                 .chain((32u32..64).map(Token::Val))
-//                 .chain([Token::Stop(0)])
-//                 .chain((64u32..96).map(Token::Val))
-//                 .chain([Token::Stop(0)])
-//                 .chain((96u32..128).map(Token::Val))
-//                 .chain([Token::Stop(1), Token::Done])
-//         };
-//         let out_crd = || {
-//             (0u32..32)
-//                 .map(Token::Val)
-//                 .chain([Token::Stop(0)])
-//                 .cycle()
-//                 // Repeat 3 fibers with stops and another fiber without the first level stop token since it gets replaced with second level stop
-//                 .take(33 * 4 - 1)
-//                 .chain([Token::Stop(1), Token::Done])
-//         };
-//         uncompressed_rd_scan_test(in_ref, out_ref, out_crd);
-//     }
+    use super::CompressedCrdRdScan;
+    use super::RdScanData;
+    use super::UncompressedCrdRdScan;
 
-//     // #[test]
-//     fn uncompressed_rd_scan_test<IRT, ORT, CRT>(
-//         in_ref: fn() -> IRT,
-//         out_ref: fn() -> ORT,
-//         out_crd: fn() -> CRT,
-//     ) where
-//         IRT: Iterator<Item = Token<u32, u32>> + 'static,
-//         CRT: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         let meta_dim: u32 = 32;
-//         let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let data = RdScanData::<u32, u32> {
-//             in_ref: in_ref_receiver,
-//             out_ref: ref_sender,
-//             out_crd: crd_sender,
-//         };
-//         let ucr = UncompressedCrdRdScan::new(data, meta_dim);
-//         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
-//         let crd_checker = CheckerContext::new(out_crd, crd_receiver);
-//         let ref_checker = CheckerContext::new(out_ref, ref_receiver);
+    #[test]
+    fn ucrd_1d_test() {
+        let in_ref = || [Token::Val(0u32), Token::Done].into_iter();
+        let out_ref = || {
+            (0u32..32)
+                .map(Token::Val)
+                .chain([Token::Stop(0), Token::Done])
+        };
+        uncompressed_rd_scan_test(in_ref, out_ref, out_ref);
+    }
 
-//         parent.add_child(gen1);
-//         parent.add_child(crd_checker);
-//         parent.add_child(ref_checker);
-//         parent.add_child(ucr);
-//         parent.init();
-//         parent.run();
-//     }
+    #[test]
+    fn ucrd_2d_test() {
+        let in_ref = || {
+            (0u32..4)
+                .map(Token::Val)
+                .chain([Token::Stop(0), Token::Done])
+        };
+        let out_ref = || {
+            (0u32..32)
+                .map(Token::Val)
+                .chain([Token::Stop(0)])
+                .chain((32u32..64).map(Token::Val))
+                .chain([Token::Stop(0)])
+                .chain((64u32..96).map(Token::Val))
+                .chain([Token::Stop(0)])
+                .chain((96u32..128).map(Token::Val))
+                .chain([Token::Stop(1), Token::Done])
+        };
+        let out_crd = || {
+            (0u32..32)
+                .map(Token::Val)
+                .chain([Token::Stop(0)])
+                .cycle()
+                // Repeat 3 fibers with stops and another fiber without the first level stop token since it gets replaced with second level stop
+                .take(33 * 4 - 1)
+                .chain([Token::Stop(1), Token::Done])
+        };
+        uncompressed_rd_scan_test(in_ref, out_ref, out_crd);
+    }
 
-//     #[test]
-//     fn crd_1d_test() {
-//         let seg_arr = vec![0u32, 3];
-//         let crd_arr = vec![0u32, 1, 3];
-//         let in_ref = || [Token::Val(0u32), Token::Done].into_iter();
-//         let out_ref = || {
-//             (0u32..3)
-//                 .map(Token::Val)
-//                 .chain([Token::Stop(0), Token::Done])
-//         };
-//         let out_crd = || {
-//             vec![0u32, 1, 3]
-//                 .into_iter()
-//                 .map(Token::Val)
-//                 .chain([Token::Stop(0u32), Token::Done])
-//         };
-//         compressed_rd_scan_test(seg_arr, crd_arr, in_ref, out_ref, out_crd);
-//     }
+    // #[test]
+    fn uncompressed_rd_scan_test<IRT, ORT, CRT>(
+        in_ref: fn() -> IRT,
+        out_ref: fn() -> ORT,
+        out_crd: fn() -> CRT,
+    ) where
+        IRT: Iterator<Item = Token<u32, u32>> + 'static,
+        CRT: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let meta_dim: u32 = 32;
+        let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let data = RdScanData::<u32, u32> {
+            in_ref: in_ref_receiver,
+            out_ref: ref_sender,
+            out_crd: crd_sender,
+        };
+        let ucr = UncompressedCrdRdScan::new(data, meta_dim);
+        let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
+        let crd_checker = CheckerContext::new(out_crd, crd_receiver);
+        let ref_checker = CheckerContext::new(out_ref, ref_receiver);
 
-//     #[test]
-//     fn crd_2d_test() {
-//         let seg_arr = vec![0u32, 3, 4, 6];
-//         let crd_arr = vec![0u32, 2, 3, 0, 2, 3];
-//         let in_ref = || {
-//             [
-//                 Token::Val(0u32),
-//                 Token::Val(0),
-//                 Token::Stop(0),
-//                 Token::Val(1),
-//                 Token::Stop(0),
-//                 Token::Val(2),
-//                 Token::Stop(1),
-//                 Token::Done,
-//             ]
-//             .into_iter()
-//         };
-//         let out_ref = || {
-//             [0u32, 1, 2]
-//                 .into_iter()
-//                 .map(Token::Val)
-//                 .chain([Token::Stop(0)])
-//                 .chain([0u32, 1, 2].into_iter().map(Token::Val))
-//                 .chain(
-//                     [
-//                         Token::Stop(1),
-//                         Token::Val(3),
-//                         Token::Stop(1),
-//                         Token::Val(4),
-//                         Token::Val(5),
-//                         Token::Stop(2),
-//                         Token::Done,
-//                     ]
-//                     .into_iter(),
-//                 )
-//         };
-//         let out_crd = || {
-//             [0u32, 2, 3]
-//                 .into_iter()
-//                 .map(Token::Val)
-//                 .chain([Token::Stop(0)])
-//                 .chain([0u32, 2, 3].into_iter().map(Token::Val))
-//                 .chain(
-//                     [
-//                         Token::Stop(1),
-//                         Token::Val(0),
-//                         Token::Stop(1),
-//                         Token::Val(2),
-//                         Token::Val(3),
-//                         Token::Stop(2),
-//                         Token::Done,
-//                     ]
-//                     .into_iter(),
-//                 )
-//         };
-//         compressed_rd_scan_test(seg_arr, crd_arr, in_ref, out_ref, out_crd);
-//     }
+        parent.add_child(gen1);
+        parent.add_child(crd_checker);
+        parent.add_child(ref_checker);
+        parent.add_child(ucr);
 
-//     fn compressed_rd_scan_test<IRT, ORT, CRT>(
-//         seg_arr: Vec<u32>,
-//         crd_arr: Vec<u32>,
-//         in_ref: fn() -> IRT,
-//         out_ref: fn() -> ORT,
-//         out_crd: fn() -> CRT,
-//     ) where
-//         IRT: Iterator<Item = Token<u32, u32>> + 'static,
-//         CRT: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let data = RdScanData::<u32, u32> {
-//             in_ref: in_ref_receiver,
-//             out_ref: ref_sender,
-//             out_crd: crd_sender,
-//         };
-//         let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
-//         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
-//         let crd_checker = CheckerContext::new(out_crd, crd_receiver);
-//         let ref_checker = CheckerContext::new(out_ref, ref_receiver);
+        let init_start = Instant::now();
+        let initialized = parent
+            .initialize(
+                InitializationOptionsBuilder::default()
+                    .run_flavor_inference(true)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let init_end = Instant::now();
+        println!("Init took: {:.2?}", init_end - init_start);
 
-//         parent.add_child(gen1);
-//         parent.add_child(crd_checker);
-//         parent.add_child(ref_checker);
-//         parent.add_child(cr);
-//         parent.init();
-//         parent.run();
-//     }
-// }
+        let executed = initialized.run(
+            RunOptionsBuilder::default()
+                .mode(RunMode::Simple)
+                .build()
+                .unwrap(),
+        );
+        println!("Elapsed cycles: {:?}", executed.elapsed_cycles().unwrap());
+    }
+
+    #[test]
+    fn crd_1d_test() {
+        let seg_arr = vec![0u32, 3];
+        let crd_arr = vec![0u32, 1, 3];
+        let in_ref = || [Token::Val(0u32), Token::Done].into_iter();
+        let out_ref = || {
+            (0u32..3)
+                .map(Token::Val)
+                .chain([Token::Stop(0), Token::Done])
+        };
+        let out_crd = || {
+            vec![0u32, 1, 3]
+                .into_iter()
+                .map(Token::Val)
+                .chain([Token::Stop(0u32), Token::Done])
+        };
+        compressed_rd_scan_test(seg_arr, crd_arr, in_ref, out_ref, out_crd);
+    }
+
+    #[test]
+    fn crd_2d_test() {
+        let seg_arr = vec![0u32, 3, 6];
+        let crd_arr = vec![0u32, 2, 3, 4, 5, 6];
+        let in_ref= || token_vec!(u32; u32; "S0", "S0", 1, 0, "S0", "S0", 1, "S1", "D").into_iter();
+        let out_ref = || {
+            [0u32, 1, 2]
+                .into_iter()
+                .map(Token::Val)
+                .chain([Token::Stop(0)])
+                .chain([0u32, 1, 2].into_iter().map(Token::Val))
+                .chain(
+                    [
+                        Token::Stop(1),
+                        Token::Val(3),
+                        Token::Stop(1),
+                        Token::Val(4),
+                        Token::Val(5),
+                        Token::Stop(2),
+                        Token::Done,
+                    ]
+                    .into_iter(),
+                )
+        };
+        let out_crd = || {
+            [0u32, 2, 3]
+                .into_iter()
+                .map(Token::Val)
+                .chain([Token::Stop(0)])
+                .chain([0u32, 2, 3].into_iter().map(Token::Val))
+                .chain(
+                    [
+                        Token::Stop(1),
+                        Token::Val(0),
+                        Token::Stop(1),
+                        Token::Val(2),
+                        Token::Val(3),
+                        Token::Stop(2),
+                        Token::Done,
+                    ]
+                    .into_iter(),
+                )
+        };
+        compressed_rd_scan_test(seg_arr, crd_arr, in_ref, out_ref, out_crd);
+    }
+
+    fn compressed_rd_scan_test<IRT, ORT, CRT>(
+        seg_arr: Vec<u32>,
+        crd_arr: Vec<u32>,
+        in_ref: fn() -> IRT,
+        out_ref: fn() -> ORT,
+        out_crd: fn() -> CRT,
+    ) where
+        IRT: Iterator<Item = Token<u32, u32>> + 'static,
+        CRT: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        // let (ref_sender, ref_receiver) = parent.unbounded::<Token<u32, u32>>();
+        // let (crd_sender, crd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let data = RdScanData::<u32, u32> {
+            in_ref: in_ref_receiver,
+            out_ref: parent.void(),
+            out_crd: parent.void(),
+        };
+        let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
+        let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
+        // let crd_checker = CheckerContext::new(out_crd, crd_receiver);
+        // let ref_checker = CheckerContext::new(out_ref, ref_receiver);
+
+        parent.add_child(gen1);
+        // parent.add_child(crd_checker);
+        // parent.add_child(ref_checker);
+        parent.add_child(cr);
+        
+        let init_start = Instant::now();
+        let initialized = parent
+            .initialize(
+                InitializationOptionsBuilder::default()
+                    .run_flavor_inference(true)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let init_end = Instant::now();
+        println!("Init took: {:.2?}", init_end - init_start);
+
+        let executed = initialized.run(
+            RunOptionsBuilder::default()
+                .mode(RunMode::Simple)
+                .build()
+                .unwrap(),
+        );
+        println!("Elapsed cycles: {:?}", executed.elapsed_cycles().unwrap());
+    }
+}

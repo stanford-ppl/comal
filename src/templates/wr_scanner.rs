@@ -52,7 +52,7 @@ where
         let filename = home::home_dir().unwrap().join("sam_config.toml");
         let contents = fs::read_to_string(filename).unwrap();
         let data: Data = toml::from_str(&contents).unwrap();
-        let latency = data.sam_config.fiberwrite_latency;
+        let _latency = data.sam_config.fiberwrite_latency;
         let initiation_interval = data.sam_config.fiberwrite_ii;
         loop {
             match self.input.dequeue(&self.time) {
