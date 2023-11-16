@@ -13,6 +13,7 @@ pub struct Config {
     pub fiberlookup_ii: u64,
     pub fiberlookup_starting: u64,
     pub fiberlookup_stop_latency: u64,
+    pub fiberlookup_factor: f64,
     pub fiberwrite_latency: u64,
     pub fiberwrite_ii: u64,
 }

@@ -399,12 +399,16 @@ where
         let initiation_interval = data.sam_config.fiberlookup_ii;
         let starting_cost = data.sam_config.fiberlookup_starting;
         let stop_latency = data.sam_config.fiberlookup_stop_latency;
+        let factor = data.sam_config.fiberlookup_factor;
         // dbg!(latency);
         // dbg!(initiation_interval);
+
+        let seg_arr_len = self.seg_arr.len() as f64 * factor;
+        let crd_arr_len = self.crd_arr.len() as f64 * factor;
         self.time
-            .incr_cycles(self.seg_arr.len().try_into().unwrap());
+            .incr_cycles(seg_arr_len.ceil() as u64);
         self.time
-            .incr_cycles(self.crd_arr.len().try_into().unwrap());
+            .incr_cycles(crd_arr_len.ceil() as u64);
         self.time.incr_cycles(starting_cost);
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
