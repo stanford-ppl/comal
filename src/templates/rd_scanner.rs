@@ -400,6 +400,7 @@ where
         let starting_cost = data.sam_config.fiberlookup_starting;
         let stop_latency = data.sam_config.fiberlookup_stop_latency;
         let factor = data.sam_config.fiberlookup_factor;
+        let bump = data.sam_config.bump;
         // dbg!(latency);
         // dbg!(initiation_interval);
 
@@ -447,6 +448,7 @@ where
                             self.time.incr_cycles(initiation_interval);
                         }
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
+                        self.time.incr_cycles(bump);
                         let output: Token<ValType, StopType> = match next_tkn.data {
                             Token::Val(_) | Token::Done | Token::Empty => {
                                 Token::Stop(StopType::default())
@@ -476,6 +478,7 @@ where
                             .unwrap();
                     }
                     Token::Stop(token) => {
+                        self.time.incr_cycles(data.sam_config.stop_bump);
                         let curr_time = self.time.tick();
                         self.rd_scan_data
                             .out_crd
@@ -501,6 +504,7 @@ where
                     // Could either be a done token or an empty token
                     // In the case of done token, return
                     Token::Done => {
+                        self.time.incr_cycles(data.sam_config.done_bump);
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + latency, Token::Done);
                         self.rd_scan_data
@@ -515,6 +519,7 @@ where
                         return;
                     }
                     Token::Empty => {
+                        self.time.incr_cycles(data.sam_config.empty_bump);
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + latency, Token::Empty);
                         self.rd_scan_data

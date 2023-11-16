@@ -52,6 +52,7 @@ where
                             self.time.tick() + 1,
                             Token::Val(self.val_arr[idx].clone()),
                         );
+                        dbg!(&self.val_arr[idx]);
                         self.array_data
                             .out_val
                             .enqueue(&self.time, channel_elem)

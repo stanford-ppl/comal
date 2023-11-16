@@ -1,5 +1,6 @@
 use std::{fs, path::Path};
 
+use comal::templates::tensor::{Tensor, PrimitiveType};
 use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{Reduce, ReduceData};
@@ -12,12 +13,16 @@ use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 
 use comal::config::Data;
-use comal::templates::utils::read_inputs;
+use comal::templates::utils::{read_inputs, read_inputs_vectorized};
 use dam::simulation::*;
 use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
+use ndarray::Ix2;
+
+type VT = Tensor<'static, f32, Ix2, 2>;
+
 #[test]
 fn test_matmul_ijk() {
     // let test_name = "matmul_ijk";
@@ -52,19 +57,19 @@ fn test_matmul_ijk() {
     let b0_crd = read_inputs::<u32>(&b0_crd_filename);
     let b1_seg = read_inputs::<u32>(&b1_seg_filename);
     let b1_crd = read_inputs::<u32>(&b1_crd_filename);
-    let b_vals = read_inputs::<f32>(&b_vals_filename);
+    let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new());
     let c0_seg = read_inputs::<u32>(&c0_seg_filename);
     let c0_crd = read_inputs::<u32>(&c0_crd_filename);
     let c1_seg = read_inputs::<u32>(&c1_seg_filename);
     let c1_crd = read_inputs::<u32>(&c1_crd_filename);
-    let c_vals = read_inputs::<f32>(&c_vals_filename);
+    let c_vals = read_inputs_vectorized(&c_vals_filename, PrimitiveType::<VT>::new());
 
     let chan_size = 32784;
 
     let mut parent = ProgramBuilder::default();
 
     let _mk_bounded = || parent.bounded::<Token<u32, u32>>(chan_size);
-    let _mk_boundedf = || parent.bounded::<Token<f32, u32>>(chan_size);
+    let _mk_boundedf = || parent.bounded::<Token<VT, u32>>(chan_size);
     let _mk_rsiggen_bounded = || parent.bounded::<Repsiggen>(chan_size);
 
     // fiberlookup_bi
@@ -193,19 +198,19 @@ fn test_matmul_ijk() {
 
     // arrayvals_b
     let (b_out_val_sender, b_out_val_receiver) = parent.bounded(chan_size);
-    let arrayvals_b_data = ArrayData::<u32, f32, u32> {
+    let arrayvals_b_data = ArrayData::<u32, VT, u32> {
         in_ref: intersectk_out_ref1_receiver,
         out_val: b_out_val_sender,
     };
-    let arrayvals_b = Array::<u32, f32, u32>::new(arrayvals_b_data, b_vals);
+    let arrayvals_b = Array::<u32, VT, u32>::new(arrayvals_b_data, b_vals);
 
     // arrayvals_c
     let (c_out_val_sender, c_out_val_receiver) = parent.bounded(chan_size);
-    let arrayvals_c_data = ArrayData::<u32, f32, u32> {
+    let arrayvals_c_data = ArrayData::<u32, VT, u32> {
         in_ref: intersectk_out_ref2_receiver,
         out_val: c_out_val_sender,
     };
-    let arrayvals_c = Array::<u32, f32, u32>::new(arrayvals_c_data, c_vals);
+    let arrayvals_c = Array::<u32, VT, u32>::new(arrayvals_c_data, c_vals);
 
     // mul ALU
     let (mul_out_sender, mul_out_receiver) = parent.bounded(chan_size);
@@ -217,14 +222,14 @@ fn test_matmul_ijk() {
     );
 
     let (out_val_sender, out_val_receiver) = parent.bounded(chan_size);
-    let reduce_data = ReduceData::<f32, u32> {
+    let reduce_data = ReduceData::<VT, u32> {
         in_val: mul_out_receiver,
         out_val: out_val_sender,
     };
     let red = Reduce::new(reduce_data);
 
     // fiberwrite_Xvals
-    let xvals = ValsWrScan::<f32, u32>::new(out_val_receiver);
+    let xvals = ValsWrScan::<VT, u32>::new(out_val_receiver);
 
     parent.add_child(b_gen);
     parent.add_child(broadcast);

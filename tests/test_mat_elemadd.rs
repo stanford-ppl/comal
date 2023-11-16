@@ -17,10 +17,10 @@ use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
-use ndarray::Ix1;
+use ndarray::{Ix1, Ix2};
 
-// type VT = Tensor<'static, f32, Ix1, 2>;
-type VT = f32;
+type VT = Tensor<'static, f32, Ix2, 2>;
+// type VT = f32;
 // type CT = u32;
 // type ST = u32;
 // type CoordType = Token<CT, ST>;
@@ -29,7 +29,7 @@ type VT = f32;
 
 #[test]
 fn test_mat_elemadd() {
-    let test_name = "mat_elemadd";
+    let test_name = "mat_elemadd_vec";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     dbg!(filename.clone());
     let contents = fs::read_to_string(filename).unwrap();

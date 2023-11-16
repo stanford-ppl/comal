@@ -8,10 +8,9 @@ use dam::types::{DAMType, StaticallySized};
 use itertools::Itertools;
 
 use ndarray::{
-    Array, ArrayBase, CowArray, Dim, Dimension, IntoDimension, Ix1, LinalgScalar,
-    OwnedRepr,
+    Array, Array2, ArrayBase, CowArray, Dim, Dimension, IntoDimension, Ix1, Ix2, LinalgScalar,
+    OwnedRepr, ShapeBuilder,
 };
-
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Tensor<'a, ValType: DAMType, Dim: ndarray::Dimension, const N: usize> {
@@ -71,12 +70,37 @@ where
     }
 }
 
+impl<'a, A, const N: usize> Adapter<Tensor<'a, A, Ix2, N>> for PrimitiveType<Tensor<'a, A, Ix2, N>>
+where
+    A: DAMType + FromStr,
+    Tensor<'a, A, Dim<[usize; 2]>, N>: DAMType,
+{
+    fn parse(
+        &self,
+        iter: std::iter::Flatten<std::io::Lines<std::io::BufReader<std::fs::File>>>,
+    ) -> Vec<Tensor<'a, A, Ix2, N>> {
+        let mut out_vec = vec![];
+        let float_iter = iter.flat_map(|line| line.parse::<A>());
+        for chunk in &float_iter.chunks(N * N) {
+            out_vec.push(Tensor::<'a, A, Ix2, N> {
+                // data: CowArray::from(Array2::from_shape_vec(chunk.into_iter().collect::<Vec<_>>())),
+                data: CowArray::from(
+                    Array2::from_shape_vec((N, N).f(), chunk.into_iter().collect::<Vec<_>>())
+                        .unwrap(),
+                ),
+            });
+        }
+        out_vec
+    }
+}
+
 impl<'a, A, D, const N: usize> Mul for Tensor<'a, A, D, N>
 where
     A: DAMType,
     D: Dimension,
     // ArrayBase<CowRepr<'a, A>, D>: Mul<Output = ArrayBase<CowRepr<'a, A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
     // CowArray<'a, A, D>: Mul<Output = CowArray<'a, A, D>>, // Tensor<'a, A, D>: LinalgScalar,
+    // CowArray<'a, A, D>: Mul<Output = CowArray<'a, A, D>> + std::ops::Mul,
     CowArray<'a, A, D>: LinalgScalar,
 {
     type Output = Self;
@@ -86,6 +110,18 @@ where
             data: self.data.mul(rhs.data),
             // data: self.data * rhs.data,
         }
+    }
+}
+
+impl<
+        'a,
+        A: DAMType + std::cmp::PartialEq,
+        D: ndarray::Dimension,
+        const N: usize,
+    > PartialOrd for Tensor<'a, A, D, N>
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.data.to_owned().iter().partial_cmp(&other.data.to_owned().iter())
     }
 }
 
@@ -178,10 +214,24 @@ where
         // let data = Array::zeros(Dim(N).into_dimension());
 
         Tensor::<'a, A, Ix1, N> {
-            // data: CowArray::from(Array::zeros(Shape::from(Ix1(N)).into_shape())),
-            // data: data.into(),
-            // data: CowArray::from(Array::from_vec(chunk.into_iter().collect::<Vec<_>>())),
             data: CowArray::from(Array::from_vec(vec![A::default(); N])),
+        }
+    }
+}
+
+impl<'a, A, const N: usize> Default for Tensor<'a, A, Ix2, N>
+where
+    A: DAMType,
+    // D: Dimension, // ArrayBase<OwnedRepr<A>, Ix1>: Zero, // Add<&'a ArrayBase<OwnedRepr<A>, D>, Output = ArrayBase<OwnedRepr<A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
+    Ix2: Dimension,
+{
+    fn default() -> Self {
+        // let data = Array::zeros(Dim(N).into_dimension());
+
+        Tensor::<'a, A, Ix2, N> {
+            data: CowArray::from(
+                Array2::from_shape_vec((N, N).f(), vec![A::default(); N * N]).unwrap(),
+            ),
         }
     }
 }

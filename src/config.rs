@@ -16,6 +16,10 @@ pub struct Config {
     pub fiberlookup_factor: f64,
     pub fiberwrite_latency: u64,
     pub fiberwrite_ii: u64,
+    pub bump: u64,
+    pub stop_bump: u64,
+    pub done_bump: u64,
+    pub empty_bump: u64,
 }
 
 #[cfg(test)]
