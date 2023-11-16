@@ -127,6 +127,7 @@ pub fn bench_sddmm_sweep(c: &mut Criterion) {
 
 pub fn bench_add_sweep(c: &mut Criterion) {
     let mut group = c.benchmark_group("add");
+    group.sample_size(10);
     let proto_filename = "matadd.bin".to_string();
     let dir_lst = vec![
         "matadd_1000",
@@ -153,5 +154,5 @@ pub fn bench_matmul_sweep(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(sam_benches, bench_matmul_sweep,);
+criterion_group!(sam_benches, bench_add_sweep,);
 criterion_main!(sam_benches);

@@ -61,7 +61,8 @@ where
     }
 
     fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
-        parent.bounded(1024)
+        // parent.bounded(1024)
+        parent.unbounded()
     }
 
     pub fn get_sender(&mut self, id: u64, parent: &mut ProgramBuilder<'a>) -> Sender<T> {
@@ -201,7 +202,6 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     out_ref: refmap.get_sender(get_ref_id(&op.output_ref), &mut parent),
                 };
 
-                dbg!(op.mode);
                 if op.format == "compressed" {
                     let seg_filename =
                         base_path.join(format!("tensor_{}_mode_{}_seg", op.tensor, op.mode));
