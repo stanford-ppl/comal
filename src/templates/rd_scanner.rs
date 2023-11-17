@@ -385,7 +385,7 @@ where
     // usize: From<ValType>,
     ValType: TryInto<usize>,
     <ValType as TryInto<usize>>::Error: std::fmt::Debug,
-    StopType: DAMType + std::ops::Add<u32, Output = StopType>,
+    StopType: DAMType + std::ops::Add<u32, Output = StopType> + std::cmp::PartialEq,
 {
     fn init(&mut self) {}
 
@@ -403,12 +403,13 @@ where
         // dbg!(latency);
         // dbg!(initiation_interval);
 
+        let factor = data.sam_config.fiberlookup_numerator_factor as f64
+            / data.sam_config.fiberlookup_denominator_factor as f64;
+
         let seg_arr_len = self.seg_arr.len() as f64 * factor;
         let crd_arr_len = self.crd_arr.len() as f64 * factor;
-        self.time
-            .incr_cycles(seg_arr_len.ceil() as u64);
-        self.time
-            .incr_cycles(crd_arr_len.ceil() as u64);
+        self.time.incr_cycles(seg_arr_len.ceil() as u64);
+        self.time.incr_cycles(crd_arr_len.ceil() as u64);
         self.time.incr_cycles(starting_cost);
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
@@ -476,13 +477,19 @@ where
                             .unwrap();
                     }
                     Token::Stop(token) => {
+                        // let idx: u32 = token.try_into().unwrap();
+                        let final_latency = if token.clone() == StopType::default() {
+                            1
+                        } else {
+                            stop_latency
+                        };
                         let curr_time = self.time.tick();
                         self.rd_scan_data
                             .out_crd
                             .enqueue(
                                 &self.time,
                                 ChannelElement::new(
-                                    curr_time + stop_latency,
+                                    curr_time + final_latency,
                                     Token::Stop(token.clone() + 1),
                                 ),
                             )
@@ -492,7 +499,7 @@ where
                             .enqueue(
                                 &self.time,
                                 ChannelElement::new(
-                                    curr_time + stop_latency,
+                                    curr_time + final_latency,
                                     Token::Stop(token.clone() + 1),
                                 ),
                             )
@@ -666,8 +673,7 @@ mod tests {
             602, 603, 609, 614, 615, 617, 619, 622, 623, 624, 625, 626, 628, 633, 636, 644, 647,
             650, 651, 657, 659, 663,
         ];
-        let in_ref =
-            || token_vec!(u32; u32; 0, 0, 0, "S0", "D").into_iter();
+        let in_ref = || token_vec!(u32; u32; 0, 0, 0, "S0", "D").into_iter();
         compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 881);
     }
 
