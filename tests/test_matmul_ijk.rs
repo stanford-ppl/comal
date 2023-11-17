@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use comal::templates::tensor::{Tensor, PrimitiveType};
+use comal::templates::tensor::{PrimitiveType, Tensor};
 use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{Reduce, ReduceData};
@@ -32,16 +32,16 @@ fn test_matmul_ijk() {
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
     let base_path = Path::new(&formatted_dir).join(test_name);
-    let b0_seg_filename = base_path.join("tensor_B_mode_0_seg_0");
-    let b0_crd_filename = base_path.join("tensor_B_mode_0_crd_0");
-    let b1_seg_filename = base_path.join("tensor_B_mode_1_seg_0");
-    let b1_crd_filename = base_path.join("tensor_B_mode_1_crd_0");
-    let b_vals_filename = base_path.join("tensor_B_mode_vals_0");
-    let c0_seg_filename = base_path.join("tensor_C_mode_0_seg_0");
-    let c0_crd_filename = base_path.join("tensor_C_mode_0_crd_0");
-    let c1_seg_filename = base_path.join("tensor_C_mode_1_seg_0");
-    let c1_crd_filename = base_path.join("tensor_C_mode_1_crd_0");
-    let c_vals_filename = base_path.join("tensor_C_mode_vals_0");
+    let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
+    let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
+    let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
+    let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
+    let b_vals_filename = base_path.join("tensor_B_mode_vals");
+    let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
+    let c0_crd_filename = base_path.join("tensor_C_mode_0_crd");
+    let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
+    let c1_crd_filename = base_path.join("tensor_C_mode_1_crd");
+    let c_vals_filename = base_path.join("tensor_C_mode_vals");
     // let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
     // let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
     // let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");

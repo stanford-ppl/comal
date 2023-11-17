@@ -42,11 +42,11 @@ where
 
 impl<ValType, StopType> Context for Reduce<ValType, StopType>
 where
-    ValType: DAMType
-        + std::ops::AddAssign<ValType>
-        + std::ops::Mul<ValType, Output = ValType>
-        + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>,
+    ValType: DAMType + std::ops::AddAssign<ValType>,
+    // + std::ops::Mul<ValType, Output = ValType>
+    // + std::ops::Add<ValType, Output = ValType>
+    // + std::cmp::PartialOrd<ValType>,
+    // + num_traits::identities::One,
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
@@ -164,8 +164,7 @@ where
                     match in_val.data {
                         Token::Val(val) => match in_icrd.data {
                             Token::Val(crd) => {
-                                *accum_storage.entry(crd).or_default() +=
-                                    val.clone();
+                                *accum_storage.entry(crd).or_default() += val.clone();
                             }
                             _ => {
                                 panic!("Invalid token found");
