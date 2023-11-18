@@ -46,6 +46,7 @@ where
     T: Clone + 'a,
 {
     map: HashMap<u64, ChannelType<T>>,
+    channel_depth: i32,
     _marker: PhantomData<&'a T>,
 }
 
@@ -53,16 +54,21 @@ impl<'a, T> Channels<'a, T>
 where
     T: DAMType + 'a,
 {
-    pub fn new() -> Self {
+    pub fn new(channel_depth: i32) -> Self {
         Self {
             map: Default::default(),
+            channel_depth,
             _marker: Default::default(),
         }
     }
 
-    fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
-        // parent.bounded(1024)
-        parent.unbounded()
+    fn new_channel(&self, parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
+        if self.channel_depth == -1 {
+            parent.unbounded()
+        } else {
+            parent.bounded(self.channel_depth as usize)
+        }
+        // parent.unbounded()
     }
 
     pub fn get_sender(&mut self, id: u64, parent: &mut ProgramBuilder<'a>) -> Sender<T> {
@@ -75,7 +81,7 @@ where
                 panic!("Received receive type unexpectedly");
             }
             None => {
-                let (snd, rcv) = Self::new_channel(parent, id);
+                let (snd, rcv) = Self::new_channel(self, parent, id);
                 self.map.insert(id, ChannelType::ReceiverType(rcv));
                 snd
             }
@@ -88,7 +94,7 @@ where
                 panic!("Unexpected sender");
             }
             None => {
-                let (snd, rcv) = Self::new_channel(parent, id);
+                let (snd, rcv) = Self::new_channel(self, parent, id);
                 self.map.insert(id, ChannelType::SendType(snd));
                 rcv
             }
@@ -100,13 +106,17 @@ where
     }
 }
 
-pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBuilder<'a> {
+pub fn parse_proto<'a>(
+    comal_graph: ComalGraph,
+    base_path: PathBuf,
+    channel_depth: i32,
+) -> ProgramBuilder<'a> {
     let mut parent = ProgramBuilder::default();
 
-    let mut refmap: Channels<CoordType> = Channels::new();
-    let mut crdmap: Channels<CoordType> = Channels::new();
-    let mut valmap: Channels<ValType> = Channels::new();
-    let mut repmap: Channels<Repsiggen> = Channels::new();
+    let mut refmap: Channels<CoordType> = Channels::new(channel_depth);
+    let mut crdmap: Channels<CoordType> = Channels::new(channel_depth);
+    let mut valmap: Channels<ValType> = Channels::new(channel_depth);
+    let mut repmap: Channels<Repsiggen> = Channels::new(channel_depth);
 
     let mut repsig_id_count: u64 = 1;
 
