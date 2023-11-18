@@ -46,6 +46,7 @@ where
     T: Clone + 'a,
 {
     map: HashMap<u64, ChannelType<T>>,
+    channel_depth: usize,
     _marker: PhantomData<&'a T>,
 }
 
@@ -53,16 +54,17 @@ impl<'a, T> Channels<'a, T>
 where
     T: DAMType + 'a,
 {
-    pub fn new() -> Self {
+    pub fn new(channel_depth: usize) -> Self {
         Self {
             map: Default::default(),
+            channel_depth,
             _marker: Default::default(),
         }
     }
 
     fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
-        // parent.bounded(1024)
-        parent.unbounded()
+        parent.bounded(2)
+        // parent.unbounded()
     }
 
     pub fn get_sender(&mut self, id: u64, parent: &mut ProgramBuilder<'a>) -> Sender<T> {
@@ -100,13 +102,13 @@ where
     }
 }
 
-pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBuilder<'a> {
+pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf, channel_depth: usize) -> ProgramBuilder<'a> {
     let mut parent = ProgramBuilder::default();
 
-    let mut refmap: Channels<CoordType> = Channels::new();
-    let mut crdmap: Channels<CoordType> = Channels::new();
-    let mut valmap: Channels<ValType> = Channels::new();
-    let mut repmap: Channels<Repsiggen> = Channels::new();
+    let mut refmap: Channels<CoordType> = Channels::new(channel_depth);
+    let mut crdmap: Channels<CoordType> = Channels::new(channel_depth);
+    let mut valmap: Channels<ValType> = Channels::new(channel_depth);
+    let mut repmap: Channels<Repsiggen> = Channels::new(channel_depth);
 
     let mut repsig_id_count: u64 = 1;
 
