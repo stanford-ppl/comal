@@ -20,6 +20,8 @@ use super::templates::utils::read_inputs;
 use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
+use crate::templates::tensor::{PrimitiveType, Tensor};
+use crate::templates::utils::read_inputs_vectorized;
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::context_tools::*;
@@ -27,6 +29,7 @@ use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
 use dam::utility_contexts::{BroadcastContext, GeneratorContext};
 
+use ndarray::Ix2;
 use proto_headers::tortilla::*;
 
 type VT = f32;
@@ -223,26 +226,10 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 parent.add_child(CompressedWrScan::new(receiver));
             }
             Op::Repeat(op) => {
-                // let in_repsig_id = get_repsig_id(&op.input_rep_sig);
-
                 // TODO: Need to check if input_rep_crd exists for backwards compatibility
                 // match &op.input_rep_crd {}
                 let in_rep_ref = get_ref_id(&op.input_rep_ref);
 
-                // let in_ref = if op.root {
-                //     let (root_sender, root_receiver) = parent.bounded(2);
-                //     parent.add_child(GeneratorContext::new(
-                //         || token_vec!(u32; u32; 0, "D").into_iter(),
-                //         root_sender,
-                //     ));
-                //     root_receiver
-                // } else {
-                //     refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent)
-                // };
-
-                // TODO: Do we need the repsiggen to be separate or just embed it as a nested context inside the repeat context
-
-                // FIXME: Need to materialize random channel id
                 // Might not matter since repsig, could just use a counter to avoid collision
                 let repsig_data = RepSigGenData {
                     input: refmap.get_receiver(in_rep_ref, &mut parent),
@@ -350,13 +337,20 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 parent.add_child(CrdDrop::new(crd_drop_data));
             }
             Op::Array(op) => {
+                let blocked = op.blocked;
+                const stream_shape = op.stream_shape as usize;
                 let in_ref_id = get_ref_id(&op.input_ref);
                 let array_data = ArrayData {
                     in_ref: refmap.get_receiver(in_ref_id, &mut parent),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), &mut parent),
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
-                let vals = read_inputs(&val_filename);
+                // let vals = read_inputs(&val_filename);
+                let mut prim_type = PrimitiveType::<VT>::new();
+                if blocked {
+                    prim_type = PrimitiveType::<Tensor<'static, VT, Ix2, { stream_shape }>>::new();
+                }
+                let vals = read_inputs_vectorized(&val_filename, PrimitiveType::<VT>::new());
                 parent.add_child(Array::new(array_data, vals));
             }
             Op::Spacc(op) => {
@@ -379,7 +373,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 let val_receiver = valmap.get_receiver(in_val_id, &mut parent);
                 parent.add_child(ValsWrScan::new(val_receiver));
             }
-            Op::CoordMask(_) => unimplemented!("Custard can't output coord mask op yet"),
+            Op::CoordMask(_) => unimplemented!("SAMML can't output coord mask op yet"),
             operation::Op::Func(_) => todo!(),
             Op::Root(op) => {
                 let out_ref_id = get_ref_id(&op.output_ref);
