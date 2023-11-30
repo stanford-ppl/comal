@@ -21,7 +21,7 @@ use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 use ndarray::Ix2;
 
-type VT = Tensor<'static, f32, Ix2, 2>;
+type VT = f32;
 
 #[test]
 fn test_matmul_ijk() {

@@ -2,6 +2,7 @@ use core::fmt;
 
 use dam::context_tools::*;
 use dam::templates::ops::*;
+use dam::types::StaticallySized;
 use dam::RegisterALUOp;
 
 #[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
@@ -169,13 +170,6 @@ impl<ValType: DAMType, StopType: DAMType> DAMType for Token<ValType, StopType> {
     }
 }
 
-impl DAMType for Repsiggen {
-    fn dam_size(&self) -> usize {
-        2 + match self {
-            // Not sure exact size beyond 2 bits so using match just in case to update later
-            Repsiggen::Repeat => 0,
-            Repsiggen::Stop => 0,
-            Repsiggen::Done => 0,
-        }
-    }
+impl StaticallySized for Repsiggen {
+    const SIZE: usize = 2;
 }

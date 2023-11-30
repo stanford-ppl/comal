@@ -16,18 +16,20 @@ pub fn read_inputs_vectorized<T>(file_path: &PathBuf, prim_type: impl Adapter<T>
 where
     T: DAMType,
 {
-    let file = File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found", file_path));
-    prim_type.parse(BufReader::new(file).lines().flatten())
+    let file =
+        File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found", file_path));
+    // prim_type.parse(BufReader::new(file).lines().flatten())
+    todo!()
 }
 
 pub fn read_inputs<T>(file_path: &PathBuf) -> Vec<T>
 where
     T: DAMType + std::str::FromStr,
 {
-    let file = File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found.", file_path));
+    let file =
+        File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found.", file_path));
     let reader = BufReader::new(file);
 
-    
     reader
         .lines()
         .flatten() // gets rid of Err from lines

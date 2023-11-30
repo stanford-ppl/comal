@@ -157,8 +157,8 @@ where
     // &'a CowArray<'a, A, D>: Add<&'a CowArray<'a, A, D>, Output = CowArray<'a, A, D>>, // Tensor<'a, A, D>: LinalgScalar,
     &'a ArrayBase<OwnedRepr<A>, IxDyn>:
         Add<&'a ArrayBase<OwnedRepr<A>, IxDyn>, Output = ArrayBase<OwnedRepr<A>, IxDyn>>, // Tensor<'a, A, D>: LinalgScalar,
-        CowArray<'a, A, IxDyn>: Add<Output = CowArray<'a, A, IxDyn>>,
-                                                                                          // CowArray<'a, A, D>: ,
+    CowArray<'a, A, IxDyn>: Add<Output = CowArray<'a, A, IxDyn>>,
+    // CowArray<'a, A, D>: ,
 {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
@@ -175,11 +175,17 @@ where
 
 impl<'a, A> DAMType for Tensor<'a, A>
 where
-    A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
+    A: DAMType + StaticallySized,
     Tensor<'a, A>: Default,
 {
     fn dam_size(&self) -> usize {
-        self.data.expect("Attempting to retrieve None tensor").dim().into_dimension().size() * A::SIZE
+        self.data
+            .as_ref()
+            .expect("Attempting to retrieve None tensor")
+            .dim()
+            .into_dimension()
+            .size()
+            * A::SIZE
     }
 }
 
@@ -188,7 +194,12 @@ where
     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized,
 {
     fn size(&self) -> usize {
-        self.data.expect("Attempting to retrieve None tensor").dim().into_dimension().size()
+        self.data
+            .as_ref()
+            .expect("Attempting to retrieve None tensor")
+            .dim()
+            .into_dimension()
+            .size()
     }
 }
 

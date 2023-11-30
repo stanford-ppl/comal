@@ -29,65 +29,28 @@ use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
 use dam::utility_contexts::{BroadcastContext, GeneratorContext};
 
-use ndarray::Ix2;
 use proto_headers::tortilla::*;
 
 type VT = f32;
 type CT = u32;
 type ST = u32;
-type CoordType = Token<CT, ST>;
-type RefType = Token<CT, ST>;
-type ValType = Token<VT, ST>;
 
-enum ChannelType<T: Clone> {
+enum ChannelType<T: DAMType> {
     SendType(Sender<T>),
     ReceiverType(Receiver<T>),
 }
 
-// #[derive(Debug, PartialEq)]
-enum StreamType<'a, T: dam::types::StaticallySized + DAMType> where Tensor<'a, T>: dam::types::DAMType {
-    ScalarType(ChannelType<Token<T, ST>>),
-    TensorType(ChannelType<Token<Tensor<'a, T>, ST>>),
-}
-
-impl<'a, T: DAMType + dam::types::StaticallySized> Default for StreamType<'a, T> where Tensor<'a, T>: dam::types::DAMType {
-    fn default() -> Self {
-        Self::default()
-    }
-}
-
-// impl<'a, T: DAMType + dam::types::StaticallySized> DAMType for StreamType<'a, T> where Tensor<'a, T>: dam::types::DAMType {
-//     fn dam_size(&self) -> usize {
-//         self.dam_size()
-//     }
-// }
-
-// impl <'a, T: DAMType + dam::types::StaticallySized> Into<Token<T,ST>> for StreamType<'a, T> where Tensor<'a, T>: dam::types::DAMType {
-//     fn into(self) -> Token<T,ST> {
-        
-//     }
-// }
-
+#[derive(Default)]
 struct Channels<'a, T>
 where
-    T: 'a + std::clone::Clone + dam::types::StaticallySized + DAMType, Tensor<'a, T>: dam::types::DAMType
+    T: DAMType,
 {
-    map: HashMap<u64, StreamType<'a, T>>,
-    _marker: PhantomData<&'a T>,
+    map: HashMap<u64, ChannelType<T>>,
+    _marker: PhantomData<&'a ()>,
 }
 
-impl<'a, T> Channels<'a, T>
-where
-    T: DAMType + 'a + dam::types::StaticallySized, Tensor<'a, T>: dam::types::DAMType+ dam::types::StaticallySized,
-{
-    pub fn new() -> Self {
-        Self {
-            map: Default::default(),
-            _marker: Default::default(),
-        }
-    }
-
-    fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>)  {
+impl<'a, T: DAMType> Channels<'a, T> where T: 'a {
+    fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
         parent.bounded(1024)
     }
 
@@ -96,13 +59,13 @@ where
             return parent.void();
         }
         match self.map.remove(&id) {
-            Some(res) => res,
+            Some(ChannelType::SendType(res)) => res,
             Some(_) => {
                 panic!("Received receive type unexpectedly");
             }
             None => {
                 let (snd, rcv) = Self::new_channel(parent, id);
-                self.map.insert(id, rcv.into());
+                self.map.insert(id, ChannelType::ReceiverType(rcv));
                 snd
             }
         }
@@ -129,10 +92,11 @@ where
 pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBuilder<'a> {
     let mut parent = ProgramBuilder::default();
 
-    let mut refmap: Channels<StreamType<'static, CT>> = Channels::new();
-    let mut crdmap: Channels<StreamType<'static, CT>> = Channels::new();
-    let mut valmap: Channels<StreamType<'static, VT>> = Channels::new();
-    let mut repmap: Channels<Repsiggen> = Channels::new();
+    let mut refmap: Channels<Token<CT, ST>> = Channels::default();
+    let mut crdmap: Channels<Token<CT, ST>> = Channels::default();
+    let mut valmap: Channels<Token<VT, ST>> = Channels::default();
+    let mut tensor_valmap: Channels<Tensor<'static, VT>> = Channels::default();
+    let mut repmap: Channels<Repsiggen> = Channels::default();
 
     let mut repsig_id_count: u64 = 1;
 
@@ -209,17 +173,6 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 };
             }
             Op::FiberLookup(op) => {
-                // let in_ref = if op.root {
-                //     let (root_sender, root_receiver) = parent.bounded(2);
-                //     parent.add_child(GeneratorContext::new(
-                //         || token_vec!(u32; u32; 0, "D").into_iter(),
-                //         root_sender,
-                //     ));
-                //     root_receiver
-                // }
-                // else {
-                //     refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent)
-                // };
                 let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent);
 
                 let f_data = RdScanData {
@@ -369,13 +322,6 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     out_val: valmap.get_sender(get_val_id(&op.output_val), &mut parent),
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
-                // let vals = read_inputs(&val_filename);
-                // let mut prim_type = PrimitiveType::<VT>::new();
-                let prim_type = if stream_shape > 1 {
-                    PrimitiveType::<Tensor<'static, VT>>::new()
-                } else {
-                    // PrimitiveType::<VT>::new()
-                };
                 let vals = read_inputs_vectorized(&val_filename, PrimitiveType::<VT>::new());
                 parent.add_child(Array::new(array_data, vals));
             }
