@@ -44,17 +44,41 @@ enum ChannelType<T: Clone> {
     ReceiverType(Receiver<T>),
 }
 
+// #[derive(Debug, PartialEq)]
+enum StreamType<'a, T: dam::types::StaticallySized + DAMType> where Tensor<'a, T>: dam::types::DAMType {
+    ScalarType(ChannelType<Token<T, ST>>),
+    TensorType(ChannelType<Token<Tensor<'a, T>, ST>>),
+}
+
+impl<'a, T: DAMType + dam::types::StaticallySized> Default for StreamType<'a, T> where Tensor<'a, T>: dam::types::DAMType {
+    fn default() -> Self {
+        Self::default()
+    }
+}
+
+// impl<'a, T: DAMType + dam::types::StaticallySized> DAMType for StreamType<'a, T> where Tensor<'a, T>: dam::types::DAMType {
+//     fn dam_size(&self) -> usize {
+//         self.dam_size()
+//     }
+// }
+
+// impl <'a, T: DAMType + dam::types::StaticallySized> Into<Token<T,ST>> for StreamType<'a, T> where Tensor<'a, T>: dam::types::DAMType {
+//     fn into(self) -> Token<T,ST> {
+        
+//     }
+// }
+
 struct Channels<'a, T>
 where
-    T: Clone + 'a,
+    T: 'a + std::clone::Clone + dam::types::StaticallySized + DAMType, Tensor<'a, T>: dam::types::DAMType
 {
-    map: HashMap<u64, ChannelType<T>>,
+    map: HashMap<u64, StreamType<'a, T>>,
     _marker: PhantomData<&'a T>,
 }
 
 impl<'a, T> Channels<'a, T>
 where
-    T: DAMType + 'a,
+    T: DAMType + 'a + dam::types::StaticallySized, Tensor<'a, T>: dam::types::DAMType+ dam::types::StaticallySized,
 {
     pub fn new() -> Self {
         Self {
@@ -63,7 +87,7 @@ where
         }
     }
 
-    fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
+    fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>)  {
         parent.bounded(1024)
     }
 
@@ -72,13 +96,13 @@ where
             return parent.void();
         }
         match self.map.remove(&id) {
-            Some(ChannelType::SendType(res)) => res,
+            Some(res) => res,
             Some(_) => {
                 panic!("Received receive type unexpectedly");
             }
             None => {
                 let (snd, rcv) = Self::new_channel(parent, id);
-                self.map.insert(id, ChannelType::ReceiverType(rcv));
+                self.map.insert(id, rcv.into());
                 snd
             }
         }
@@ -105,9 +129,9 @@ where
 pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBuilder<'a> {
     let mut parent = ProgramBuilder::default();
 
-    let mut refmap: Channels<CoordType> = Channels::new();
-    let mut crdmap: Channels<CoordType> = Channels::new();
-    let mut valmap: Channels<ValType> = Channels::new();
+    let mut refmap: Channels<StreamType<'static, CT>> = Channels::new();
+    let mut crdmap: Channels<StreamType<'static, CT>> = Channels::new();
+    let mut valmap: Channels<StreamType<'static, VT>> = Channels::new();
     let mut repmap: Channels<Repsiggen> = Channels::new();
 
     let mut repsig_id_count: u64 = 1;
@@ -338,7 +362,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
             }
             Op::Array(op) => {
                 let blocked = op.blocked;
-                const stream_shape = op.stream_shape as usize;
+                let stream_shape = op.stream_shape as usize;
                 let in_ref_id = get_ref_id(&op.input_ref);
                 let array_data = ArrayData {
                     in_ref: refmap.get_receiver(in_ref_id, &mut parent),
@@ -346,10 +370,12 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
                 // let vals = read_inputs(&val_filename);
-                let mut prim_type = PrimitiveType::<VT>::new();
-                if blocked {
-                    prim_type = PrimitiveType::<Tensor<'static, VT, Ix2, { stream_shape }>>::new();
-                }
+                // let mut prim_type = PrimitiveType::<VT>::new();
+                let prim_type = if stream_shape > 1 {
+                    PrimitiveType::<Tensor<'static, VT>>::new()
+                } else {
+                    // PrimitiveType::<VT>::new()
+                };
                 let vals = read_inputs_vectorized(&val_filename, PrimitiveType::<VT>::new());
                 parent.add_child(Array::new(array_data, vals));
             }
