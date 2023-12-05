@@ -1,7 +1,14 @@
 use std::fs;
 
 use crate::config::Data;
-use dam::{context_tools::*, dam_macros::context_macro};
+use dam::{
+    context_tools::*,
+    dam_macros::{context_macro, event_type},
+};
+use serde_derive::{Deserialize, Serialize};
+
+// use dam::logging;
+// use dam::logging::registry::distributed_slice;
 
 use super::primitive::Token;
 
@@ -583,6 +590,8 @@ mod tests {
     use std::time::Instant;
 
     use dam::simulation::InitializationOptionsBuilder;
+    use dam::simulation::LoggingOptions;
+    use dam::simulation::MongoOptionsBuilder;
     use dam::simulation::ProgramBuilder;
     use dam::simulation::RunMode;
     use dam::simulation::RunOptionsBuilder;
@@ -637,7 +646,7 @@ mod tests {
             27, 30, 0, 1, 2, 6, 17, 22, 23, 24, 25, 33, 0, 2, 5, 7, 12, 13, 20, 25, 27, 30,
         ];
         let in_ref = || token_vec!(u32; u32; "N", 1, 2, 1, "S0", "D").into_iter();
-        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 158);
+        compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 54);
     }
 
     #[test]
@@ -814,6 +823,13 @@ mod tests {
         let executed = initialized.run(
             RunOptionsBuilder::default()
                 .mode(RunMode::Simple)
+                // .logging(LoggingOptions::Mongo(
+                // MongoOptionsBuilder::default()
+                // .db("rd_scanner_log".to_string())
+                // .uri("mongodb://127.0.0.1:27017".to_string())
+                // .build()
+                // .unwrap(),
+                // ))
                 .build()
                 .unwrap(),
         );
