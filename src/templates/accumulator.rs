@@ -1,16 +1,7 @@
 use core::hash::Hash;
 use std::collections::BTreeMap;
 
-// use crate::{channel::utils::peek_next, context::Context};
 use dam::{context_tools::*, dam_macros::context_macro};
-
-// use crate::{
-//     channel::{
-//         utils::{dequeue, enqueue},
-//         ChannelElement, Receiver, Sender,
-//     },
-//     types::{Cleanable, DAMType},
-// };
 
 use super::primitive::Token;
 
@@ -98,8 +89,6 @@ where
                     panic!("Unexpected end of stream");
                 }
             }
-            // println!("seg: {:?}", self.seg_arr);
-            // println!("crd: {:?}", self.crd_arr);
             self.time.incr_cycles(1);
         }
     }
@@ -288,13 +277,10 @@ where
         loop {
             match self.max_reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
-                    Token::Val(val) => {
-                        // max_elem = max(val, max_elem);
-                        match val.lt(&max_elem) {
-                            true => (),
-                            false => max_elem = val,
-                        }
-                    }
+                    Token::Val(val) => match val.lt(&max_elem) {
+                        true => (),
+                        false => max_elem = val,
+                    },
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
                         self.max_reduce_data
@@ -336,140 +322,147 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
+#[cfg(test)]
+mod tests {
 
-//     use crate::{
-//         context::{checker_context::CheckerContext, generator_context::GeneratorContext},
-//         simulation::Program,
-//         templates::sam::primitive::Token,
-//         token_vec,
-//     };
+    use dam::simulation::*;
+    use dam::utility_contexts::*;
 
-//     use super::{MaxReduce, Reduce, Spacc1};
-//     use super::{ReduceData, Spacc1Data};
+    use crate::templates::primitive::Token;
+    use crate::token_vec;
 
-//     #[test]
-//     fn reduce_2d_test() {
-//         let in_val = || {
-//             token_vec!(u32; u32; 5, 5, "S0", 5, "S0", 4, 8, "S0", 4, 3, "S0", 4, 3, "S1", "D")
-//                 .into_iter()
-//         };
-//         let out_val = || token_vec!(u32; u32; 10, 5, 12, 7, 7, "S0", "D").into_iter();
-//         reduce_test(in_val, out_val);
-//     }
+    use super::{MaxReduce, Reduce, Spacc1};
+    use super::{ReduceData, Spacc1Data};
 
-//     #[test]
-//     fn spacc1_2d_test() {
-//         let in_ocrd = || token_vec!(u32; u32; 0, 2, "S0", 2, "S1", "D").into_iter();
-//         let in_icrd =
-//             || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", 0, 2, 3, "S2", "D").into_iter();
-//         let in_val = || {
-//             token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 40.0, 4.0, 8.0, "S1", -40.0, 33.0, 36.0, "S2", "D")
-//                     .into_iter()
-//         };
-//         let out_icrd = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", "D").into_iter();
-//         let out_val = || {
-//             token_vec!(f32; u32; 90.0, 9.0, 18.0, "S0", -40.0, 33.0, 36.0, "S1", "D").into_iter()
-//         };
-//         spacc1_test(in_ocrd, in_icrd, in_val, out_icrd, out_val);
-//     }
+    #[test]
+    fn reduce_2d_test() {
+        let in_val = || {
+            token_vec!(u32; u32; 5, 5, "S0", 5, "S0", 4, 8, "S0", 4, 3, "S0", 4, 3, "S1", "D")
+                .into_iter()
+        };
+        let out_val = || token_vec!(u32; u32; 10, 5, 12, 7, 7, "S0", "D").into_iter();
+        reduce_test(in_val, out_val);
+    }
 
-//     #[test]
-//     fn max_reduce_2d_test() {
-//         let in_val = || {
-//             token_vec!(f32; u32; 5.0, 5.0, "S0", 5.0, "S0", 4.0, 8.0, "S0", 4.0, 3.0, "S0", 4.0, 3.0, "S1", "D")
-//                 .into_iter()
-//         };
-//         let out_val = || token_vec!(f32; u32; 5.0, 5.0, 8.0, 4.0, 4.0, "S0", "D").into_iter();
-//         max_reduce_test(in_val, out_val);
-//     }
+    #[test]
+    fn spacc1_2d_test() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 2, "S0", 2, "S1", "D").into_iter();
+        let in_icrd =
+            || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", 0, 2, 3, "S2", "D").into_iter();
+        let in_val = || {
+            token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 40.0, 4.0, 8.0, "S1", -40.0, 33.0, 36.0, "S2", "D")
+                    .into_iter()
+        };
+        let out_icrd = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", "D").into_iter();
+        let out_val = || {
+            token_vec!(f32; u32; 90.0, 9.0, 18.0, "S0", -40.0, 33.0, 36.0, "S1", "D").into_iter()
+        };
+        spacc1_test(in_ocrd, in_icrd, in_val, out_icrd, out_val);
+    }
 
-//     fn reduce_test<IRT, ORT>(in_val: fn() -> IRT, out_val: fn() -> ORT)
-//     where
-//         IRT: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         let (in_val_sender, in_val_receiver) = parent.unbounded();
-//         let (out_val_sender, out_val_receiver) = parent.unbounded();
-//         let data = ReduceData::<u32, u32> {
-//             in_val: in_val_receiver,
-//             out_val: out_val_sender,
-//         };
-//         let red = Reduce::new(data);
-//         let gen1 = GeneratorContext::new(in_val, in_val_sender);
-//         let val_checker = CheckerContext::new(out_val, out_val_receiver);
-//         parent.add_child(gen1);
-//         parent.add_child(val_checker);
-//         parent.add_child(red);
-//         parent.init();
-//         parent.run();
-//     }
+    #[test]
+    fn max_reduce_2d_test() {
+        let in_val = || {
+            token_vec!(f32; u32; 5.0, 5.0, "S0", 5.0, "S0", 4.0, 8.0, "S0", 4.0, 3.0, "S0", 4.0, 3.0, "S1", "D")
+                .into_iter()
+        };
+        let out_val = || token_vec!(f32; u32; 5.0, 5.0, 8.0, 4.0, 4.0, "S0", "D").into_iter();
+        max_reduce_test(in_val, out_val);
+    }
 
-//     fn spacc1_test<IRT1, IRT2, IRT3, ORT1, ORT2>(
-//         in_ocrd: fn() -> IRT1,
-//         in_icrd: fn() -> IRT2,
-//         in_val: fn() -> IRT3,
-//         out_icrd: fn() -> ORT1,
-//         out_val: fn() -> ORT2,
-//     ) where
-//         IRT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT3: Iterator<Item = Token<f32, u32>> + 'static,
-//         ORT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT2: Iterator<Item = Token<f32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         // let mut parent.unbounded = || parent.parent.unbounded();
-//         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded();
-//         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded();
-//         let (in_val_sender, in_val_receiver) = parent.unbounded();
-//         let (out_val_sender, out_val_receiver) = parent.unbounded();
-//         let (out_icrd_sender, out_icrd_receiver) = parent.unbounded();
-//         let data = Spacc1Data::<u32, f32, u32> {
-//             in_crd_outer: in_ocrd_receiver,
-//             in_crd_inner: in_icrd_receiver,
-//             in_val: in_val_receiver,
-//             out_val: out_val_sender,
-//             out_crd_inner: out_icrd_sender,
-//         };
-//         let red = Spacc1::new(data);
-//         let gen1 = GeneratorContext::new(in_ocrd, in_ocrd_sender);
-//         let gen2 = GeneratorContext::new(in_icrd, in_icrd_sender);
-//         let gen3 = GeneratorContext::new(in_val, in_val_sender);
-//         let icrd_checker = CheckerContext::new(out_icrd, out_icrd_receiver);
-//         let val_checker = CheckerContext::new(out_val, out_val_receiver);
-//         parent.add_child(gen1);
-//         parent.add_child(gen2);
-//         parent.add_child(gen3);
-//         parent.add_child(icrd_checker);
-//         parent.add_child(val_checker);
-//         parent.add_child(red);
-//         parent.init();
-//         parent.run();
-//     }
+    fn reduce_test<IRT, ORT>(in_val: fn() -> IRT, out_val: fn() -> ORT)
+    where
+        IRT: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_val_sender, in_val_receiver) = parent.unbounded();
+        let (out_val_sender, out_val_receiver) = parent.unbounded();
+        let data = ReduceData::<u32, u32> {
+            in_val: in_val_receiver,
+            out_val: out_val_sender,
+        };
+        let red = Reduce::new(data);
+        let gen1 = GeneratorContext::new(in_val, in_val_sender);
+        let val_checker = CheckerContext::new(out_val, out_val_receiver);
+        parent.add_child(gen1);
+        parent.add_child(val_checker);
+        parent.add_child(red);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
 
-//     fn max_reduce_test<IRT, ORT>(in_val: fn() -> IRT, out_val: fn() -> ORT)
-//     where
-//         IRT: Iterator<Item = Token<f32, u32>> + 'static,
-//         ORT: Iterator<Item = Token<f32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         let (in_val_sender, in_val_receiver) = parent.unbounded::<Token<f32, u32>>();
-//         let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<f32, u32>>();
-//         let data = ReduceData::<f32, u32> {
-//             in_val: in_val_receiver,
-//             out_val: out_val_sender,
-//         };
-//         let red = MaxReduce::new(data, f32::MIN);
-//         let gen1 = GeneratorContext::new(in_val, in_val_sender);
-//         let val_checker = CheckerContext::new(out_val, out_val_receiver);
+    fn spacc1_test<IRT1, IRT2, IRT3, ORT1, ORT2>(
+        in_ocrd: fn() -> IRT1,
+        in_icrd: fn() -> IRT2,
+        in_val: fn() -> IRT3,
+        out_icrd: fn() -> ORT1,
+        out_val: fn() -> ORT2,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT3: Iterator<Item = Token<f32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT2: Iterator<Item = Token<f32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded();
+        let (in_icrd_sender, in_icrd_receiver) = parent.unbounded();
+        let (in_val_sender, in_val_receiver) = parent.unbounded();
+        let (out_val_sender, out_val_receiver) = parent.unbounded();
+        let (out_icrd_sender, out_icrd_receiver) = parent.unbounded();
+        let data = Spacc1Data::<u32, f32, u32> {
+            in_crd_outer: in_ocrd_receiver,
+            in_crd_inner: in_icrd_receiver,
+            in_val: in_val_receiver,
+            out_val: out_val_sender,
+            out_crd_inner: out_icrd_sender,
+        };
+        let red = Spacc1::new(data);
+        let gen1 = GeneratorContext::new(in_ocrd, in_ocrd_sender);
+        let gen2 = GeneratorContext::new(in_icrd, in_icrd_sender);
+        let gen3 = GeneratorContext::new(in_val, in_val_sender);
+        let icrd_checker = CheckerContext::new(out_icrd, out_icrd_receiver);
+        let val_checker = CheckerContext::new(out_val, out_val_receiver);
+        parent.add_child(gen1);
+        parent.add_child(gen2);
+        parent.add_child(gen3);
+        parent.add_child(icrd_checker);
+        parent.add_child(val_checker);
+        parent.add_child(red);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
 
-//         parent.add_child(gen1);
-//         parent.add_child(val_checker);
-//         parent.add_child(red);
-//         parent.init();
-//         parent.run();
-//     }
-// }
+    fn max_reduce_test<IRT, ORT>(in_val: fn() -> IRT, out_val: fn() -> ORT)
+    where
+        IRT: Iterator<Item = Token<f32, u32>> + 'static,
+        ORT: Iterator<Item = Token<f32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_val_sender, in_val_receiver) = parent.unbounded::<Token<f32, u32>>();
+        let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<f32, u32>>();
+        let data = ReduceData::<f32, u32> {
+            in_val: in_val_receiver,
+            out_val: out_val_sender,
+        };
+        let red = MaxReduce::new(data, f32::MIN);
+        let gen1 = GeneratorContext::new(in_val, in_val_sender);
+        let val_checker = CheckerContext::new(out_val, out_val_receiver);
+
+        parent.add_child(gen1);
+        parent.add_child(val_checker);
+        parent.add_child(red);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
+}
