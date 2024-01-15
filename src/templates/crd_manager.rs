@@ -372,13 +372,12 @@ mod tests {
         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-        let (out_icrd_sender, _out_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
 
         let crd_hold_data = CrdManagerData::<u32, u32> {
             in_crd_outer: in_ocrd_receiver,
             in_crd_inner: in_icrd_receiver,
             out_crd_outer: out_ocrd_sender,
-            out_crd_inner: out_icrd_sender,
+            out_crd_inner: parent.void(),
         };
 
         let drop = CrdHold::new(crd_hold_data);
