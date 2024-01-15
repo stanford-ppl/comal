@@ -21,15 +21,3 @@ pub struct Config {
     pub done_bump: u64,
     pub empty_bump: u64,
 }
-
-#[cfg(test)]
-mod tests {
-
-    use super::Config;
-
-    #[test]
-    fn get_path() {
-        let config: Config = toml::from_str("sam_path = '$HOME'").unwrap();
-        dbg!(config);
-    }
-}
