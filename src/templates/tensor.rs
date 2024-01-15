@@ -47,7 +47,6 @@ impl<T: std::str::FromStr> Adapter<T> for PrimitiveType<T>
 where
     T: DAMType,
 {
-    // fn parse(&self, iter: impl Iterator<Item = String>) -> Vec<T> {
     fn parse(
         &self,
         iter: std::iter::Flatten<std::io::Lines<std::io::BufReader<std::fs::File>>>,
@@ -107,7 +106,6 @@ where
                     .unwrap()
                     .mul(rhs.data.expect("Attempting to multiply with a None value")),
             ),
-            // data: self.data * rhs.data,
         }
     }
 }
@@ -135,11 +133,7 @@ where
         + StaticallySized
         + num::Zero
         + ndarray::RawData,
-    // ArrayBase<CowRepr<'a, A>, D>: Sub<Output = ArrayBase<CowRepr<'a, A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
-    CowArray<'a, A, IxDyn>: Sub<Output = CowArray<'a, A, IxDyn>>, // Tensor<'a, A, D>: LinalgScalar,
-                                                                  // CowArray<'a, A, D>: LinalgScalar,
-                                                                  // &'a ArrayBase<OwnedRepr<A>, D>:
-                                                                  //     Add<&'a ArrayBase<OwnedRepr<A>, D>, Output = ArrayBase<OwnedRepr<A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
+    CowArray<'a, A, IxDyn>: Sub<Output = CowArray<'a, A, IxDyn>>,
 {
     type Output = Self;
 
@@ -151,19 +145,16 @@ where
                     .unwrap()
                     .sub(rhs.data.expect("Attempting to substract with a None value")),
             ),
-        } // data: CowArray::from(Array::from_vec(
+        }
     }
 }
 
 impl<'a, A> Add for Tensor<'a, A>
 where
     A: PartialEq + std::fmt::Debug + Clone + Default + Sync + Send + StaticallySized + num::Zero,
-    // ArrayBase<CowRepr<'a, A>, D>: Add<Output = ArrayBase<CowRepr<'a, A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
-    // &'a CowArray<'a, A, D>: Add<&'a CowArray<'a, A, D>, Output = CowArray<'a, A, D>>, // Tensor<'a, A, D>: LinalgScalar,
     &'a ArrayBase<OwnedRepr<A>, IxDyn>:
-        Add<&'a ArrayBase<OwnedRepr<A>, IxDyn>, Output = ArrayBase<OwnedRepr<A>, IxDyn>>, // Tensor<'a, A, D>: LinalgScalar,
+        Add<&'a ArrayBase<OwnedRepr<A>, IxDyn>, Output = ArrayBase<OwnedRepr<A>, IxDyn>>,
     CowArray<'a, A, IxDyn>: Add<Output = CowArray<'a, A, IxDyn>>,
-    // CowArray<'a, A, D>: ,
 {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
@@ -211,14 +202,8 @@ where
 impl<'a, A> Default for Tensor<'a, A>
 where
     A: DAMType,
-    // D: Dimension, // ArrayBase<OwnedRepr<A>, Ix1>: Zero, // Add<&'a ArrayBase<OwnedRepr<A>, D>, Output = ArrayBase<OwnedRepr<A>, D>>, // Tensor<'a, A, D>: LinalgScalar,
 {
     fn default() -> Self {
-        // let data = Array::zeros(Dim(N).into_dimension());
-
-        Tensor::<'a, A> {
-            // data: CowArray::from(Array::from_vec(vec![A::default(); 1])),
-            data: None,
-        }
+        Tensor::<'a, A> { data: None }
     }
 }
