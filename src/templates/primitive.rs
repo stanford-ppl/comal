@@ -45,12 +45,6 @@ impl<T: num::Float> Exp for T {
     }
 }
 
-// impl<ValType: DAMType, StopType> From<ValType> for Token<ValType, StopType> {
-//     fn from(value: ValType) -> Self {
-//         Self::Val(value)
-//     }
-// }
-
 impl<ValType: DAMType, StopType: DAMType> fmt::Debug for Token<ValType, StopType> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
