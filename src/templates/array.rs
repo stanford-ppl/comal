@@ -57,7 +57,6 @@ where
                             .out_val
                             .enqueue(&self.time, channel_elem)
                             .unwrap();
-                        // dbg!(self.val_arr[idx].clone());
                     }
                     Token::Stop(stkn) => {
                         let channel_elem =
@@ -72,7 +71,7 @@ where
                             self.time.tick() + 1,
                             Token::Val(ValType::default()),
                         );
-                        // dbg!(Token::<ValType, StopType>::Val(ValType::default()));
+
                         self.array_data
                             .out_val
                             .enqueue(&self.time, channel_elem)
@@ -96,50 +95,52 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         context::{checker_context::CheckerContext, generator_context::GeneratorContext},
-//         simulation::Program,
-//         templates::sam::primitive::Token,
-//         token_vec,
-//     };
+#[cfg(test)]
+mod tests {
+    use dam::simulation::*;
+    use dam::utility_contexts::*;
 
-//     use super::Array;
-//     use super::ArrayData;
+    use crate::templates::primitive::Token;
+    use crate::token_vec;
 
-//     #[test]
-//     fn array_2d_test() {
-//         let in_ref = || {
-//             token_vec![u32; u32; "N", 0, 1, 2, "S0", "N", "N", "S0", 2, 3, 4, "S0", "N", "N", "S1", "D"].into_iter()
-//         };
-//         let out_val = || {
-//             token_vec!(u32; u32; 0, 1, 2, 3, "S0", 0, 0, "S0", 3, 4, 5, "S0", 0, 0, "S1", "D")
-//                 .into_iter()
-//         };
-//         let val_arr = vec![1u32, 2, 3, 4, 5];
-//         array_test(in_ref, out_val, val_arr);
-//     }
+    use super::Array;
+    use super::ArrayData;
 
-//     fn array_test<IRT, ORT>(in_ref: fn() -> IRT, out_val: fn() -> ORT, val_arr: Vec<u32>)
-//     where
-//         IRT: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let data = ArrayData::<u32, u32, u32> {
-//             in_ref: in_ref_receiver,
-//             out_val: out_val_sender,
-//         };
-//         let arr = Array::new(data, val_arr);
-//         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
-//         let out_val_checker = CheckerContext::new(out_val, out_val_receiver);
-//         parent.add_child(gen1);
-//         parent.add_child(out_val_checker);
-//         parent.add_child(arr);
-//         parent.init();
-//         parent.run();
-//     }
-// }
+    #[test]
+    fn array_2d_test() {
+        let in_ref = || {
+            token_vec![u32; u32; "N", 0, 1, 2, "S0", "N", "N", "S0", 2, 3, 4, "S0", "N", "N", "S1", "D"].into_iter()
+        };
+        let out_val = || {
+            token_vec!(u32; u32; 0, 1, 2, 3, "S0", 0, 0, "S0", 3, 4, 5, "S0", 0, 0, "S1", "D")
+                .into_iter()
+        };
+        let val_arr = vec![1u32, 2, 3, 4, 5];
+        array_test(in_ref, out_val, val_arr);
+    }
+
+    fn array_test<IRT, ORT>(in_ref: fn() -> IRT, out_val: fn() -> ORT, val_arr: Vec<u32>)
+    where
+        IRT: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let data = ArrayData::<u32, u32, u32> {
+            in_ref: in_ref_receiver,
+            out_val: out_val_sender,
+        };
+        let arr = Array::new(data, val_arr);
+        let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
+        let out_val_checker = CheckerContext::new(out_val, out_val_receiver);
+        parent.add_child(gen1);
+        parent.add_child(out_val_checker);
+        parent.add_child(arr);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
+}
