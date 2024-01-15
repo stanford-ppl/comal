@@ -17,7 +17,7 @@ fn bench_proto<M: criterion::measurement::Measurement>(
     let contents = fs::read_to_string(config_file).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
-    let base_path = Path::new(&formatted_dir).join(&data_dir_name);
+    let base_path = Path::new(&formatted_dir).join(data_dir_name);
 
     let comal_contents = fs::read(base_path.join(proto_filename)).unwrap();
     let comal_graph = ComalGraph::decode(comal_contents.as_slice()).unwrap();

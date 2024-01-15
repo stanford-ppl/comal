@@ -8,8 +8,7 @@ use dam::types::{DAMType, StaticallySized};
 use itertools::Itertools;
 
 use ndarray::{
-    Array, Array2, ArrayBase, ArrayD, CowArray, Dim, Dimension, IntoDimension, Ix1, Ix2, IxDyn,
-    LinalgScalar, OwnedRepr, ShapeBuilder,
+    ArrayBase, ArrayD, CowArray, Dimension, IntoDimension, IxDyn, LinalgScalar, OwnedRepr,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -19,6 +18,12 @@ pub struct Tensor<'a, ValType: DAMType> {
 
 pub struct PrimitiveType<T: DAMType> {
     pub _marker: PhantomData<T>,
+}
+
+impl<T: DAMType> Default for PrimitiveType<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T: DAMType> PrimitiveType<T> {
@@ -46,8 +51,8 @@ where
     fn parse(
         &self,
         iter: std::iter::Flatten<std::io::Lines<std::io::BufReader<std::fs::File>>>,
-        size: Option<usize>,
-        blocked: Option<bool>,
+        _size: Option<usize>,
+        _blocked: Option<bool>,
     ) -> Vec<T> {
         iter.flat_map(|line| line.parse::<T>()) // ignores Err variant from Result of str.parse
             .collect()
@@ -109,7 +114,7 @@ where
 
 impl<'a, A: DAMType + std::cmp::PartialEq + PartialOrd> PartialOrd for Tensor<'a, A> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        let test = other.data.to_owned().iter();
+        let _test = other.data.to_owned().iter();
         self.data
             .to_owned()
             .unwrap()

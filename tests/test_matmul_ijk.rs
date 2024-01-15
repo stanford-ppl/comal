@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use comal::templates::tensor::{PrimitiveType, Tensor};
+use comal::templates::tensor::{PrimitiveType};
 use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{Reduce, ReduceData};
@@ -19,7 +19,7 @@ use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
-use ndarray::Ix2;
+
 
 type VT = f32;
 

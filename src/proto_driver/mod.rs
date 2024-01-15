@@ -49,7 +49,10 @@ where
     _marker: PhantomData<&'a ()>,
 }
 
-impl<'a, T: DAMType> Channels<'a, T> where T: 'a {
+impl<'a, T: DAMType> Channels<'a, T>
+where
+    T: 'a,
+{
     fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
         parent.bounded(1024)
     }
@@ -95,7 +98,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
     let mut refmap: Channels<Token<CT, ST>> = Channels::default();
     let mut crdmap: Channels<Token<CT, ST>> = Channels::default();
     let mut valmap: Channels<Token<VT, ST>> = Channels::default();
-    let mut tensor_valmap: Channels<Tensor<'static, VT>> = Channels::default();
+    let _tensor_valmap: Channels<Tensor<'static, VT>> = Channels::default();
     let mut repmap: Channels<Repsiggen> = Channels::default();
 
     let mut repsig_id_count: u64 = 1;
@@ -314,8 +317,8 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 parent.add_child(CrdDrop::new(crd_drop_data));
             }
             Op::Array(op) => {
-                let blocked = op.blocked;
-                let stream_shape = op.stream_shape as usize;
+                let _blocked = op.blocked;
+                let _stream_shape = op.stream_shape as usize;
                 let in_ref_id = get_ref_id(&op.input_ref);
                 let array_data = ArrayData {
                     in_ref: refmap.get_receiver(in_ref_id, &mut parent),
