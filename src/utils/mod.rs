@@ -14,6 +14,14 @@ impl<CT, VT> SparseTree<CT, VT> {
             SparseTree::Inner(x) => x.is_empty(),
         }
     }
+
+    /// Returns the number of nonzero in this dimension only
+    pub fn num_nonzero(&self) -> usize {
+        match self {
+            SparseTree::Outer(x) => x.len(),
+            SparseTree::Inner(x) => x.len(),
+        }
+    }
 }
 
 impl<CT: Clone, VT: Clone> SparseTree<CT, VT> {
