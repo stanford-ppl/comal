@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use dam::utility_contexts::*;
 
 use comal::templates::alu::make_alu;
@@ -10,7 +12,7 @@ use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use dam::simulation::*;
 use dam::templates::ops::*;
 
-use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
+use comal::templates::wr_scanner::{self, CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 
 type VT = f32;
@@ -18,7 +20,7 @@ type CT = u32;
 
 #[test]
 fn test_mat_elemadd() {
-    const TEST_SHAPE: &[usize] = &[1000, 1000];
+    const TEST_SHAPE: &[usize] = &[10, 10];
     const P_NONZERO: f64 = 0.4;
     let tensor_b = comal::utils::SparseTree::random(
         TEST_SHAPE,
@@ -177,6 +179,12 @@ fn test_mat_elemadd() {
 
     // fiberwrite_Xvals
     let xvals = ValsWrScan::<VT, u32>::new(add_out_receiver);
+    let out_vals = xvals.out_val.clone();
+    let out_crds_0 = x0_wrscanner.crd_arr.clone();
+    let out_seg_0 = x0_wrscanner.seg_arr.clone();
+    let out_crds_1 = x1_wrscanner.crd_arr.clone();
+    let out_seg_1 = x1_wrscanner.seg_arr.clone();
+
     parent.add_child(xvals);
 
     parent.add_child(b_gen);
@@ -208,4 +216,5 @@ fn test_mat_elemadd() {
             .unwrap(),
     );
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    dbg!(out_vals.lock().unwrap().deref());
 }

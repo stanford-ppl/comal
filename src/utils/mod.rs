@@ -155,8 +155,6 @@ where
             probabilities.push(new_probability);
         }
         probabilities.reverse();
-        dbg!(shape);
-        dbg!(&probabilities);
         Self::random_helper(shape, &probabilities, rng, value_distribution)
     }
 
