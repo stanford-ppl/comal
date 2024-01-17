@@ -3,3 +3,4 @@
 pub mod config;
 pub mod proto_driver;
 pub mod templates;
+pub mod utils;

@@ -14,6 +14,7 @@ mod config;
 mod mha_dse;
 mod proto_driver;
 mod templates;
+mod utils;
 
 fn main() {
     let mut data_dir_name = "tensor4_mha256".to_string();
@@ -39,8 +40,11 @@ fn main() {
             .add_option(&["--run_dse"], StoreTrue, "Run BACO DSE on program");
         ap.refer(&mut par_factor)
             .add_option(&["--par_factor", "-f"], Store, "Par factor");
-        ap.refer(&mut outer_par_factor)
-            .add_option(&["--outer_par_factor", "-o"], Store, "Outer par factor");
+        ap.refer(&mut outer_par_factor).add_option(
+            &["--outer_par_factor", "-o"],
+            Store,
+            "Outer par factor",
+        );
         ap.refer(&mut proto_filename)
             .add_option(&["--proto_file", "-p"], Store, "Proto bin file");
         ap.parse_args_or_exit();
