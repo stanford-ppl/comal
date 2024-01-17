@@ -1,6 +1,4 @@
-use std::fs;
-
-use crate::config::Data;
+use crate::config::rd_scanner::CompressedCrdRdScanConfig;
 use dam::{context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
@@ -22,6 +20,8 @@ pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     rd_scan_data: RdScanData<ValType, StopType>,
     seg_arr: Vec<ValType>,
     crd_arr: Vec<ValType>,
+
+    timing_config: CompressedCrdRdScanConfig,
 }
 
 #[context_macro]
@@ -66,6 +66,7 @@ where
             rd_scan_data,
             seg_arr,
             crd_arr,
+            timing_config: Default::default(),
             context_info: Default::default(),
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
@@ -73,6 +74,10 @@ where
         (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
 
         ucr
+    }
+
+    pub fn set_timings(&mut self, new_config: CompressedCrdRdScanConfig) {
+        self.timing_config = new_config
     }
 }
 
@@ -240,12 +245,8 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        // let mut curr_crd: Token<ValType, StopType>
-        let filename = home::home_dir().unwrap().join("sam_config.toml");
-        let contents = fs::read_to_string(filename).unwrap();
-        let data: Data = toml::from_str(&contents).unwrap();
-        let latency = data.sam_config.fiberlookup_latency;
-        let initiation_interval = data.sam_config.fiberlookup_ii;
+        let latency = 1;
+        let initiation_interval = 1;
         dbg!(latency);
         dbg!(initiation_interval);
         let mut tile: usize = 0;
@@ -390,27 +391,13 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        // let mut curr_crd: Token<ValType, StopType>
-        let filename = home::home_dir().unwrap().join("sam_config.toml");
-        let contents = fs::read_to_string(filename).unwrap();
-        let data: Data = toml::from_str(&contents).unwrap();
-        let latency = data.sam_config.fiberlookup_latency;
-        let initial = data.sam_config.fiberlookup_initial;
-        let initiation_interval = data.sam_config.fiberlookup_ii;
-        let starting_cost = data.sam_config.fiberlookup_starting;
-        let stop_latency = data.sam_config.fiberlookup_stop_latency;
-        let factor = data.sam_config.fiberlookup_factor;
-        let bump = data.sam_config.bump;
-        // dbg!(latency);
-        // dbg!(initiation_interval);
+        let factor = self.timing_config.data_load_factor;
 
         let seg_arr_len = self.seg_arr.len() as f64 * factor;
         let crd_arr_len = self.crd_arr.len() as f64 * factor;
-        self.time
-            .incr_cycles(seg_arr_len.ceil() as u64);
-        self.time
-            .incr_cycles(crd_arr_len.ceil() as u64);
-        self.time.incr_cycles(starting_cost);
+        self.time.incr_cycles(seg_arr_len.ceil() as u64);
+        self.time.incr_cycles(crd_arr_len.ceil() as u64);
+        self.time.incr_cycles(self.timing_config.startup_delay);
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -418,7 +405,7 @@ where
                         let idx: usize = val.try_into().unwrap();
                         let mut curr_addr = self.seg_arr[idx].clone();
                         let stop_addr = self.seg_arr[idx + 1].clone();
-                        self.time.incr_cycles(initial);
+                        self.time.incr_cycles(self.timing_config.initial_delay);
                         while curr_addr < stop_addr {
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
                             let coord = self.crd_arr[read_addr].clone();
@@ -429,7 +416,7 @@ where
                                 .enqueue(
                                     &self.time,
                                     ChannelElement::new(
-                                        curr_time + latency,
+                                        curr_time + self.timing_config.output_latency,
                                         super::primitive::Token::Val(coord),
                                     ),
                                 )
@@ -439,16 +426,16 @@ where
                                 .enqueue(
                                     &self.time,
                                     ChannelElement::new(
-                                        curr_time + latency,
+                                        curr_time + self.timing_config.output_latency,
                                         super::primitive::Token::Val(curr_addr.clone()),
                                     ),
                                 )
                                 .unwrap();
                             curr_addr += 1;
-                            self.time.incr_cycles(initiation_interval);
+                            self.time
+                                .incr_cycles(self.timing_config.sequential_interval);
                         }
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
-                        self.time.incr_cycles(bump);
                         let output: Token<ValType, StopType> = match next_tkn.data {
                             Token::Val(_) | Token::Done | Token::Empty => {
                                 Token::Stop(StopType::default())
@@ -466,26 +453,31 @@ where
                             .out_crd
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + latency, output.clone()),
+                                ChannelElement::new(
+                                    curr_time + self.timing_config.output_latency,
+                                    output.clone(),
+                                ),
                             )
                             .unwrap();
                         self.rd_scan_data
                             .out_ref
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + latency, output.clone()),
+                                ChannelElement::new(
+                                    curr_time + self.timing_config.output_latency,
+                                    output.clone(),
+                                ),
                             )
                             .unwrap();
                     }
                     Token::Stop(token) => {
-                        self.time.incr_cycles(data.sam_config.stop_bump);
                         let curr_time = self.time.tick();
                         self.rd_scan_data
                             .out_crd
                             .enqueue(
                                 &self.time,
                                 ChannelElement::new(
-                                    curr_time + stop_latency,
+                                    curr_time + self.timing_config.output_latency,
                                     Token::Stop(token.clone() + 1),
                                 ),
                             )
@@ -495,7 +487,7 @@ where
                             .enqueue(
                                 &self.time,
                                 ChannelElement::new(
-                                    curr_time + stop_latency,
+                                    curr_time + self.timing_config.output_latency,
                                     Token::Stop(token.clone() + 1),
                                 ),
                             )
@@ -504,9 +496,10 @@ where
                     // Could either be a done token or an empty token
                     // In the case of done token, return
                     Token::Done => {
-                        self.time.incr_cycles(data.sam_config.done_bump);
-                        let channel_elem =
-                            ChannelElement::new(self.time.tick() + latency, Token::Done);
+                        let channel_elem = ChannelElement::new(
+                            self.time.tick() + self.timing_config.output_latency,
+                            Token::Done,
+                        );
                         self.rd_scan_data
                             .out_crd
                             .enqueue(&self.time, channel_elem.clone())
@@ -519,9 +512,10 @@ where
                         return;
                     }
                     Token::Empty => {
-                        self.time.incr_cycles(data.sam_config.empty_bump);
-                        let channel_elem =
-                            ChannelElement::new(self.time.tick() + latency, Token::Empty);
+                        let channel_elem = ChannelElement::new(
+                            self.time.tick() + self.timing_config.output_latency,
+                            Token::Empty,
+                        );
                         self.rd_scan_data
                             .out_crd
                             .enqueue(&self.time, channel_elem.clone())
@@ -534,7 +528,8 @@ where
                 },
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
             }
-            self.time.incr_cycles(initiation_interval);
+            self.time
+                .incr_cycles(self.timing_config.sequential_interval);
         }
     }
 }
@@ -671,8 +666,7 @@ mod tests {
             602, 603, 609, 614, 615, 617, 619, 622, 623, 624, 625, 626, 628, 633, 636, 644, 647,
             650, 651, 657, 659, 663,
         ];
-        let in_ref =
-            || token_vec!(u32; u32; 0, 0, 0, "S0", "D").into_iter();
+        let in_ref = || token_vec!(u32; u32; 0, 0, 0, "S0", "D").into_iter();
         compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 881);
     }
 
