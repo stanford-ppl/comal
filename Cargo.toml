@@ -43,3 +43,7 @@ harness = false
 [[bench]]
 name = "bench_mha"
 harness = false
+
+[[bin]]
+name = "autocal"
+path = "src/templates/calibration.rs"
