@@ -168,7 +168,6 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), &mut parent),
                 };
 
-                // let joiner =
                 match op.join_type() {
                     joiner::Type::Intersect => parent.add_child(Intersect::new(joiner_data)),
                     joiner::Type::Union => parent.add_child(Union::new(joiner_data)),
@@ -274,7 +273,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                             alu::AluOp::Exp => ALUExpOp(),
                             _ => {
                                 format!("{:?}", op.stages[0].op());
-                                // panic!("Not implemented");
+
                                 ALUExpOp()
                             }
                         },
@@ -327,7 +326,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
-                // let in_outer_crd = get_crd_id(&op.input_outer_crds);
+
                 let in_outer_crd = op.input_outer_crds[0].try_conv();
                 let in_val_id = get_val_id(&op.input_val);
 
@@ -349,7 +348,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
             operation::Op::Func(_) => todo!(),
             Op::Root(op) => {
                 let out_ref_id = get_ref_id(&op.output_ref);
-                // let (root_sender, root_receiver) = parent.bounded(2);
+
                 let root_sender = refmap.get_sender(out_ref_id, &mut parent);
                 parent.add_child(GeneratorContext::new(
                     || token_vec!(u32; u32; 0, "D").into_iter(),

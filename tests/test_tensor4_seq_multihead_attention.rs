@@ -21,7 +21,6 @@ use comal::token_vec;
 
 #[test]
 fn test_multihead_attention() {
-    // let test_name = "tensor4_mha";
     let test_name = "tensor4_mha3";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
@@ -58,16 +57,6 @@ fn test_multihead_attention() {
     let v3_crd_filename = base_path.join("tensor_V_mode_3_crd");
     let v_vals_filename = base_path.join("tensor_V_mode_vals");
 
-    // let a0_seg_filename = base_path.join("tensor_A_mode_0_seg");
-    // let a0_crd_filename = base_path.join("tensor_A_mode_0_crd");
-    // let a1_seg_filename = base_path.join("tensor_A_mode_1_seg");
-    // let a1_crd_filename = base_path.join("tensor_A_mode_1_crd");
-    // let a2_seg_filename = base_path.join("tensor_A_mode_2_seg");
-    // let a2_crd_filename = base_path.join("tensor_A_mode_2_crd");
-    // let a3_seg_filename = base_path.join("tensor_A_mode_3_seg");
-    // let a3_crd_filename = base_path.join("tensor_A_mode_3_crd");
-    // let a_vals_filename = base_path.join("tensor_A_mode_vals");
-
     let q0_seg = read_inputs::<u32>(&q0_seg_filename);
     let q0_crd = read_inputs::<u32>(&q0_crd_filename);
     let q1_seg = read_inputs::<u32>(&q1_seg_filename);
@@ -97,16 +86,6 @@ fn test_multihead_attention() {
     let v3_seg = read_inputs::<u32>(&v3_seg_filename);
     let v3_crd = read_inputs::<u32>(&v3_crd_filename);
     let v_vals = read_inputs::<f32>(&v_vals_filename);
-
-    // let a0_seg = read_inputs::<u32>(&a0_seg_filename);
-    // let a0_crd = read_inputs::<u32>(&a0_crd_filename);
-    // let a1_seg = read_inputs::<u32>(&a1_seg_filename);
-    // let a1_crd = read_inputs::<u32>(&a1_crd_filename);
-    // let a2_seg = read_inputs::<u32>(&a2_seg_filename);
-    // let a2_crd = read_inputs::<u32>(&a2_crd_filename);
-    // let a3_seg = read_inputs::<u32>(&a3_seg_filename);
-    // let a3_crd = read_inputs::<u32>(&a3_crd_filename);
-    // let a_vals = read_inputs::<f32>(&a_vals_filename);
 
     let chan_size = 4096;
     let mut parent = ProgramBuilder::default();
@@ -273,8 +252,6 @@ fn test_multihead_attention() {
         out_ref2: intersectj3_out_ref2_sender,
     };
     let intersect_j3 = Intersect::new(intersectj3_data);
-    // dbg!(intersect_j.id());
-    // dbg!(intersect_j3.id());
 
     let (bc_intersectj3_out_ref2_sender, bc_intersectj3_out_ref2_receiver) =
         parent.bounded(chan_size);
@@ -305,7 +282,6 @@ fn test_multihead_attention() {
     let (out_repsig_k_sender, out_repsig_k_receiver) = parent.bounded(chan_size);
     let repsig_k_data = RepSigGenData::<u32, u32> {
         input: bc_qk_out_crd_receiver,
-        // input: qk_out_crd_receiver,
         out_repsig: out_repsig_k_sender,
     };
     let repsig_k = RepeatSigGen::new(repsig_k_data);
@@ -343,15 +319,6 @@ fn test_multihead_attention() {
     };
     let kl_rdscanner = CompressedCrdRdScan::new(kl_data, k1_seg, k1_crd);
 
-    // let (bc_kl_out_crd_sender, bc_kl_out_crd_receiver) = parent.bounded(chan_size);
-    // // let (bc1_kl_out_crd_sender, bc1_kl_out_crd_receiver) =
-    // //     parent.bounded(chan_size);
-    // // let (bc2_kl_out_crd_sender, bc2_kl_out_crd_receiver) = parent.bounded(chan_size);
-    // let mut broadcast15 = BroadcastContext::new(kl_out_crd_receiver);
-    // broadcast15.add_target(bc_kl_out_crd_sender);
-    // broadcast15.add_target(bc1_kl_out_crd_sender);
-    // broadcast15.add_target(bc2_kl_out_crd_sender);
-
     let (vl_out_ref_sender, vl_out_ref_receiver) = parent.bounded(chan_size);
     let (vl_out_crd_sender, vl_out_crd_receiver) = parent.bounded(chan_size);
     let vl_data = RdScanData::<u32, u32> {
@@ -374,7 +341,6 @@ fn test_multihead_attention() {
         out_ref2: intersectl_out_ref2_sender,
     };
     let intersect_l = Intersect::new(intersectl_data);
-    // dbg!(intersect_l.id());
 
     let (bc_intersectl_out_crd_sender, bc_intersectl_out_crd_receiver) = parent.bounded(chan_size);
     let (bc1_intersectl_out_crd_sender, bc1_intersectl_out_crd_receiver) =
@@ -448,7 +414,6 @@ fn test_multihead_attention() {
         out_ref2: intersectm_out_ref2_sender,
     };
     let intersect_m = Intersect::new(intersectm_data);
-    // dbg!(intersect_m.id());
 
     let (bc_km_out_ref_sender, bc_km_out_ref_receiver) = parent.bounded(chan_size);
     let (bc1_km_out_ref_sender, bc1_km_out_ref_receiver) = parent.bounded(chan_size);
@@ -480,10 +445,8 @@ fn test_multihead_attention() {
         out_ref2: intersectm2_out_ref2_sender,
     };
     let intersect_m2 = Intersect::new(intersectm2_data);
-    // dbg!(intersect_m2.id());
 
     let (intersectm3_out_crd_sender, intersectm3_out_crd_receiver) = parent.bounded(chan_size);
-    // let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
     let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) = parent.bounded(chan_size);
     let (intersectm3_out_ref2_sender, intersectm3_out_ref2_receiver) = parent.bounded(chan_size);
 
@@ -613,18 +576,6 @@ fn test_multihead_attention() {
         ALUDivOp(),
     );
 
-    // let (out_drop_val_sender, out_drop_val_receiver) = parent.bounded(chan_size);
-    // let (out_drop_crd_sender, out_drop_crd_receiver) = unbounded::<Token<u32, u32>>();
-
-    // let val_drop_data = ValDropData::<u32, f32, u32> {
-    //     in_val: div_out_receiver,
-    //     in_crd: bc1_kl_out_crd_receiver,
-    //     out_val: out_drop_val_sender,
-    //     out_crd: out_drop_crd_sender,
-    // };
-
-    // let mut val_drop = ValDrop::new(val_drop_data);
-
     let (out_repsig_m_sender, out_repsig_m_receiver) = parent.bounded(chan_size);
     let repsig_m_data = RepSigGenData::<u32, u32> {
         input: bc_intersectm3_out_crd_receiver,
@@ -634,7 +585,6 @@ fn test_multihead_attention() {
 
     let (rep_m_out_val_sender, rep_m_out_val_receiver) = parent.bounded(chan_size);
     let rep2_data = RepeatData::<f32, u32> {
-        // in_ref: out_drop_val_receiver,
         in_ref: div_out_receiver,
         in_repsig: out_repsig_m_receiver,
         out_ref: rep_m_out_val_sender,
@@ -650,7 +600,6 @@ fn test_multihead_attention() {
         ALUMulOp(),
     );
 
-    // let (drop_out_ocrd_sender, drop_out_ocrd_receiver) = unbounded::<Token<u32, u32>>();
     let (drop_out_icrd_sender, drop_out_icrd_receiver) = parent.bounded(chan_size);
 
     let crd_drop_data = CrdManagerData::<u32, u32> {
@@ -697,9 +646,6 @@ fn test_multihead_attention() {
     parent.add_child(broadcast);
     parent.add_child(broadcast1);
     parent.add_child(broadcast2);
-    // parent.add_child(&mut broadcast3);
-    // parent.add_child(&mut broadcast4);
-    // parent.add_child(&mut broadcast5);
     parent.add_child(broadcast6);
     parent.add_child(broadcast7);
     parent.add_child(broadcast8);
@@ -716,7 +662,6 @@ fn test_multihead_attention() {
     parent.add_child(intersect_i2);
     parent.add_child(intersect_i3);
     parent.add_child(intersect_j);
-    // parent.add_child(&mut intersect_j2);
     parent.add_child(intersect_j3);
     parent.add_child(vj_rdscanner);
     parent.add_child(kj_rdscanner);
@@ -750,7 +695,6 @@ fn test_multihead_attention() {
     parent.add_child(exp);
     parent.add_child(rep1);
     parent.add_child(div);
-    // parent.add_child(&mut val_drop);
     parent.add_child(repsigm);
     parent.add_child(rep_m);
     parent.add_child(spacc);
@@ -775,13 +719,4 @@ fn test_multihead_attention() {
             .unwrap(),
     );
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
-    // let fil = formatted_dir.to_str().unwrap();
-    // dbg!(xvals.out_val);
-    // dbg!(xvals.view().tick_lower_bound());
-
-    // assert_eq!(x0_wrscanner.crd_arr, a0_crd);
-    // assert_eq!(x1_wrscanner.crd_arr, a1_crd);
-    // assert_eq!(x2_wrscanner.crd_arr, a2_crd);
-    // assert_eq!(x3_wrscanner.crd_arr, a3_crd);
-    // assert_eq!(xvals.out_val, a_vals);
 }

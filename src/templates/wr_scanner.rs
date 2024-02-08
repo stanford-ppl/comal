@@ -44,7 +44,6 @@ where
     }
 
     fn run(&mut self) {
-        // let mut curr_crd: Token<ValType, StopType>
         let mut curr_crd_cnt: ValType = ValType::default();
         let mut end_fiber = false;
         let initiation_interval = 1;
@@ -65,7 +64,7 @@ where
                     }
                     Token::Empty | Token::Stop(_) => {
                         // TODO: Maybe needs to be processed too
-                        // panic!("Reached panic in wr scanner");
+
                         continue;
                     }
                     Token::Done => {

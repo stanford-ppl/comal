@@ -576,7 +576,7 @@ pub fn run_mha<'a>(
 
             let (intersectm3_out_crd_sender, intersectm3_out_crd_receiver) =
                 parent.bounded(long_chan_size);
-            // let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
+            
             let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
                 parent.bounded(long_chan_size);
             let (intersectm3_out_ref2_sender, intersectm3_out_ref2_receiver) =
@@ -817,7 +817,7 @@ pub fn run_mha<'a>(
 
     // fiberwrite_X3
     let x3_wrscanner = CompressedWrScan::new(outer_final_icrd_receiver);
-    // let x3_wrscanner = CompressedWrScan::new(out_spacc_icrd_receiver);
+    
     parent.add_child(x3_wrscanner);
 
     // fiberwrite_Xvals

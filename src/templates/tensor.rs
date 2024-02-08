@@ -158,7 +158,6 @@ where
 {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        // let data = self.data.to_owned().unwrap() + rhs.data.to_owned().unwrap();
         Tensor::<'a, A> {
             data: Some(
                 self.data

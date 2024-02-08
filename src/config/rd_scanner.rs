@@ -13,7 +13,7 @@ pub struct CompressedCrdRdScanConfig {
     pub initial_delay: u64,
 
     /// Latency before emitting new values in a scanner
-    /// This is different from the delay in that it does not affect the base time; this can be pipelined against the next delay.
+    /// this can be pipelined against the next delay.
     pub output_latency: u64,
 
     /// Initiation interval of the output pipeline -- the delay between consecutive outputs in the same output block

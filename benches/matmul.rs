@@ -118,8 +118,6 @@ fn matmul(test_data: TestData, chan_size: usize, with_flavor: bool) {
     let c1_seg = test_data.c1_seg;
     let c_vals = test_data.c_vals;
 
-    // let mut parent = ProgramBuilder::default();
-
     let _mk_bounded = || parent.bounded::<Token<u32, u32>>(chan_size);
     let _mk_boundedf = || parent.bounded::<Token<f32, u32>>(chan_size);
     let _mk_rsiggen_bounded = || parent.bounded::<Repsiggen>(chan_size);
@@ -128,9 +126,6 @@ fn matmul(test_data: TestData, chan_size: usize, with_flavor: bool) {
     let (bi_out_ref_sender, bi_out_ref_receiver) = parent.bounded(chan_size);
     let (bi_out_crd_sender, bi_out_crd_receiver) = parent.bounded(chan_size);
     let (bi_in_ref_sender, bi_in_ref_receiver) = parent.bounded(chan_size);
-    // let (_bc_bi_in_ref_sender, _bc_bi_in_ref_receiver) = parent.bounded(chan_size);
-    // let (_bc1_bi_in_ref_sender, _bc1_bi_in_ref_receiver) =
-    //     parent.bounded(chan_size);
 
     let b_gen = GeneratorContext::new(
         || token_vec!(u32; u32; 0, "D").into_iter(),
@@ -229,9 +224,6 @@ fn matmul(test_data: TestData, chan_size: usize, with_flavor: bool) {
     };
     let bk_rdscanner = CompressedCrdRdScan::new(bk_data, b1_seg, b1_crd);
 
-    // interset_i
-    // let (intersecti_out_crd_sender, _intersecti_out_crd_receiver) =
-    //     parent.bounded(chan_size);
     let (intersectk_out_ref1_sender, intersectk_out_ref1_receiver) = parent.bounded(chan_size);
     let (intersectk_out_ref2_sender, intersectk_out_ref2_receiver) = parent.bounded(chan_size);
     let intersectk_data = CrdJoinerData::<u32, u32> {
@@ -322,15 +314,6 @@ fn matmul(test_data: TestData, chan_size: usize, with_flavor: bool) {
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }
 
-// pub fn mat_elemadd_benchmark_large(c: &mut Criterion) {
-//     const CHAN_SIZE: usize = 1 << 10;
-//     let data = load_data("mat_elemadd2");
-//     let mut group = c.benchmark_group("mat_elemadd");
-//     group.sample_size(10).bench_function("mat_elemadd", |b| {
-//         b.iter(|| test_mat_elemadd(data.clone(), CHAN_SIZE));
-//     });
-// }
-
 pub fn matmul_sweep(c: &mut Criterion) {
     let mut group = c.benchmark_group("matmul_ijk");
     let with_flavor = true;
@@ -342,7 +325,6 @@ pub fn matmul_sweep(c: &mut Criterion) {
         "matmul_500",
     ];
     for dir in dir_lst {
-        // let chan_size = 1 << chan_factor;
         let data = load_data(dir);
         group.sample_size(10).bench_with_input(
             BenchmarkId::from_parameter(dir),
@@ -364,7 +346,6 @@ pub fn matmul_sweep_flavor(c: &mut Criterion) {
     let data = load_data("matmul_500");
     let flavors = vec![false, true];
     for with_flavor in flavors {
-        // let chan_size = 1 << chan_factor;
         group.sample_size(10).bench_with_input(
             BenchmarkId::from_parameter(with_flavor),
             &with_flavor,

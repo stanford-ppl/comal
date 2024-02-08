@@ -30,9 +30,6 @@ fn bench_proto<M: criterion::measurement::Measurement>(
                 b.iter_batched(
                     || {
                         let parent = parse_proto(comal_graph.clone(), base_path.clone());
-                        // parent.set_inference(*flavor);
-                        // parent.init();
-                        // parent
                         parent
                             .initialize(
                                 InitializationOptionsBuilder::default()
@@ -136,8 +133,8 @@ pub fn bench_matmul_sweep(c: &mut Criterion) {
         "matmul_100",
         "matmul_200",
         "matmul_300",
-        // "matmul_400",
-        // "matmul_500",
+        "matmul_400",
+        "matmul_500",
     ];
     bench_proto_sweep(&mut group, dir_lst, proto_filename);
     group.finish();

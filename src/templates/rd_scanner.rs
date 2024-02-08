@@ -118,7 +118,6 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        // let mut curr_crd: Token<ValType, StopType>
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -160,10 +159,10 @@ where
                                 self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
                             } // Token::Empty => {
-                              //     panic!("Invalid empty inside peek");
+
                               // }
                         };
-                        // dbg!(output);
+
                         let curr_time = self.time.tick();
                         self.rd_scan_data
                             .out_crd
@@ -261,7 +260,7 @@ where
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
                             let coord = self.crd_arrs[tile][read_addr].clone();
                             let curr_time = self.time.tick();
-                            // dbg!(coord.clone());
+
                             self.rd_scan_data
                                 .out_crd
                                 .enqueue(
@@ -294,10 +293,10 @@ where
                                 self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
                             } // Token::Empty => {
-                              //     panic!("Invalid empty inside peek");
+
                               // }
                         };
-                        // dbg!(output);
+
                         let curr_time = self.time.tick();
                         self.rd_scan_data
                             .out_crd
@@ -350,7 +349,7 @@ where
                             .out_ref
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
-                        // dbg!(Token::<ValType, StopType>::Done);
+
                         tile += 1;
                         if tile == self.num_tiles {
                             return;
@@ -410,7 +409,7 @@ where
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
                             let coord = self.crd_arr[read_addr].clone();
                             let curr_time = self.time.tick();
-                            // dbg!(coord.clone());
+
                             self.rd_scan_data
                                 .out_crd
                                 .enqueue(
@@ -444,10 +443,10 @@ where
                                 self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
                             } // Token::Empty => {
-                              //     panic!("Invalid empty inside peek");
+
                               // }
                         };
-                        // dbg!(output);
+
                         let curr_time = self.time.tick();
                         self.rd_scan_data
                             .out_crd
@@ -508,7 +507,7 @@ where
                             .out_ref
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
-                        // dbg!(Token::<ValType, StopType>::Done);
+
                         return;
                     }
                     Token::Empty => {
@@ -743,8 +742,6 @@ mod tests {
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
         let crd_checker = CheckerContext::new(out_crd, crd_receiver);
         let ref_checker = CheckerContext::new(out_ref, ref_receiver);
-        // let crd_checker = ConsumerContext::new(crd_receiver);
-        // let ref_checker = ConsumerContext::new(ref_receiver);
 
         parent.add_child(gen1);
         parent.add_child(crd_checker);

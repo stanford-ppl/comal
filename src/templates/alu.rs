@@ -134,7 +134,7 @@ mod tests {
         let (arg1_send, arg1_recv) = parent.unbounded::<Token<u32, u32>>();
         let (arg2_send, arg2_recv) = parent.unbounded::<Token<u32, u32>>();
         let (pcu_out_send, pcu_out_recv) = parent.unbounded::<Token<u32, u32>>();
-        // let mut alu = make_alu(arg1_recv, arg2_recv, pcu_out_send, ALUAddOp());
+
         let alu = make_alu(arg1_recv, arg2_recv, pcu_out_send, ALUAddOp());
         let gen1 = GeneratorContext::new(
             || {

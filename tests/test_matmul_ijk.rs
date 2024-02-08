@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use comal::templates::tensor::{PrimitiveType};
+use comal::templates::tensor::PrimitiveType;
 use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{Reduce, ReduceData};
@@ -20,12 +20,10 @@ use dam::templates::ops::*;
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 
-
 type VT = f32;
 
 #[test]
 fn test_matmul_ijk() {
-    // let test_name = "matmul_ijk";
     let test_name = "matmul_ijk";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
@@ -42,17 +40,6 @@ fn test_matmul_ijk() {
     let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
     let c1_crd_filename = base_path.join("tensor_C_mode_1_crd");
     let c_vals_filename = base_path.join("tensor_C_mode_vals");
-    // let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
-    // let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
-    // let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
-    // let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
-    // let b_vals_filename = base_path.join("tensor_B_mode_vals");
-    // let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
-    // let c0_crd_filename = base_path.join("tensor_C_mode_0_crd");
-    // let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
-    // let c1_crd_filename = base_path.join("tensor_C_mode_1_crd");
-    // let c_vals_filename = base_path.join("tensor_C_mode_vals");
-
     let b0_seg = read_inputs::<u32>(&b0_seg_filename);
     let b0_crd = read_inputs::<u32>(&b0_crd_filename);
     let b1_seg = read_inputs::<u32>(&b1_seg_filename);
@@ -76,16 +63,11 @@ fn test_matmul_ijk() {
     let (bi_out_ref_sender, bi_out_ref_receiver) = parent.bounded(chan_size);
     let (bi_out_crd_sender, bi_out_crd_receiver) = parent.bounded(chan_size);
     let (bi_in_ref_sender, bi_in_ref_receiver) = parent.bounded(chan_size);
-    // let (_bc_bi_in_ref_sender, _bc_bi_in_ref_receiver) = parent.bounded(chan_size);
-    // let (_bc1_bi_in_ref_sender, _bc1_bi_in_ref_receiver) =
-    //     parent.bounded(chan_size);
-
     let b_gen = GeneratorContext::new(
         || token_vec!(u32; u32; 0, "D").into_iter(),
         bi_in_ref_sender,
     );
     let bi_data = RdScanData::<u32, u32> {
-        // in_ref: bc_bi_in_ref_receiver,
         in_ref: bi_in_ref_receiver,
         out_ref: bi_out_ref_sender,
         out_crd: bi_out_crd_sender,
@@ -177,9 +159,6 @@ fn test_matmul_ijk() {
     };
     let bk_rdscanner = CompressedCrdRdScan::new(bk_data, b1_seg, b1_crd);
 
-    // interset_i
-    // let (intersecti_out_crd_sender, _intersecti_out_crd_receiver) =
-    //     parent.bounded(chan_size);
     let (intersectk_out_ref1_sender, intersectk_out_ref1_receiver) = parent.bounded(chan_size);
     let (intersectk_out_ref2_sender, intersectk_out_ref2_receiver) = parent.bounded(chan_size);
     let intersectk_data = CrdJoinerData::<u32, u32> {
