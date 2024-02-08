@@ -183,8 +183,6 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), &mut parent),
                     out_ref: refmap.get_sender(get_ref_id(&op.output_ref), &mut parent),
                 };
-
-                dbg!(op.mode);
                 if op.format == "compressed" {
                     let seg_filename =
                         base_path.join(format!("tensor_{}_mode_{}_seg", op.tensor, op.mode));
@@ -325,7 +323,7 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     out_val: valmap.get_sender(get_val_id(&op.output_val), &mut parent),
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
-                let vals = read_inputs_vectorized(&val_filename, PrimitiveType::<VT>::new());
+                let vals = read_inputs(&val_filename);
                 parent.add_child(Array::new(array_data, vals));
             }
             Op::Spacc(op) => {
