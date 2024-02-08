@@ -5,8 +5,8 @@
         "editor.formatOnSave": true
     },
     "rust-analyzer.linkedProjects": [
-        
         "./Cargo.toml",
+        "./Cargo.toml"
     ],
     "rust-analyzer.procMacro.attributes.enable": true,
     "editor.defaultFormatter": "rust-lang.rust-analyzer",

@@ -7,10 +7,7 @@ use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
 use prost::Message;
 use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};
 
-use crate::mha_dse::run_mha;
-
 mod config;
-mod mha_dse;
 mod proto_driver;
 mod templates;
 mod utils;
@@ -36,7 +33,7 @@ struct Cli {
     workers: Option<usize>,
 
     /// Print timing breakdowns
-    #[arg(long, default_value_t = true)]
+    #[arg(long, default_value_t = false)]
     breakdowns: bool,
 }
 

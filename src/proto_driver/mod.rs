@@ -21,7 +21,6 @@ use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 use crate::templates::tensor::{PrimitiveType, Tensor};
-use crate::templates::utils::read_inputs_vectorized;
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::context_tools::*;
