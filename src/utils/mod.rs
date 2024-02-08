@@ -164,7 +164,7 @@ where
         rng: &mut impl rand::Rng,
         value_distribution: &impl Distribution<VT>,
     ) -> Self {
-        assert!(shape.len() > 0);
+        assert!(!shape.is_empty());
         let current_size = shape[0];
         let current_prob = prob_nonzero[0];
         if shape.len() == 1 {
