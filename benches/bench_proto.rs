@@ -5,7 +5,7 @@ use comal::{
     proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph},
 };
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
-use dam::simulation::{InitializationOptionsBuilder};
+use dam::simulation::InitializationOptionsBuilder;
 use prost::Message;
 
 fn bench_proto<M: criterion::measurement::Measurement>(
