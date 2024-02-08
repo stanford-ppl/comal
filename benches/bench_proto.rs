@@ -5,7 +5,7 @@ use comal::{
     proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph},
 };
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
-use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
+use dam::simulation::{InitializationOptionsBuilder};
 use prost::Message;
 
 fn bench_proto<M: criterion::measurement::Measurement>(
@@ -43,12 +43,7 @@ fn bench_proto<M: criterion::measurement::Measurement>(
                             .unwrap()
                     },
                     |parent| {
-                        parent.run(
-                            RunOptionsBuilder::default()
-                                .mode(RunMode::FIFO)
-                                .build()
-                                .unwrap(),
-                        );
+                        parent.run(Default::default());
                     },
                     criterion::BatchSize::LargeInput,
                 );
@@ -89,12 +84,7 @@ fn bench_proto_sweep<M: criterion::measurement::Measurement>(
                             .unwrap()
                     },
                     |parent| {
-                        parent.run(
-                            RunOptionsBuilder::default()
-                                .mode(RunMode::FIFO)
-                                .build()
-                                .unwrap(),
-                        );
+                        parent.run(Default::default());
                     },
                     criterion::BatchSize::LargeInput,
                 );

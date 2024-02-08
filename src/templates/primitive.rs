@@ -72,8 +72,8 @@ impl<ValType, StopType: core::str::FromStr> TryFrom<&str> for Token<ValType, Sto
             Ok(Self::Done)
         } else if value.starts_with('N') {
             Ok(Self::Empty)
-        } else if value.starts_with('S') {
-            value[1..].parse().map(Self::Stop).map_err(|_| ())
+        } else if let Some(stripped) = value.strip_prefix('S') {
+            stripped.parse().map(Self::Stop).map_err(|_| ())
         } else {
             Err(())
         }

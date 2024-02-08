@@ -59,19 +59,16 @@ where
                 Ok(curr_in) => {
                     let curr_iref = self.crd_mask_data.in_ref_inner.dequeue(&self.time).unwrap();
                     let curr_ocrd = out_ocrd.unwrap().data.clone();
-                    match curr_ocrd.clone() {
-                        Token::Stop(stkn) => {
-                            let channel_elem = ChannelElement::new(
-                                self.time.tick() + 1,
-                                Token::<ValType, StopType>::Stop(stkn.clone()),
-                            );
-                            self.crd_mask_data
-                                .out_crd_outer
-                                .enqueue(&self.time, channel_elem)
-                                .unwrap();
-                            self.crd_mask_data.in_crd_outer.dequeue(&self.time).unwrap();
-                        }
-                        _ => (),
+                    if let Token::Stop(stkn) = curr_ocrd.clone() {
+                        let channel_elem = ChannelElement::new(
+                            self.time.tick() + 1,
+                            Token::<ValType, StopType>::Stop(stkn.clone()),
+                        );
+                        self.crd_mask_data
+                            .out_crd_outer
+                            .enqueue(&self.time, channel_elem)
+                            .unwrap();
+                        self.crd_mask_data.in_crd_outer.dequeue(&self.time).unwrap();
                     }
                     match curr_in.data {
                         Token::Val(val) => {

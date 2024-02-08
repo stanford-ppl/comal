@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use std::{fs, path::Path, time::Instant};
+use std::{fs, time::Instant};
 
-use comal::config::Data;
+
 use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
 use prost::Message;
 use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};

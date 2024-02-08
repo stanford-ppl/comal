@@ -69,20 +69,12 @@ where
                             }
                         }
                         Token::Stop(_) => {
-                            match curr_ocrd.clone() {
-                                Token::Stop(stkn) => {
-                                    let channel_elem = ChannelElement::new(
-                                        self.time.tick() + 1,
-                                        Token::<ValType, StopType>::Stop(stkn),
-                                    );
-                                    self.flatten_data
-                                        .out_crd
-                                        .enqueue(&self.time, channel_elem)
-                                        .unwrap();
-                                }
-                                _ => (), // _ => {
-                                         // panic!("Should be a stop token for ocrd");
-                                         // }
+                            if let stkn @ Token::Stop(_) = curr_ocrd.clone() {
+                                let channel_elem = ChannelElement::new(self.time.tick() + 1, stkn);
+                                self.flatten_data
+                                    .out_crd
+                                    .enqueue(&self.time, channel_elem)
+                                    .unwrap();
                             }
                             self.flatten_data.in_crd_outer.dequeue(&self.time).unwrap();
                         }
