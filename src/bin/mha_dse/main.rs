@@ -3,7 +3,7 @@ mod mha_impl;
 use std::time::Instant;
 
 use clap::Parser;
-use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
+use comal::cli_common::DamOptions;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -22,17 +22,12 @@ struct Cli {
     #[arg(short, long)]
     long_chan_size: usize,
 
-    /// Run flavor inference
-    #[arg(long, default_value_t = false)]
-    inference: bool,
-
-    /// Number of worker threads
-    #[arg(long)]
-    workers: Option<usize>,
-
     /// Print timing breakdowns
     #[arg(long, default_value_t = false)]
     breakdowns: bool,
+
+    #[command(flatten)]
+    dam_opts: DamOptions,
 }
 
 fn main() {
@@ -50,27 +45,13 @@ fn main() {
 
     let start = Instant::now();
 
-    let initialized = builder
-        .initialize(
-            InitializationOptionsBuilder::default()
-                .run_flavor_inference(args.inference)
-                .build()
-                .unwrap(),
-        )
-        .unwrap();
+    let initialized = builder.initialize(args.dam_opts.into()).unwrap();
     let initialized_time = Instant::now();
     if args.breakdowns {
         println!("Initialization Time: {:?}", initialized_time - start);
     }
 
-    let run_opts = match args.workers {
-        Some(workers) => RunOptionsBuilder::default()
-            .mode(RunMode::Constrained(workers))
-            .build()
-            .unwrap(),
-        None => Default::default(),
-    };
-    let executed = initialized.run(run_opts);
+    let executed = initialized.run(args.dam_opts.into());
     if args.breakdowns {
         println!("Execution Time: {:?}", initialized_time.elapsed());
     }

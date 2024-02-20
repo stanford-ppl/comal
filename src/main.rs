@@ -2,10 +2,11 @@
 
 use std::{fs, time::Instant};
 
-use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
+use cli_common::DamOptions;
 use prost::Message;
 use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};
 
+mod cli_common;
 mod config;
 mod proto_driver;
 mod templates;
@@ -23,17 +24,12 @@ struct Cli {
     #[arg(long)]
     data: String,
 
-    /// Run flavor inference
-    #[arg(long, default_value_t = false)]
-    inference: bool,
-
-    /// Number of worker threads
-    #[arg(long)]
-    workers: Option<usize>,
-
     /// Print timing breakdowns
-    #[arg(long, default_value_t = false)]
+    #[arg(long)]
     breakdowns: bool,
+
+    #[command(flatten)]
+    dam_opts: DamOptions,
 }
 
 fn main() {
@@ -48,78 +44,15 @@ fn main() {
     if args.breakdowns {
         println!("Parse Time: {:?}", end_parse - start);
     }
-    let initialized = program_builder
-        .initialize(
-            InitializationOptionsBuilder::default()
-                .run_flavor_inference(args.inference)
-                .build()
-                .unwrap(),
-        )
-        .unwrap();
+    let initialized = program_builder.initialize(args.dam_opts.into()).unwrap();
     let initialized_time = Instant::now();
     if args.breakdowns {
         println!("Initialization Time: {:?}", initialized_time - end_parse);
     }
 
-    let run_opts = match args.workers {
-        Some(workers) => RunOptionsBuilder::default()
-            .mode(RunMode::Constrained(workers))
-            .build()
-            .unwrap(),
-        None => Default::default(),
-    };
-    let executed = initialized.run(run_opts);
+    let executed = initialized.run(args.dam_opts.into());
     if args.breakdowns {
         println!("Execution Time: {:?}", initialized_time.elapsed());
     }
     println!("Elapsed Cycles: {}", executed.elapsed_cycles().unwrap());
 }
-
-// fn main() {
-
-//     {
-
-//         ap.refer(&mut data_dir_name).add_option(
-//             &["--data_dir", "-d"],
-//             Store,
-//             "Directory with SAM data files",
-
-//         ap.refer(&mut with_flavor).add_option(
-//             &["--no-inference"],
-//             StoreFalse,
-//             "Run without flavor inference",
-
-//         ap.refer(&mut run_dse)
-
-//         ap.refer(&mut par_factor)
-
-//         ap.refer(&mut outer_par_factor).add_option(
-//             &["--outer_par_factor", "-o"],
-//             Store,
-//             "Outer par factor",
-
-//         ap.refer(&mut proto_filename)
-
-//     }
-
-//     let parent = if run_dse {
-//         run_mha(par_factor, outer_par_factor, base_path)
-//     } else {
-
-//         parse_proto(comal_graph, base_path)
-
-//     let initialized = parent
-//         .initialize(
-//             InitializationOptionsBuilder::default()
-//                 .run_flavor_inference(true)
-//                 .build()
-//                 .unwrap(),
-//         )
-
-//     let executed = initialized.run(
-//         RunOptionsBuilder::default()
-//             .mode(RunMode::Simple)
-//             .build()
-//             .unwrap(),
-
-// }
