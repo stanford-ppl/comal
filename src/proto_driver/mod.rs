@@ -19,8 +19,8 @@ use super::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use super::templates::utils::read_inputs;
 use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
+use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
-use crate::templates::tensor::Tensor;
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::context_tools::*;
@@ -39,8 +39,10 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
+const DEFAULT_CHAN_SIZE: usize = 1024;
+
 #[derive(Default)]
-struct Channels<'a, T>
+pub struct Channels<'a, T>
 where
     T: DAMType,
 {
@@ -52,8 +54,8 @@ impl<'a, T: DAMType> Channels<'a, T>
 where
     T: 'a,
 {
-    fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
-        parent.bounded(1024)
+    pub fn new_channel(parent: &mut ProgramBuilder<'a>, _id: u64) -> (Sender<T>, Receiver<T>) {
+        parent.bounded(DEFAULT_CHAN_SIZE)
     }
 
     pub fn get_sender(&mut self, id: u64, parent: &mut ProgramBuilder<'a>) -> Sender<T> {
@@ -91,66 +93,65 @@ where
     }
 }
 
-pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBuilder<'a> {
-    let mut parent = ProgramBuilder::default();
-
-    let mut refmap: Channels<Token<CT, ST>> = Channels::default();
-    let mut crdmap: Channels<Token<CT, ST>> = Channels::default();
-    let mut valmap: Channels<Token<VT, ST>> = Channels::default();
-    let _tensor_valmap: Channels<Tensor<'static, VT>> = Channels::default();
-    let mut repmap: Channels<Repsiggen> = Channels::default();
-
-    let mut repsig_id_count: u64 = 1;
-
+pub fn build_from_proto<'a>(
+    comal_graph: ComalGraph,
+    base_path: PathBuf,
+    sam_options: SamOptions,
+    builder: &mut ProgramBuilder<'a>,
+    refmap: &mut Channels<'a, Token<CT, ST>>,
+    crdmap: &mut Channels<'a, Token<CT, ST>>,
+    valmap: &mut Channels<'a, Token<VT, ST>>,
+    repmap: &mut Channels<'a, Repsiggen>,
+) {
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
             Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
                 broadcast::Conn::Crd(in_crd) => {
                     let in_crd_id = in_crd.input.try_conv();
                     let out_crd_ids = in_crd.outputs.iter().map(|id| id.try_conv());
-                    let receiver = crdmap.get_receiver(in_crd_id, &mut parent);
+                    let receiver = crdmap.get_receiver(in_crd_id, builder);
                     let mut broadcast = BroadcastContext::new(receiver);
                     out_crd_ids
                         .into_iter()
-                        .for_each(|id| broadcast.add_target(crdmap.get_sender(id, &mut parent)));
-                    parent.add_child(broadcast);
+                        .for_each(|id| broadcast.add_target(crdmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
                 }
                 broadcast::Conn::Ref(in_ref) => {
                     let in_ref_id = in_ref.input.try_conv();
                     let out_ref_ids = in_ref.outputs.iter().map(|id| id.try_conv());
-                    let receiver = refmap.get_receiver(in_ref_id, &mut parent);
+                    let receiver = refmap.get_receiver(in_ref_id, builder);
                     let mut broadcast = BroadcastContext::new(receiver);
                     out_ref_ids
                         .into_iter()
-                        .for_each(|id| broadcast.add_target(refmap.get_sender(id, &mut parent)));
-                    parent.add_child(broadcast);
+                        .for_each(|id| broadcast.add_target(refmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
                 }
                 broadcast::Conn::Val(in_val) => {
                     let in_val_id = in_val.input.try_conv();
                     let out_val_ids = in_val.outputs.iter().map(|id| id.try_conv());
-                    let receiver = valmap.get_receiver(in_val_id, &mut parent);
+                    let receiver = valmap.get_receiver(in_val_id, builder);
                     let mut broadcast = BroadcastContext::new(receiver);
                     out_val_ids
                         .into_iter()
-                        .for_each(|id| broadcast.add_target(valmap.get_sender(id, &mut parent)));
-                    parent.add_child(broadcast);
+                        .for_each(|id| broadcast.add_target(valmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
                 }
                 broadcast::Conn::Repsig(in_repsig) => {
                     let in_repsig_id = in_repsig.input.try_conv();
                     let out_repsig_ids = in_repsig.outputs.iter().map(|id| id.try_conv());
-                    let receiver = repmap.get_receiver(in_repsig_id, &mut parent);
+                    let receiver = repmap.get_receiver(in_repsig_id, builder);
                     let mut broadcast = BroadcastContext::new(receiver);
                     out_repsig_ids
                         .into_iter()
-                        .for_each(|id| broadcast.add_target(repmap.get_sender(id, &mut parent)));
-                    parent.add_child(broadcast);
+                        .for_each(|id| broadcast.add_target(repmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
                 }
             },
             Op::Joiner(op) => {
                 assert!(op.input_pairs.len() == 2);
                 let mut input_channels = op.input_pairs.iter().map(|pair| {
-                    let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), &mut parent);
-                    let pair_ref = refmap.get_receiver(get_ref_id(&pair.r#ref), &mut parent);
+                    let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
+                    let pair_ref = refmap.get_receiver(get_ref_id(&pair.r#ref), builder);
                     (pair_crd, pair_ref)
                 });
                 let (in_crd1, in_ref1) = input_channels.next().unwrap();
@@ -162,24 +163,24 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     in_crd2,
                     in_ref2,
                     out_ref1: refmap
-                        .get_sender(get_ref_id(&Some(op.output_refs[0].clone())), &mut parent),
+                        .get_sender(get_ref_id(&Some(op.output_refs[0].clone())), builder),
                     out_ref2: refmap
-                        .get_sender(get_ref_id(&Some(op.output_refs[1].clone())), &mut parent),
-                    out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), &mut parent),
+                        .get_sender(get_ref_id(&Some(op.output_refs[1].clone())), builder),
+                    out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
                 };
 
                 match op.join_type() {
-                    joiner::Type::Intersect => parent.add_child(Intersect::new(joiner_data)),
-                    joiner::Type::Union => parent.add_child(Union::new(joiner_data)),
+                    joiner::Type::Intersect => builder.add_child(Intersect::new(joiner_data)),
+                    joiner::Type::Union => builder.add_child(Union::new(joiner_data)),
                 };
             }
             Op::FiberLookup(op) => {
-                let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent);
+                let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
 
                 let f_data = RdScanData {
                     in_ref,
-                    out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), &mut parent),
-                    out_ref: refmap.get_sender(get_ref_id(&op.output_ref), &mut parent),
+                    out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
+                    out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
                 };
                 if op.format == "compressed" {
                     let seg_filename =
@@ -188,49 +189,52 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                         base_path.join(format!("tensor_{}_mode_{}_crd", op.tensor, op.mode));
                     let seg = read_inputs(&seg_filename);
                     let crd = read_inputs(&crd_filename);
-                    parent.add_child(CompressedCrdRdScan::new(f_data, seg, crd));
+                    let mut crs = CompressedCrdRdScan::new(f_data, seg, crd);
+                    crs.set_timings(sam_options.compressed_read_config);
+                    builder.add_child(crs);
                 } else {
                     let shape_filename = base_path.join(format!("tensor_{}_mode_shape", op.tensor));
                     let shapes = read_inputs(&shape_filename);
                     let index: usize = op.mode.try_into().unwrap();
-                    parent.add_child(UncompressedCrdRdScan::new(f_data, shapes[index]));
+                    builder.add_child(UncompressedCrdRdScan::new(f_data, shapes[index]));
                 }
             }
             Op::FiberWrite(op) => {
                 let in_crd_id = get_crd_id(&op.input_crd);
-                let receiver = crdmap.get_receiver(in_crd_id, &mut parent);
-                parent.add_child(CompressedWrScan::new(receiver));
+                let receiver = crdmap.get_receiver(in_crd_id, builder);
+                builder.add_child(CompressedWrScan::new(receiver));
             }
             Op::Repeat(op) => {
                 // TODO: Need to check if input_rep_crd exists for backwards compatibility
                 // match &op.input_rep_crd {}
                 let in_rep_ref = get_ref_id(&op.input_rep_ref);
 
+                let (out_repsig, in_repsig) = builder.bounded(DEFAULT_CHAN_SIZE);
+
                 // Might not matter since repsig, could just use a counter to avoid collision
                 let repsig_data = RepSigGenData {
-                    input: refmap.get_receiver(in_rep_ref, &mut parent),
-                    out_repsig: repmap.get_sender(repsig_id_count, &mut parent),
+                    input: refmap.get_receiver(in_rep_ref, builder),
+                    out_repsig,
                 };
 
-                parent.add_child(RepeatSigGen::new(repsig_data));
+                builder.add_child(RepeatSigGen::new(repsig_data));
 
-                let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), &mut parent);
+                let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
 
                 let rep_data = RepeatData {
                     in_ref,
-                    in_repsig: repmap.get_receiver(repsig_id_count, &mut parent),
-                    out_ref: refmap.get_sender(get_ref_id(&op.output_ref), &mut parent),
+                    in_repsig,
+                    out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
                 };
-                parent.add_child(Repeat::new(rep_data));
-                repsig_id_count += 1;
+                builder.add_child(Repeat::new(rep_data));
             }
             Op::Repeatsig(op) => {
                 let in_crd_id = get_crd_id(&op.input_crd);
                 let repsig_data = RepSigGenData {
-                    input: crdmap.get_receiver(in_crd_id, &mut parent),
-                    out_repsig: repmap.get_sender(get_repsig_id(&op.output_rep_sig), &mut parent),
+                    input: crdmap.get_receiver(in_crd_id, builder),
+                    out_repsig: repmap.get_sender(get_repsig_id(&op.output_rep_sig), builder),
                 };
-                parent.add_child(RepeatSigGen::new(repsig_data));
+                builder.add_child(RepeatSigGen::new(repsig_data));
             }
             Op::Alu(op) => {
                 let mut in_val_ids = match op.conn.as_ref().unwrap() {
@@ -245,13 +249,11 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                     alu::Conn::Crds(_) => todo!(),
                 };
                 assert!(in_val_ids.len() >= 1);
-                let out_val_sender = valmap.get_sender(out_val_id, &mut parent);
+                let out_val_sender = valmap.get_sender(out_val_id, builder);
                 if in_val_ids.len() == 2 {
-                    let val_receiver1 =
-                        valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
-                    let val_receiver2 =
-                        valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
-                    parent.add_child(make_alu(
+                    let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
+                    let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
+                    builder.add_child(make_alu(
                         val_receiver1,
                         val_receiver2,
                         out_val_sender,
@@ -264,9 +266,8 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                         },
                     ));
                 } else if in_val_ids.len() == 1 {
-                    let val_receiver1 =
-                        valmap.get_receiver(in_val_ids.next().unwrap(), &mut parent);
-                    parent.add_child(make_unary_alu(
+                    let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
+                    builder.add_child(make_unary_alu(
                         val_receiver1,
                         out_val_sender,
                         match op.stages[0].op() {
@@ -283,46 +284,46 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
             Op::Reduce(op) => {
                 let in_val_id = get_val_id(&op.input_val);
                 let reduce_data = ReduceData {
-                    in_val: valmap.get_receiver(in_val_id, &mut parent),
-                    out_val: valmap.get_sender(get_val_id(&op.output_val), &mut parent),
+                    in_val: valmap.get_receiver(in_val_id, builder),
+                    out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                 };
-                parent.add_child(Reduce::new(reduce_data));
+                builder.add_child(Reduce::new(reduce_data));
             }
             Op::CoordHold(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
                 let in_outer_crd = get_crd_id(&op.input_outer_crd);
 
                 let crd_hold_data = CrdManagerData {
-                    in_crd_inner: crdmap.get_receiver(in_inner_crd, &mut parent),
-                    in_crd_outer: crdmap.get_receiver(in_outer_crd, &mut parent),
-                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), &mut parent),
-                    out_crd_outer: crdmap.get_sender(get_crd_id(&op.output_outer_crd), &mut parent),
+                    in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
+                    in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
+                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                    out_crd_outer: crdmap.get_sender(get_crd_id(&op.output_outer_crd), builder),
                 };
-                parent.add_child(CrdHold::new(crd_hold_data));
+                builder.add_child(CrdHold::new(crd_hold_data));
             }
             Op::CoordDrop(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
                 let in_outer_crd = get_crd_id(&op.input_outer_crd);
 
                 let crd_drop_data = CrdManagerData {
-                    in_crd_inner: crdmap.get_receiver(in_inner_crd, &mut parent),
-                    in_crd_outer: crdmap.get_receiver(in_outer_crd, &mut parent),
-                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), &mut parent),
-                    out_crd_outer: crdmap.get_sender(get_crd_id(&op.output_outer_crd), &mut parent),
+                    in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
+                    in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
+                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                    out_crd_outer: crdmap.get_sender(get_crd_id(&op.output_outer_crd), builder),
                 };
-                parent.add_child(CrdDrop::new(crd_drop_data));
+                builder.add_child(CrdDrop::new(crd_drop_data));
             }
             Op::Array(op) => {
                 let _blocked = op.blocked;
                 let _stream_shape = op.stream_shape as usize;
                 let in_ref_id = get_ref_id(&op.input_ref);
                 let array_data = ArrayData {
-                    in_ref: refmap.get_receiver(in_ref_id, &mut parent),
-                    out_val: valmap.get_sender(get_val_id(&op.output_val), &mut parent),
+                    in_ref: refmap.get_receiver(in_ref_id, builder),
+                    out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
                 let vals = read_inputs(&val_filename);
-                parent.add_child(Array::new(array_data, vals));
+                builder.add_child(Array::new(array_data, vals));
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
@@ -331,26 +332,26 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
                 let in_val_id = get_val_id(&op.input_val);
 
                 let spacc_data = Spacc1Data {
-                    in_crd_inner: crdmap.get_receiver(in_inner_crd, &mut parent),
-                    in_crd_outer: crdmap.get_receiver(in_outer_crd, &mut parent),
-                    in_val: valmap.get_receiver(in_val_id, &mut parent),
-                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), &mut parent),
-                    out_val: valmap.get_sender(get_val_id(&op.output_val), &mut parent),
+                    in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
+                    in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
+                    in_val: valmap.get_receiver(in_val_id, builder),
+                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                    out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                 };
-                parent.add_child(Spacc1::new(spacc_data));
+                builder.add_child(Spacc1::new(spacc_data));
             }
             Op::ValWrite(op) => {
                 let in_val_id = get_val_id(&op.input_val);
-                let val_receiver = valmap.get_receiver(in_val_id, &mut parent);
-                parent.add_child(ValsWrScan::new(val_receiver));
+                let val_receiver = valmap.get_receiver(in_val_id, builder);
+                builder.add_child(ValsWrScan::new(val_receiver));
             }
             Op::CoordMask(_) => unimplemented!("SAMML can't output coord mask op yet"),
             operation::Op::Func(_) => todo!(),
             Op::Root(op) => {
                 let out_ref_id = get_ref_id(&op.output_ref);
 
-                let root_sender = refmap.get_sender(out_ref_id, &mut parent);
-                parent.add_child(GeneratorContext::new(
+                let root_sender = refmap.get_sender(out_ref_id, builder);
+                builder.add_child(GeneratorContext::new(
                     || token_vec!(u32; u32; 0, "D").into_iter(),
                     root_sender,
                 ));
@@ -358,5 +359,23 @@ pub fn parse_proto<'a>(comal_graph: ComalGraph, base_path: PathBuf) -> ProgramBu
             }
         }
     }
-    parent
+}
+
+pub fn parse_proto<'a>(
+    comal_graph: ComalGraph,
+    base_path: PathBuf,
+    sam_options: SamOptions,
+) -> ProgramBuilder<'a> {
+    let mut builder = ProgramBuilder::default();
+    build_from_proto(
+        comal_graph,
+        base_path,
+        sam_options,
+        &mut builder,
+        &mut Default::default(),
+        &mut Default::default(),
+        &mut Default::default(),
+        &mut Default::default(),
+    );
+    builder
 }

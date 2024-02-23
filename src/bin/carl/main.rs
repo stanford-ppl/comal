@@ -2,17 +2,13 @@
 
 use std::{fs, time::Instant};
 
-use cli_common::{DamOptions, SamOptionFiles};
-use prost::Message;
-use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};
-
-mod cli_common;
-mod config;
-mod proto_driver;
-mod templates;
-mod utils;
+use comal::{
+    cli_common::{DamOptions, SamOptionFiles},
+    proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph},
+};
 
 use clap::Parser;
+use prost::Message;
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -28,12 +24,23 @@ struct Cli {
     #[arg(long)]
     breakdowns: bool,
 
+    /// Pre-defined stream values, used in place of Root nodes
+    /// These are prefixed with a type () followed by comma-delimited tokens, each of which is either:
+    /// 1. A Float/Integer value
+    /// 2. A Stop token
+    /// 3. An empty token
+    /// 4. A Done token
+    #[arg(short, long)]
+    channel: Vec<String>,
+
     #[command(flatten)]
     dam_opts: DamOptions,
 
     #[command(flatten)]
     sam_opts: SamOptionFiles,
 }
+
+fn parse_channel_data() {}
 
 fn main() {
     let start = Instant::now();

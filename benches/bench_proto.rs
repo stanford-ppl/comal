@@ -29,7 +29,8 @@ fn bench_proto<M: criterion::measurement::Measurement>(
             |b, flavor| {
                 b.iter_batched(
                     || {
-                        let parent = parse_proto(comal_graph.clone(), base_path.clone());
+                        let parent =
+                            parse_proto(comal_graph.clone(), base_path.clone(), Default::default());
                         parent
                             .initialize(
                                 InitializationOptionsBuilder::default()
@@ -70,7 +71,8 @@ fn bench_proto_sweep<M: criterion::measurement::Measurement>(
                         let comal_contents =
                             fs::read(base_path.join(proto_filename.clone())).unwrap();
                         let comal_graph = ComalGraph::decode(comal_contents.as_slice()).unwrap();
-                        let parent = parse_proto(comal_graph.clone(), base_path.clone());
+                        let parent =
+                            parse_proto(comal_graph.clone(), base_path.clone(), Default::default());
                         parent
                             .initialize(
                                 InitializationOptionsBuilder::default()

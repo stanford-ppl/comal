@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Copy, Clone)]
 pub struct CompressedCrdRdScanConfig {
     /// A "warmup" delay at the very start of the pipeline
     pub startup_delay: u64,
