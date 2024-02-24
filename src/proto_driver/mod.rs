@@ -91,6 +91,13 @@ where
     pub fn set_receiver(&mut self, id: u64, rcv: Receiver<T>) {
         self.map.insert(id, ChannelType::ReceiverType(rcv));
     }
+
+    pub fn iter_remainders(self) -> impl Iterator<Item = Receiver<T>> {
+        self.map.into_iter().map(|(id, chantype)| match chantype {
+            ChannelType::SendType(_) => panic!("Disconnected sender with id {id:?}"),
+            ChannelType::ReceiverType(recv) => recv,
+        })
+    }
 }
 
 pub fn build_from_proto<'a>(

@@ -19,18 +19,18 @@ pub struct DamOptions {
     workers: Option<usize>,
 }
 
-impl Into<InitializationOptions> for DamOptions {
-    fn into(self) -> InitializationOptions {
+impl From<DamOptions> for InitializationOptions {
+    fn from(val: DamOptions) -> Self {
         InitializationOptionsBuilder::default()
-            .run_flavor_inference(self.inference)
+            .run_flavor_inference(val.inference)
             .build()
             .unwrap()
     }
 }
 
-impl Into<RunOptions> for DamOptions {
-    fn into(self) -> RunOptions {
-        match self.workers {
+impl From<DamOptions> for RunOptions {
+    fn from(val: DamOptions) -> Self {
+        match val.workers {
             Some(num) => RunOptionsBuilder::default()
                 .mode(RunMode::Constrained(num))
                 .build()
@@ -53,10 +53,10 @@ pub struct SamOptions {
 }
 
 // Defining a read_or_default conversion from SamOptionFiles to SamOptions
-impl Into<SamOptions> for &SamOptionFiles {
-    fn into(self) -> SamOptions {
+impl From<&SamOptionFiles> for SamOptions {
+    fn from(val: &SamOptionFiles) -> Self {
         SamOptions {
-            compressed_read_config: self.try_into().unwrap(),
+            compressed_read_config: val.try_into().unwrap(),
         }
     }
 }
