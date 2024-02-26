@@ -276,25 +276,6 @@ pub fn mat_elemadd_benchmark_large(c: &mut Criterion) {
     });
 }
 
-// pub fn mha_par_benchmark_channels(c: &mut Criterion) {
-//     let mut group = c.benchmark_group("MHA_chan_sweep");
-//     let data = load_data("mat_elemadd2");
-//     for chan_factor in 5..12 {
-//         let chan_size = 1 << chan_factor;
-//         group.bench_with_input(
-//             BenchmarkId::from_parameter(chan_size),
-//             &chan_size,
-//             |b, &chan_size| {
-//                 b.iter_batched(
-//                     || data.clone(),
-//                     |cp| test_par_multihead_attention(cp, chan_size),
-//                     BatchSize::LargeInput,
-//                 );
-//             },
-//         );
-//     }
-//     group.finish();
-// }
 
 criterion_group!(elemadd_benches, mat_elemadd_benchmark_large,);
 criterion_main!(elemadd_benches);

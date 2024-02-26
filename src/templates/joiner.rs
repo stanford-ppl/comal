@@ -54,9 +54,6 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        // let mut get_crd1: bool = false;
-        // let mut get_crd2: bool = false;
-
         loop {
             let crd1_deq = self.intersect_data.in_crd1.peek_next(&self.time);
             let crd2_deq = self.intersect_data.in_crd2.peek_next(&self.time);
@@ -86,22 +83,16 @@ where
                                     .out_ref2
                                     .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
                                     .unwrap();
-                                // get_crd1 = true;
-                                // get_crd2 = true;
                                 self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
                             }
                             (crd1, crd2) if crd1 < crd2 => {
-                                // get_crd1 = true;
-                                // get_crd2 = false;
                                 self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
                             }
                             (crd1, crd2) if crd1 > crd2 => {
-                                // get_crd1 = false;
-                                // get_crd2 = true;
                                 self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
                             }
@@ -110,8 +101,6 @@ where
                             }
                         },
                         (Token::Val(_), Token::Stop(_)) => {
-                            // get_crd1 = true;
-                            // get_crd2 = false;
                             self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                             self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
                         }
@@ -140,8 +129,6 @@ where
                                 .unwrap();
                         }
                         (Token::Stop(_), Token::Val(_)) => {
-                            // get_crd1 = false;
-                            // get_crd2 = true;
                             self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
                             self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
                         }
@@ -163,8 +150,6 @@ where
                                 .out_ref2
                                 .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
                                 .unwrap();
-                            // get_crd1 = true;
-                            // get_crd2 = true;
                             self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                             self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
                             self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
@@ -285,8 +270,6 @@ where
                                     .unwrap();
                                 get_crd1 = true;
                                 get_crd2 = true;
-                                // self.union_data.in_crd1.dequeue(&self.time).unwrap();
-                                // self.union_data.in_ref1.dequeue(&self.time).unwrap();
                             }
                             (crd1, crd2) if crd1 < crd2 => {
                                 self.union_data
@@ -360,7 +343,9 @@ where
                         }
                         (Token::Val(_), Token::Done)
                         | (Token::Done, Token::Val(_))
-                        | (Token::Done, Token::Done) => {
+                        | (Token::Done, Token::Done)
+                        | (Token::Done, Token::Empty)
+                        | (Token::Empty, Token::Done) => {
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, Token::Done);
                             self.union_data
@@ -430,170 +415,171 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         context::{checker_context::CheckerContext, generator_context::GeneratorContext},
-//         simulation::Program,
-//         templates::sam::primitive::Token,
-//         token_vec,
-//     };
+#[cfg(test)]
+mod tests {
+    use dam::{simulation::*, utility_contexts::*};
 
-//     use super::{CrdJoinerData, Intersect, Union};
-//     #[test]
-//     fn intersect_2d_test() {
-//         let in_crd1 = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
-//         let in_ref1 = || token_vec!(u32; u32; 0, "S0", 1, 2, 3, "S1", "D").into_iter();
-//         let in_crd2 = || token_vec!(u32; u32; 0, 1, 2, "S0", 0, 1, 2, "S1", "D").into_iter();
-//         let in_ref2 = || token_vec!(u32; u32; 0, 1, 2, "S0", 0, 1, 2, "S1", "D").into_iter();
+    use crate::{templates::primitive::Token, token_vec};
 
-//         let out_crd = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
-//         let out_ref1 = || token_vec!(u32; u32; 0, "S0", 1, 2, 3, "S1", "D").into_iter();
-//         let out_ref2 = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
-//         // dbg!(token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D"));
-//         intersect_test(
-//             in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
-//         );
-//     }
+    use super::{CrdJoinerData, Intersect, Union};
+    #[test]
+    fn intersect_2d_test() {
+        let in_crd1 = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
+        let in_ref1 = || token_vec!(u32; u32; 0, "S0", 1, 2, 3, "S1", "D").into_iter();
+        let in_crd2 = || token_vec!(u32; u32; 0, 1, 2, "S0", 0, 1, 2, "S1", "D").into_iter();
+        let in_ref2 = || token_vec!(u32; u32; 0, 1, 2, "S0", 0, 1, 2, "S1", "D").into_iter();
 
-//     #[test]
-//     fn union_2d_test() {
-//         let in_crd1 =
-//             || token_vec!(u32; u32; 0, 1, "S0", 2, 3, "S0", "S0", 4, 5, "S1", "D").into_iter();
-//         let in_ref1 =
-//             || token_vec!(u32; u32; 0, 1, "S0", 2, 3, "S0", "S0", 4, 5, "S1", "D").into_iter();
-//         let in_crd2 =
-//             || token_vec!(u32; u32; 1, 2, 3, "S0", "S0", 0, 1, 2, "S0", "S1", "D").into_iter();
-//         let in_ref2 =
-//             || token_vec!(u32; u32; 0, 1, 2, "S0", "S0", 2, 3, 4, "S0", "S1", "D").into_iter();
+        let out_crd = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
+        let out_ref1 = || token_vec!(u32; u32; 0, "S0", 1, 2, 3, "S1", "D").into_iter();
+        let out_ref2 = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
+        intersect_test(
+            in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
+        );
+    }
 
-//         let out_crd = || {
-//             token_vec!(u32; u32; 0, 1, 2, 3, "S0", 2, 3, "S0", 0, 1, 2, "S0", 4, 5, "S1", "D")
-//                 .into_iter()
-//         };
-//         let out_ref1 = || {
-//             token_vec!(u32; u32; 0, 1, "N", "N", "S0", 2, 3, "S0", "N", "N", "N", "S0", 4, 5, "S1", "D").into_iter()
-//         };
-//         let out_ref2 = || {
-//             token_vec!(u32; u32; "N", 0, 1, 2, "S0", "N", "N", "S0", 2, 3, 4, "S0", "N", "N", "S1", "D").into_iter()
-//         };
-//         // dbg!(token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D"));
-//         union_test(
-//             in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
-//         );
-//     }
+    #[test]
+    fn union_2d_test() {
+        let in_crd1 =
+            || token_vec!(u32; u32; 0, 1, "S0", 2, 3, "S0", "S0", 4, 5, "S1", "D").into_iter();
+        let in_ref1 =
+            || token_vec!(u32; u32; 0, 1, "S0", 2, 3, "S0", "S0", 4, 5, "S1", "D").into_iter();
+        let in_crd2 =
+            || token_vec!(u32; u32; 1, 2, 3, "S0", "S0", 0, 1, 2, "S0", "S1", "D").into_iter();
+        let in_ref2 =
+            || token_vec!(u32; u32; 0, 1, 2, "S0", "S0", 2, 3, 4, "S0", "S1", "D").into_iter();
 
-//     fn intersect_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2, ORT3>(
-//         in_crd1: fn() -> IRT1,
-//         in_ref1: fn() -> IRT2,
-//         in_crd2: fn() -> IRT3,
-//         in_ref2: fn() -> IRT4,
-//         out_crd: fn() -> ORT1,
-//         out_ref1: fn() -> ORT2,
-//         out_ref2: fn() -> ORT3,
-//     ) where
-//         IRT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT3: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT4: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT3: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let chan_size = 4;
+        let out_crd = || {
+            token_vec!(u32; u32; 0, 1, 2, 3, "S0", 2, 3, "S0", 0, 1, 2, "S0", 4, 5, "S1", "D")
+                .into_iter()
+        };
+        let out_ref1 = || {
+            token_vec!(u32; u32; 0, 1, "N", "N", "S0", 2, 3, "S0", "N", "N", "N", "S0", 4, 5, "S1", "D").into_iter()
+        };
+        let out_ref2 = || {
+            token_vec!(u32; u32; "N", 0, 1, 2, "S0", "N", "N", "S0", 2, 3, 4, "S0", "N", "N", "S1", "D").into_iter()
+        };
+        union_test(
+            in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
+        );
+    }
 
-//         let mut parent = ProgramBuilder::default();
-//         let (in_crd1_sender, in_crd1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
-//         let (in_crd2_sender, in_crd2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
-//         let (in_ref1_sender, in_ref1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
-//         let (in_ref2_sender, in_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
-//         let (out_crd_sender, out_crd_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
-//         let (out_ref1_sender, out_ref1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
-//         let (out_ref2_sender, out_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+    fn intersect_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2, ORT3>(
+        in_crd1: fn() -> IRT1,
+        in_ref1: fn() -> IRT2,
+        in_crd2: fn() -> IRT3,
+        in_ref2: fn() -> IRT4,
+        out_crd: fn() -> ORT1,
+        out_ref1: fn() -> ORT2,
+        out_ref2: fn() -> ORT3,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT3: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT4: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT2: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT3: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let chan_size = 4;
 
-//         let data = CrdJoinerData::<u32, u32> {
-//             in_crd1: in_crd1_receiver,
-//             in_ref1: in_ref1_receiver,
-//             in_crd2: in_crd2_receiver,
-//             in_ref2: in_ref2_receiver,
-//             out_crd: out_crd_sender,
-//             out_ref1: out_ref1_sender,
-//             out_ref2: out_ref2_sender,
-//         };
-//         let intersect = Intersect::new(data);
-//         let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);
-//         let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
-//         let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
-//         let gen4 = GeneratorContext::new(in_ref2, in_ref2_sender);
-//         let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
-//         let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
-//         let ref2_checker = CheckerContext::new(out_ref2, out_ref2_receiver);
+        let mut parent = ProgramBuilder::default();
+        let (in_crd1_sender, in_crd1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (in_crd2_sender, in_crd2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (in_ref1_sender, in_ref1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (in_ref2_sender, in_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (out_crd_sender, out_crd_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (out_ref1_sender, out_ref1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (out_ref2_sender, out_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
 
-//         parent.add_child(gen1);
-//         parent.add_child(gen2);
-//         parent.add_child(gen3);
-//         parent.add_child(gen4);
-//         parent.add_child(crd_checker);
-//         parent.add_child(ref1_checker);
-//         parent.add_child(ref2_checker);
-//         parent.add_child(intersect);
-//         parent.init();
-//         parent.run();
-//     }
+        let data = CrdJoinerData::<u32, u32> {
+            in_crd1: in_crd1_receiver,
+            in_ref1: in_ref1_receiver,
+            in_crd2: in_crd2_receiver,
+            in_ref2: in_ref2_receiver,
+            out_crd: out_crd_sender,
+            out_ref1: out_ref1_sender,
+            out_ref2: out_ref2_sender,
+        };
+        let intersect = Intersect::new(data);
+        let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);
+        let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
+        let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
+        let gen4 = GeneratorContext::new(in_ref2, in_ref2_sender);
+        let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
+        let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
+        let ref2_checker = CheckerContext::new(out_ref2, out_ref2_receiver);
 
-//     fn union_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2, ORT3>(
-//         in_crd1: fn() -> IRT1,
-//         in_ref1: fn() -> IRT2,
-//         in_crd2: fn() -> IRT3,
-//         in_ref2: fn() -> IRT4,
-//         out_crd: fn() -> ORT1,
-//         out_ref1: fn() -> ORT2,
-//         out_ref2: fn() -> ORT3,
-//     ) where
-//         IRT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT3: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT4: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT3: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         let (in_crd1_sender, in_crd1_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (in_crd2_sender, in_crd2_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (in_ref1_sender, in_ref1_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (in_ref2_sender, in_ref2_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_crd_sender, out_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_ref1_sender, out_ref1_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_ref2_sender, out_ref2_receiver) = parent.unbounded::<Token<u32, u32>>();
+        parent.add_child(gen1);
+        parent.add_child(gen2);
+        parent.add_child(gen3);
+        parent.add_child(gen4);
+        parent.add_child(crd_checker);
+        parent.add_child(ref1_checker);
+        parent.add_child(ref2_checker);
+        parent.add_child(intersect);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
 
-//         let data = CrdJoinerData::<u32, u32> {
-//             in_crd1: in_crd1_receiver,
-//             in_ref1: in_ref1_receiver,
-//             in_crd2: in_crd2_receiver,
-//             in_ref2: in_ref2_receiver,
-//             out_crd: out_crd_sender,
-//             out_ref1: out_ref1_sender,
-//             out_ref2: out_ref2_sender,
-//         };
-//         let intersect = Union::new(data);
-//         let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);
-//         let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
-//         let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
-//         let gen4 = GeneratorContext::new(in_ref2, in_ref2_sender);
-//         let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
-//         let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
-//         let ref2_checker = CheckerContext::new(out_ref2, out_ref2_receiver);
+    fn union_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2, ORT3>(
+        in_crd1: fn() -> IRT1,
+        in_ref1: fn() -> IRT2,
+        in_crd2: fn() -> IRT3,
+        in_ref2: fn() -> IRT4,
+        out_crd: fn() -> ORT1,
+        out_ref1: fn() -> ORT2,
+        out_ref2: fn() -> ORT3,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT3: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT4: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT2: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT3: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_crd1_sender, in_crd1_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (in_crd2_sender, in_crd2_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (in_ref1_sender, in_ref1_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (in_ref2_sender, in_ref2_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_crd_sender, out_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_ref1_sender, out_ref1_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_ref2_sender, out_ref2_receiver) = parent.unbounded::<Token<u32, u32>>();
 
-//         parent.add_child(gen1);
-//         parent.add_child(gen2);
-//         parent.add_child(gen3);
-//         parent.add_child(gen4);
-//         parent.add_child(crd_checker);
-//         parent.add_child(ref1_checker);
-//         parent.add_child(ref2_checker);
-//         parent.add_child(intersect);
-//         parent.init();
-//         parent.run();
-//     }
-// }
+        let data = CrdJoinerData::<u32, u32> {
+            in_crd1: in_crd1_receiver,
+            in_ref1: in_ref1_receiver,
+            in_crd2: in_crd2_receiver,
+            in_ref2: in_ref2_receiver,
+            out_crd: out_crd_sender,
+            out_ref1: out_ref1_sender,
+            out_ref2: out_ref2_sender,
+        };
+        let intersect = Union::new(data);
+        let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);
+        let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
+        let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
+        let gen4 = GeneratorContext::new(in_ref2, in_ref2_sender);
+        let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
+        let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
+        let ref2_checker = CheckerContext::new(out_ref2, out_ref2_receiver);
+
+        parent.add_child(gen1);
+        parent.add_child(gen2);
+        parent.add_child(gen3);
+        parent.add_child(gen4);
+        parent.add_child(crd_checker);
+        parent.add_child(ref1_checker);
+        parent.add_child(ref2_checker);
+        parent.add_child(intersect);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
+}

@@ -104,64 +104,65 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         context::{checker_context::CheckerContext, generator_context::GeneratorContext},
-//         simulation::Program,
-//         templates::sam::primitive::Token,
-//         token_vec,
-//     };
+#[cfg(test)]
+mod tests {
+    use dam::simulation::*;
+    use dam::utility_contexts::*;
 
-//     use super::ValDrop;
-//     use super::ValDropData;
+    use super::ValDrop;
+    use super::ValDropData;
+    use crate::templates::primitive::Token;
+    use crate::token_vec;
 
-//     #[test]
-//     fn val_drop_2d_test() {
-//         let in_val = || {
-//             token_vec![f32; u32; 0.0, 1.0, 2.0, "S0", 0.0, "S0", 2.0, 3.0, 4.0, "S1", "D"]
-//                 .into_iter()
-//         };
-//         let in_crd =
-//             || token_vec![u32; u32; 0, 1, 2, "S0", 0, "S0", 2, 3, 4, "S1", "D"].into_iter();
-//         let out_val = || token_vec![f32; u32; 1.0, 2.0, "S0", 2.0, 3.0, 4.0, "S1", "D"].into_iter();
-//         let out_crd = || token_vec![u32; u32; 1, 2, "S0", 2, 3, 4, "S1", "D"].into_iter();
-//         val_drop_test(in_val, in_crd, out_val, out_crd);
-//     }
+    #[test]
+    fn val_drop_2d_test() {
+        let in_val = || {
+            token_vec![f32; u32; 0.0, 1.0, 2.0, "S0", 0.0, "S0", 2.0, 3.0, 4.0, "S1", "D"]
+                .into_iter()
+        };
+        let in_crd =
+            || token_vec![u32; u32; 0, 1, 2, "S0", 0, "S0", 2, 3, 4, "S1", "D"].into_iter();
+        let out_val = || token_vec![f32; u32; 1.0, 2.0, "S0", 2.0, 3.0, 4.0, "S1", "D"].into_iter();
+        let out_crd = || token_vec![u32; u32; 1, 2, "S0", 2, 3, 4, "S1", "D"].into_iter();
+        val_drop_test(in_val, in_crd, out_val, out_crd);
+    }
 
-//     fn val_drop_test<IRT1, IRT2, ORT1, ORT2>(
-//         in_val: fn() -> IRT1,
-//         in_crd: fn() -> IRT2,
-//         out_val: fn() -> ORT1,
-//         out_crd: fn() -> ORT2,
-//     ) where
-//         IRT1: Iterator<Item = Token<f32, u32>> + 'static,
-//         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT1: Iterator<Item = Token<f32, u32>> + 'static,
-//         ORT2: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         let (in_val_sender, in_val_receiver) = parent.unbounded::<Token<f32, u32>>();
-//         let (in_crd_sender, in_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<f32, u32>>();
-//         let (out_crd_sender, out_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let data = ValDropData::<u32, f32, u32> {
-//             in_val: in_val_receiver,
-//             in_crd: in_crd_receiver,
-//             out_val: out_val_sender,
-//             out_crd: out_crd_sender,
-//         };
-//         let val_drop = ValDrop::new(data);
-//         let gen1 = GeneratorContext::new(in_val, in_val_sender);
-//         let gen2 = GeneratorContext::new(in_crd, in_crd_sender);
-//         let out_val_checker = CheckerContext::new(out_val, out_val_receiver);
-//         let out_crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
-//         parent.add_child(gen1);
-//         parent.add_child(gen2);
-//         parent.add_child(out_val_checker);
-//         parent.add_child(out_crd_checker);
-//         parent.add_child(val_drop);
-//         parent.init();
-//         parent.run();
-//     }
-// }
+    fn val_drop_test<IRT1, IRT2, ORT1, ORT2>(
+        in_val: fn() -> IRT1,
+        in_crd: fn() -> IRT2,
+        out_val: fn() -> ORT1,
+        out_crd: fn() -> ORT2,
+    ) where
+        IRT1: Iterator<Item = Token<f32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<f32, u32>> + 'static,
+        ORT2: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_val_sender, in_val_receiver) = parent.unbounded::<Token<f32, u32>>();
+        let (in_crd_sender, in_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<f32, u32>>();
+        let (out_crd_sender, out_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let data = ValDropData::<u32, f32, u32> {
+            in_val: in_val_receiver,
+            in_crd: in_crd_receiver,
+            out_val: out_val_sender,
+            out_crd: out_crd_sender,
+        };
+        let val_drop = ValDrop::new(data);
+        let gen1 = GeneratorContext::new(in_val, in_val_sender);
+        let gen2 = GeneratorContext::new(in_crd, in_crd_sender);
+        let out_val_checker = CheckerContext::new(out_val, out_val_receiver);
+        let out_crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
+        parent.add_child(gen1);
+        parent.add_child(gen2);
+        parent.add_child(out_val_checker);
+        parent.add_child(out_crd_checker);
+        parent.add_child(val_drop);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
+}

@@ -21,7 +21,6 @@ use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 #[test]
 fn test_par_matmul_ijk() {
-    // let test_name = "matmul_ijk";
     let test_name = "mat_elemadd";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
@@ -62,9 +61,6 @@ fn test_par_matmul_ijk() {
     let (bi_out_ref_sender, bi_out_ref_receiver) = parent.bounded(chan_size);
     let (bi_out_crd_sender, bi_out_crd_receiver) = parent.bounded(chan_size);
     let (bi_in_ref_sender, bi_in_ref_receiver) = parent.bounded(chan_size);
-    // let (_bc_bi_in_ref_sender, _bc_bi_in_ref_receiver) = parent.bounded(chan_size);
-    // let (_bc1_bi_in_ref_sender, _bc1_bi_in_ref_receiver) =
-    //     parent.bounded(chan_size);
 
     let b_gen = GeneratorContext::new(
         || token_vec!(u32; u32; 0, "D").into_iter(),
@@ -120,20 +116,13 @@ fn test_par_matmul_ijk() {
     };
     let cj_rdscanner = CompressedCrdRdScan::new(cj_data, c0_seg, c0_crd);
 
-    // let (bc_cj_out_ref_sender, bc_cj_out_ref_receiver) = parent.bounded(chan_size);
     let (bc1_cj_out_ref_sender, bc1_cj_out_ref_receiver) = parent.bounded(chan_size);
     let (bc2_cj_out_ref_sender, bc2_cj_out_ref_receiver) = parent.bounded(chan_size);
-    // let (bc3_cj_out_ref_sender, bc3_cj_out_ref_receiver) = parent.bounded(chan_size);
+
     let mut broadcast1 = BroadcastContext::new(cj_out_ref_receiver);
-    // broadcast1.add_target(bc_cj_out_ref_sender);
+
     broadcast1.add_target(bc1_cj_out_ref_sender);
     broadcast1.add_target(bc2_cj_out_ref_sender);
-    // broadcast1.add_target(bc3_cj_out_ref_sender);
-
-    // let (bk_out_crd_sender1, bk_out_crd_receiver1) = parent.bounded(chan_size);
-    // let (bk_out_crd_sender2, bk_out_crd_receiver2) = parent.bounded(chan_size);
-    // let (ck_out_crd_sender1, ck_out_crd_receiver1) = parent.bounded(chan_size);
-    // let (ck_out_crd_sender2, ck_out_crd_receiver2) = parent.bounded(chan_size);
 
     // repeatsiggen
     let (out_repsig_j_sender, out_repsig_j_receiver) = parent.bounded(chan_size);
@@ -152,15 +141,6 @@ fn test_par_matmul_ijk() {
     };
     let bj_repeat = Repeat::new(bj_repeat_data);
 
-    // let (bk_out_ref_sender1, bk_out_ref_receiver1) = parent.bounded(chan_size);
-    // let (bk_out_ref_sender2, bk_out_ref_receiver2) = parent.bounded(chan_size);
-    // let (ck_out_ref_sender1, ck_out_ref_receiver1) = parent.bounded(chan_size);
-    // let (ck_out_ref_sender2, ck_out_ref_receiver2) = parent.bounded(chan_size);
-
-    // let mut scat = Scatter::new(bk_out_crd_receiver);
-    // scat.add_target(bj_out_crd_sender1);
-    // scat.add_target(bj_out_crd_sender2);
-
     let (bj_out_ref_sender1, bj_out_ref_receiver1) = parent.bounded(chan_size);
     let (bj_out_ref_sender2, bj_out_ref_receiver2) = parent.bounded(chan_size);
     let (bj_out_ref_sender3, bj_out_ref_receiver3) = parent.bounded(chan_size);
@@ -171,10 +151,6 @@ fn test_par_matmul_ijk() {
     scat1.add_target(bj_out_ref_sender2);
     scat1.add_target(bj_out_ref_sender3);
     scat1.add_target(bj_out_ref_sender4);
-
-    // let mut scat2 = Scatter::new(ck_out_crd_receiver);
-    // scat2.add_target(cj_out_crd_sender1);
-    // scat2.add_target(cj_out_crd_sender2);
 
     let (cj_out_ref_sender1, cj_out_ref_receiver1) = parent.bounded(chan_size);
     let (cj_out_ref_sender2, cj_out_ref_receiver2) = parent.bounded(chan_size);
@@ -460,10 +436,9 @@ fn test_par_matmul_ijk() {
     // fiberwrite_Xvals
     let xvals = ValsWrScan::<f32, u32>::new(out_final_val_receiver);
 
-    // parent.add_child(scat);
     parent.add_child(scat1);
     parent.add_child(scat2);
-    // parent.add_child(scat3);
+
     parent.add_child(mul1);
     parent.add_child(red1);
     parent.add_child(red2);
@@ -523,10 +498,4 @@ fn test_par_matmul_ijk() {
             .unwrap(),
     );
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
-
-    // dbg!(x0_wrscanner.crd_arr);
-    // dbg!(x1_wrscanner.crd_arr);
-    // dbg!(xvals.out_val);
-
-    // let fil = formatted_dir.to_str().unwrap();
 }

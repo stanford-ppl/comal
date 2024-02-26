@@ -428,11 +428,9 @@ fn test_par_multihead_attention<'a, ValType>(
     let mut scat4 = Scatter::new(bc2_qk_out_crd_receiver);
 
     let (out_final_val_sender, out_final_val_receiver) = parent.bounded(chan_size);
-    // let (out_final_ocrd_sender, out_final_ocrd_receiver) = parent.bounded(chan_size);
     let (out_final_icrd_sender, out_final_icrd_receiver) = parent.bounded(chan_size);
     let mut gat1 = Gather::new(out_final_val_sender);
     let mut gat2 = Gather::new(out_final_icrd_sender);
-    // let mut gat3 = Gather::new(out_final_ocrd_sender);
     for _ in 0..par_factor {
         let (chunk_qk_ref_sender1, chunk_qk_ref_receiver1) = parent.bounded(chan_size);
         let (chunk_vk_ref_sender1, chunk_vk_ref_receiver1) = parent.bounded(chan_size);
@@ -489,7 +487,6 @@ fn test_par_multihead_attention<'a, ValType>(
         };
         let intersect_l = Intersect::new(intersectl_data);
         parent.add_child(intersect_l);
-        // dbg!(intersect_l.id());
 
         let (bc_intersectl_out_crd_sender, bc_intersectl_out_crd_receiver) =
             parent.bounded(chan_size);
@@ -577,7 +574,6 @@ fn test_par_multihead_attention<'a, ValType>(
         };
         let intersect_m = Intersect::new(intersectm_data);
         parent.add_child(intersect_m);
-        // dbg!(intersect_m.id());
 
         let (bc_km_out_ref_sender, bc_km_out_ref_receiver) = parent.bounded(chan_size);
         let (bc1_km_out_ref_sender, bc1_km_out_ref_receiver) = parent.bounded(chan_size);
@@ -618,7 +614,6 @@ fn test_par_multihead_attention<'a, ValType>(
 
         let (intersectm3_out_crd_sender, intersectm3_out_crd_receiver) =
             parent.bounded(softmax_chan_size);
-        // let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
         let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
             parent.bounded(softmax_chan_size);
         let (intersectm3_out_ref2_sender, intersectm3_out_ref2_receiver) =
@@ -809,7 +804,6 @@ fn test_par_multihead_attention<'a, ValType>(
         let spacc_data = Spacc1Data::<u32, ValType, u32> {
             in_crd_outer: drop_out_icrd_receiver,
             in_crd_inner: bc1_intersectm3_out_crd_receiver,
-            // in_val: bc1_exp_out_receiver,
             in_val: mul2_out_receiver,
             out_val: out_spacc_val_sender,
             out_crd_inner: out_spacc_icrd_sender,
@@ -827,7 +821,6 @@ fn test_par_multihead_attention<'a, ValType>(
     parent.add_child(scat4);
     parent.add_child(gat1);
     parent.add_child(gat2);
-    // parent.add_child(gat3);
 
     // fiberwrite_X0
     let x0_wrscanner = CompressedWrScan::new(intersecti2_out_crd_receiver);
@@ -843,12 +836,11 @@ fn test_par_multihead_attention<'a, ValType>(
 
     // fiberwrite_X3
     let x3_wrscanner = CompressedWrScan::new(out_final_icrd_receiver);
-    // let x3_wrscanner = CompressedWrScan::new(out_spacc_icrd_receiver);
+
     parent.add_child(x3_wrscanner);
 
     // fiberwrite_Xvals
     let xvals = ValsWrScan::<ValType, u32>::new(out_final_val_receiver);
-    // let xvals = ValsWrScan::<f32, u32>::new(out_spacc_val_receiver);
     parent.add_child(xvals);
     let initialized = parent
         .initialize(
@@ -873,7 +865,7 @@ pub fn mha_par_benchmark_large(c: &mut Criterion) {
     const SOFTMAX_CHAN_SIZE: usize = 1 << 15;
     let mut group = c.benchmark_group("mha");
     group.sample_size(10);
-    // let data = load_data::<f32>("tensor4_mha");
+
     let with_flavor = true;
 
     let dir_lst = vec![
@@ -969,26 +961,6 @@ pub fn mha_flavor_benchmark_large(c: &mut Criterion) {
     }
     group.finish();
 }
-
-// pub fn mha_par_bench_uneval(c: &mut Criterion) {
-//     const SOFTMAX_CHAN_SIZE: usize = 1 << 15;
-//     const CHAN_SIZE: usize = 32;
-//     let data = load_data::<Unevaluated<f32>>("tensor4_mha");
-//     let mut group = c.benchmark_group("MHA_eval");
-//     group.sample_size(10);
-//     group.bench_with_input(BenchmarkId::from_parameter(false), &data, |b, data| {
-//         b.iter_with_large_drop(move || {
-//             test_par_multihead_attention(
-//                 data.clone(),
-//                 CHAN_SIZE,
-//                 SOFTMAX_CHAN_SIZE,
-//                 32,
-//                 Unevaluated::default(),
-//             )
-//         });
-//     });
-//     group.finish();
-// }
 
 criterion_group!(sam_benches, mha_flavor_benchmark_large,);
 criterion_main!(sam_benches);

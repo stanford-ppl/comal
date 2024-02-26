@@ -51,7 +51,7 @@ where
                 .peek_next(&self.time)
                 .unwrap();
             let mut has_crd = false;
-            // let mut prev_ocrd_stkn = false;
+
             match ocrd.data.clone() {
                 Token::Val(val) => loop {
                     let icrd = self
@@ -84,8 +84,7 @@ where
                                     .enqueue(&self.time, chan_elem)
                                     .unwrap();
                             }
-                            // has_crd = false;
-                            // prev_ocrd_stkn = false;
+
                             self.crd_drop_data.in_crd_outer.dequeue(&self.time).unwrap();
                             break;
                         }
@@ -106,19 +105,18 @@ where
                         .unwrap();
                     // if prev_ocrd_stkn {
                     //     let icrd =
-                    //         self.crd_drop_data.in_crd_inner.dequeue(&self.time).unwrap();
+
                     //     let chan_elem =
-                    //         ChannelElement::new(self.time.tick() + 1, icrd.data.clone());
+
                     //     enqueue(
                     //         &mut self.time,
                     //         &mut self.crd_drop_data.out_crd_inner,
                     //         chan_elem,
                     //     )
-                    //     .unwrap();
+
                     // } else {
                     self.crd_drop_data.in_crd_outer.dequeue(&self.time).unwrap();
                     // }
-                    // prev_ocrd_stkn = true;
                 }
                 Token::Done => {
                     let icrd = self.crd_drop_data.in_crd_inner.dequeue(&self.time).unwrap();
@@ -185,8 +183,7 @@ where
             match self.crd_hold_data.in_crd_inner.dequeue(&self.time) {
                 Ok(curr_in) => {
                     let curr_ocrd = out_ocrd.unwrap().data.clone();
-                    // dbg!(curr_in.data.clone());
-                    // dbg!(curr_ocrd.clone());
+
                     let in_channel_elem =
                         ChannelElement::new(self.time.tick() + 1, curr_in.data.clone());
                     self.crd_hold_data
@@ -372,13 +369,12 @@ mod tests {
         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-        let (out_icrd_sender, _out_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
 
         let crd_hold_data = CrdManagerData::<u32, u32> {
             in_crd_outer: in_ocrd_receiver,
             in_crd_inner: in_icrd_receiver,
             out_crd_outer: out_ocrd_sender,
-            out_crd_inner: out_icrd_sender,
+            out_crd_inner: parent.void(),
         };
 
         let drop = CrdHold::new(crd_hold_data);

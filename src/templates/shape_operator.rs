@@ -69,20 +69,12 @@ where
                             }
                         }
                         Token::Stop(_) => {
-                            match curr_ocrd.clone() {
-                                Token::Stop(stkn) => {
-                                    let channel_elem = ChannelElement::new(
-                                        self.time.tick() + 1,
-                                        Token::<ValType, StopType>::Stop(stkn),
-                                    );
-                                    self.flatten_data
-                                        .out_crd
-                                        .enqueue(&self.time, channel_elem)
-                                        .unwrap();
-                                }
-                                _ => (), // _ => {
-                                         // panic!("Should be a stop token for ocrd");
-                                         // }
+                            if let stkn @ Token::Stop(_) = curr_ocrd.clone() {
+                                let channel_elem = ChannelElement::new(self.time.tick() + 1, stkn);
+                                self.flatten_data
+                                    .out_crd
+                                    .enqueue(&self.time, channel_elem)
+                                    .unwrap();
                             }
                             self.flatten_data.in_crd_outer.dequeue(&self.time).unwrap();
                         }
@@ -107,57 +99,61 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         context::{checker_context::CheckerContext, generator_context::GeneratorContext},
-//         simulation::Program,
-//         templates::sam::primitive::Token,
-//         token_vec,
-//     };
+#[cfg(test)]
+mod tests {
+    use dam::simulation::ProgramBuilder;
+    use dam::utility_contexts::CheckerContext;
+    use dam::utility_contexts::GeneratorContext;
 
-//     use super::Flatten;
-//     use super::FlattenData;
+    use crate::templates::primitive::Token;
+    use crate::token_vec;
 
-//     #[test]
-//     fn flatten_2d_test() {
-//         let in_ocrd = || token_vec!(u32; u32; 0, 2, 3, "S0", "D").into_iter();
-//         let in_icrd =
-//             || token_vec!(u32; u32; 0, 2, 3, "S0", 9, 11, "S0", 12, "S1", "D").into_iter();
-//         let out_ocrd = || token_vec!(u32; u32; 0, 2, 3, 9, 11, 12, "S0", "D").into_iter();
-//         flatten_test(in_ocrd, in_icrd, out_ocrd);
-//     }
+    use super::Flatten;
+    use super::FlattenData;
 
-//     fn flatten_test<IRT1, IRT2, ORT>(
-//         in_ocrd: fn() -> IRT1,
-//         in_icrd: fn() -> IRT2,
-//         out_crd: fn() -> ORT,
-//     ) where
-//         IRT1: Iterator<Item = Token<u32, u32>> + 'static,
-//         IRT2: Iterator<Item = Token<u32, u32>> + 'static,
-//         ORT: Iterator<Item = Token<u32, u32>> + 'static,
-//     {
-//         let mut parent = ProgramBuilder::default();
-//         let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
-//         let (out_crd_sender, out_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
+    //TODO(lrubens) please fix the flatten test.
+    #[ignore]
+    #[test]
+    fn flatten_2d_test() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 2, 3, "S0", "D").into_iter();
+        let in_icrd =
+            || token_vec!(u32; u32; 0, 2, 3, "S0", 9, 11, "S0", 12, "S1", "D").into_iter();
+        let out_ocrd = || token_vec!(u32; u32; 0, 2, 3, 9, 11, 12, "S0", "D").into_iter();
+        flatten_test(in_ocrd, in_icrd, out_ocrd);
+    }
 
-//         let crd_drop_data = FlattenData::<u32, u32> {
-//             in_crd_outer: in_ocrd_receiver,
-//             in_crd_inner: in_icrd_receiver,
-//             out_crd: out_crd_sender,
-//         };
+    fn flatten_test<IRT1, IRT2, ORT>(
+        in_ocrd: fn() -> IRT1,
+        in_icrd: fn() -> IRT2,
+        out_crd: fn() -> ORT,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (in_icrd_sender, in_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_crd_sender, out_crd_receiver) = parent.unbounded::<Token<u32, u32>>();
 
-//         let flat = Flatten::new(crd_drop_data, 4);
-//         let ocrd_gen = GeneratorContext::new(in_ocrd, in_ocrd_sender);
-//         let icrd_gen = GeneratorContext::new(in_icrd, in_icrd_sender);
-//         let out_crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
+        let crd_drop_data = FlattenData::<u32, u32> {
+            in_crd_outer: in_ocrd_receiver,
+            in_crd_inner: in_icrd_receiver,
+            out_crd: out_crd_sender,
+        };
 
-//         parent.add_child(ocrd_gen);
-//         parent.add_child(icrd_gen);
-//         parent.add_child(out_crd_checker);
-//         parent.add_child(flat);
-//         parent.init();
-//         parent.run();
-//     }
-// }
+        let flat = Flatten::new(crd_drop_data, 4);
+        let ocrd_gen = GeneratorContext::new(in_ocrd, in_ocrd_sender);
+        let icrd_gen = GeneratorContext::new(in_icrd, in_icrd_sender);
+        let out_crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
+
+        parent.add_child(ocrd_gen);
+        parent.add_child(icrd_gen);
+        parent.add_child(out_crd_checker);
+        parent.add_child(flat);
+        parent
+            .initialize(Default::default())
+            .unwrap()
+            .run(Default::default());
+    }
+}

@@ -1,7 +1,5 @@
+use std::ops::Deref;
 
-use std::{fs, path::Path};
-
-use comal::templates::tensor::{PrimitiveType, Tensor};
 use dam::utility_contexts::*;
 
 use comal::templates::alu::make_alu;
@@ -11,54 +9,54 @@ use comal::templates::joiner::{CrdJoinerData, Union};
 use comal::templates::primitive::Token;
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 
-use comal::config::Data;
-use comal::templates::utils::{read_inputs, read_inputs_vectorized};
 use dam::simulation::*;
 use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
-use ndarray::Ix1;
 
-type VT = Tensor<'static, f32, Ix1, 2>;
-// type VT = f32;
-// type CT = u32;
-// type ST = u32;
-// type CoordType = Token<CT, ST>;
-// type RefType = Token<CT, ST>;
-// type ValType = Token<VT, ST>;
+type VT = f32;
+type CT = u32;
 
 #[test]
 fn test_mat_elemadd() {
-    let test_name = "mat_elemadd_vec";
-    let filename = home::home_dir().unwrap().join("sam_config.toml");
-    let contents = fs::read_to_string(filename).unwrap();
-    let data: Data = toml::from_str(&contents).unwrap();
-    let formatted_dir = data.sam_config.sam_path;
-    let base_path = Path::new(&formatted_dir).join(test_name);
-    let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
-    let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
-    let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
-    let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
-    let b_vals_filename = base_path.join("tensor_B_mode_vals");
-    let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
-    let c0_crd_filename = base_path.join("tensor_C_mode_0_crd");
-    let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
-    let c1_crd_filename = base_path.join("tensor_C_mode_1_crd");
-    let c_vals_filename = base_path.join("tensor_C_mode_vals");
+    const TEST_SHAPE: &[usize] = &[10, 10];
+    const P_NONZERO: f64 = 0.4;
+    let tensor_b = comal::utils::SparseTree::random(
+        TEST_SHAPE,
+        P_NONZERO,
+        &mut rand::thread_rng(),
+        &rand::distributions::Uniform::new(0.0f32, 1000.0f32),
+    );
 
-    let b0_seg = read_inputs::<u32>(&b0_seg_filename);
-    let b0_crd = read_inputs::<u32>(&b0_crd_filename);
-    let b1_seg = read_inputs::<u32>(&b1_seg_filename);
-    let b1_crd = read_inputs::<u32>(&b1_crd_filename);
-    // let b_vals = read_inputs::<VT>(&b_vals_filename);
-    let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new());
-    let c0_seg = read_inputs::<u32>(&c0_seg_filename);
-    let c0_crd = read_inputs::<u32>(&c0_crd_filename);
-    let c1_seg = read_inputs::<u32>(&c1_seg_filename);
-    let c1_crd = read_inputs::<u32>(&c1_crd_filename);
-    // let c_vals = read_inputs::<VT>(&c_vals_filename);
-    let c_vals = read_inputs_vectorized(&c_vals_filename, PrimitiveType::<VT>::new());
+    let tensor_c = comal::utils::SparseTree::random(
+        TEST_SHAPE,
+        P_NONZERO,
+        &mut rand::thread_rng(),
+        &rand::distributions::Uniform::new(0.0f32, 1000.0f32),
+    );
+
+    let b_csf = tensor_b.to_csf();
+    let b0_seg = vec![0 as CT, tensor_b.num_nonzero() as CT];
+    let b0_crd = b_csf.outer_levels[0].ids.clone();
+    let b1_seg = b_csf.outer_levels[0]
+        .payload
+        .iter()
+        .map(|x| *x as CT)
+        .collect();
+    let b1_crd = b_csf.inner_level.ids;
+    let b_vals = b_csf.inner_level.payload;
+
+    let c_csf = tensor_c.to_csf();
+    let c0_seg = vec![0 as CT, tensor_c.num_nonzero() as CT];
+    let c0_crd = c_csf.outer_levels[0].ids.clone();
+    let c1_seg = c_csf.outer_levels[0]
+        .payload
+        .iter()
+        .map(|x| *x as CT)
+        .collect();
+    let c1_crd = c_csf.inner_level.ids;
+    let c_vals = c_csf.inner_level.payload;
 
     let chan_size = 4096;
 
@@ -181,6 +179,8 @@ fn test_mat_elemadd() {
 
     // fiberwrite_Xvals
     let xvals = ValsWrScan::<VT, u32>::new(add_out_receiver);
+    let out_vals = xvals.out_val.clone();
+
     parent.add_child(xvals);
 
     parent.add_child(b_gen);
@@ -207,15 +207,10 @@ fn test_mat_elemadd() {
 
     let executed = initialized.run(
         RunOptionsBuilder::default()
-            .mode(RunMode::Simple).logging(LoggingOptions::Mongo(
-                    MongoOptionsBuilder::default()
-                        .db("matadd".to_string())
-                        .uri("mongodb://127.0.0.1:27017".to_string())
-                        .build()
-                        .unwrap(),
-                ))
+            .mode(RunMode::Simple)
             .build()
             .unwrap(),
     );
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    dbg!(out_vals.lock().unwrap().deref());
 }

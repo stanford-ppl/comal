@@ -5,7 +5,7 @@ use comal::{
     proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph},
 };
 use criterion::{criterion_group, criterion_main, BenchmarkGroup, BenchmarkId, Criterion};
-use dam::simulation::{InitializationOptionsBuilder, RunMode, RunOptionsBuilder};
+use dam::simulation::InitializationOptionsBuilder;
 use prost::Message;
 
 fn bench_proto<M: criterion::measurement::Measurement>(
@@ -17,7 +17,7 @@ fn bench_proto<M: criterion::measurement::Measurement>(
     let contents = fs::read_to_string(config_file).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
-    let base_path = Path::new(&formatted_dir).join(&data_dir_name);
+    let base_path = Path::new(&formatted_dir).join(data_dir_name);
 
     let comal_contents = fs::read(base_path.join(proto_filename)).unwrap();
     let comal_graph = ComalGraph::decode(comal_contents.as_slice()).unwrap();
@@ -29,10 +29,8 @@ fn bench_proto<M: criterion::measurement::Measurement>(
             |b, flavor| {
                 b.iter_batched(
                     || {
-                        let parent = parse_proto(comal_graph.clone(), base_path.clone());
-                        // parent.set_inference(*flavor);
-                        // parent.init();
-                        // parent
+                        let parent =
+                            parse_proto(comal_graph.clone(), base_path.clone(), Default::default());
                         parent
                             .initialize(
                                 InitializationOptionsBuilder::default()
@@ -43,12 +41,7 @@ fn bench_proto<M: criterion::measurement::Measurement>(
                             .unwrap()
                     },
                     |parent| {
-                        parent.run(
-                            RunOptionsBuilder::default()
-                                .mode(RunMode::FIFO)
-                                .build()
-                                .unwrap(),
-                        );
+                        parent.run(Default::default());
                     },
                     criterion::BatchSize::LargeInput,
                 );
@@ -78,7 +71,8 @@ fn bench_proto_sweep<M: criterion::measurement::Measurement>(
                         let comal_contents =
                             fs::read(base_path.join(proto_filename.clone())).unwrap();
                         let comal_graph = ComalGraph::decode(comal_contents.as_slice()).unwrap();
-                        let parent = parse_proto(comal_graph.clone(), base_path.clone());
+                        let parent =
+                            parse_proto(comal_graph.clone(), base_path.clone(), Default::default());
                         parent
                             .initialize(
                                 InitializationOptionsBuilder::default()
@@ -89,12 +83,7 @@ fn bench_proto_sweep<M: criterion::measurement::Measurement>(
                             .unwrap()
                     },
                     |parent| {
-                        parent.run(
-                            RunOptionsBuilder::default()
-                                .mode(RunMode::FIFO)
-                                .build()
-                                .unwrap(),
-                        );
+                        parent.run(Default::default());
                     },
                     criterion::BatchSize::LargeInput,
                 );
@@ -146,8 +135,8 @@ pub fn bench_matmul_sweep(c: &mut Criterion) {
         "matmul_100",
         "matmul_200",
         "matmul_300",
-        // "matmul_400",
-        // "matmul_500",
+        "matmul_400",
+        "matmul_500",
     ];
     bench_proto_sweep(&mut group, dir_lst, proto_filename);
     group.finish();
