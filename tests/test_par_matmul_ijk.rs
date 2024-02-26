@@ -19,6 +19,8 @@ use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
+
+#[ignore = "Missing input files"]
 #[test]
 fn test_par_matmul_ijk() {
     let test_name = "mat_elemadd";

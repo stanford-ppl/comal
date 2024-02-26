@@ -18,6 +18,12 @@ pub struct CompressedCrdRdScanConfig {
 
     /// Initiation interval of the output pipeline -- the delay between consecutive outputs in the same output block
     pub sequential_interval: u64,
+
+    /// Pipeline bubble size when starting a new row when reading from memory
+    pub miss_latency: u64,
+
+    /// Size of each row
+    pub row_size: usize,
 }
 
 impl Default for CompressedCrdRdScanConfig {
@@ -28,6 +34,8 @@ impl Default for CompressedCrdRdScanConfig {
             initial_delay: 0,
             output_latency: 1,
             sequential_interval: 1,
+            miss_latency: 0,
+            row_size: 4,
         }
     }
 }

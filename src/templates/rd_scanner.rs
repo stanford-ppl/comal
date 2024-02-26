@@ -391,12 +391,12 @@ where
 
     fn run(&mut self) {
         let factor = self.timing_config.data_load_factor;
-
         let seg_arr_len = self.seg_arr.len() as f64 * factor;
         let crd_arr_len = self.crd_arr.len() as f64 * factor;
         self.time.incr_cycles(seg_arr_len.ceil() as u64);
         self.time.incr_cycles(crd_arr_len.ceil() as u64);
         self.time.incr_cycles(self.timing_config.startup_delay);
+        let mut seg_initiated = false;
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -405,17 +405,41 @@ where
                         let mut curr_addr = self.seg_arr[idx].clone();
                         let stop_addr = self.seg_arr[idx + 1].clone();
                         self.time.incr_cycles(self.timing_config.initial_delay);
+                        let mut initiated = true;
+
+                        let mut start_seg = 0;
+                        if seg_initiated {
+                            start_seg = idx;
+                            seg_initiated = false;
+                        }
+
+                        if idx - start_seg >= self.timing_config.row_size {
+                            seg_initiated = true;
+
+                            self.time.incr_cycles(self.timing_config.miss_latency);
+                        }
+
                         while curr_addr < stop_addr {
+                            let mut start_rd_addr = 0;
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
                             let coord = self.crd_arr[read_addr].clone();
                             let curr_time = self.time.tick();
+                            if initiated {
+                                start_rd_addr = read_addr;
+                                initiated = false;
+                            }
+                            let mut final_rd_latency = self.timing_config.output_latency;
+                            if read_addr - start_rd_addr >= self.timing_config.row_size {
+                                initiated = true;
 
+                                final_rd_latency = self.timing_config.miss_latency;
+                            }
                             self.rd_scan_data
                                 .out_crd
                                 .enqueue(
                                     &self.time,
                                     ChannelElement::new(
-                                        curr_time + self.timing_config.output_latency,
+                                        curr_time + final_rd_latency,
                                         super::primitive::Token::Val(coord),
                                     ),
                                 )
@@ -425,7 +449,7 @@ where
                                 .enqueue(
                                     &self.time,
                                     ChannelElement::new(
-                                        curr_time + self.timing_config.output_latency,
+                                        curr_time + final_rd_latency,
                                         super::primitive::Token::Val(curr_addr.clone()),
                                     ),
                                 )
@@ -443,10 +467,10 @@ where
                                 self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
                                 Token::Stop(stop_tkn + 1)
                             } // Token::Empty => {
-
+                              //     panic!("Invalid empty inside peek");
                               // }
                         };
-
+                        // dbg!(output);
                         let curr_time = self.time.tick();
                         self.rd_scan_data
                             .out_crd
@@ -507,7 +531,7 @@ where
                             .out_ref
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
-
+                        // dbg!(Token::<ValType, StopType>::Done);
                         return;
                     }
                     Token::Empty => {

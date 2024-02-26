@@ -22,6 +22,7 @@ use comal::token_vec;
 
 type VT = f32;
 
+#[ignore = "Missing input files"]
 #[test]
 fn test_matmul_ijk() {
     let test_name = "matmul_ijk";

@@ -100,6 +100,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_from_proto<'a>(
     comal_graph: ComalGraph,
     base_path: PathBuf,

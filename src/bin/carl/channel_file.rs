@@ -26,7 +26,7 @@ impl ChannelFile {
         self.payload
             .split(',')
             .map(|s| s.trim())
-            .map(|substr| conv(substr))
+            .map(conv)
             .collect()
     }
 }
