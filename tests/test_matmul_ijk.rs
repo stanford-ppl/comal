@@ -7,13 +7,15 @@ use comal::templates::accumulator::{Reduce, ReduceData};
 use comal::templates::alu::make_alu;
 use comal::templates::array::{Array, ArrayData};
 
+use comal::templates::crd_manager::{CrdDrop, CrdDropData, CrdManagerData};
 use comal::templates::joiner::{CrdJoinerData, Intersect};
 use comal::templates::primitive::{Repsiggen, Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
+use comal::templates::stkn_dropper::StknDrop;
 
 use comal::config::Data;
-use comal::templates::utils::{read_inputs, read_inputs_vectorized};
+use comal::templates::utils::{read_inputs, write_output};
 use dam::simulation::*;
 use dam::templates::ops::*;
 
@@ -22,7 +24,6 @@ use comal::token_vec;
 
 type VT = f32;
 
-#[ignore = "Missing input files"]
 #[test]
 fn test_matmul_ijk() {
     let test_name = "matmul_ijk";
@@ -31,27 +32,27 @@ fn test_matmul_ijk() {
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
     let base_path = Path::new(&formatted_dir).join(test_name);
-    let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
-    let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
-    let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
-    let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
-    let b_vals_filename = base_path.join("tensor_B_mode_vals");
-    let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
-    let c0_crd_filename = base_path.join("tensor_C_mode_0_crd");
-    let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
-    let c1_crd_filename = base_path.join("tensor_C_mode_1_crd");
-    let c_vals_filename = base_path.join("tensor_C_mode_vals");
+    let b0_seg_filename = base_path.join("tensor_deg_inv_sqrt_mode_0_seg");
+    let b0_crd_filename = base_path.join("tensor_deg_inv_sqrt_mode_0_crd");
+    let b1_seg_filename = base_path.join("tensor_deg_inv_sqrt_mode_1_seg");
+    let b1_crd_filename = base_path.join("tensor_deg_inv_sqrt_mode_1_crd");
+    let b_vals_filename = base_path.join("tensor_deg_inv_sqrt_mode_vals");
+    let c0_seg_filename = base_path.join("tensor_input_adj_mode_1_seg");
+    let c0_crd_filename = base_path.join("tensor_input_adj_mode_1_crd");
+    let c1_seg_filename = base_path.join("tensor_input_adj_mode_0_seg");
+    let c1_crd_filename = base_path.join("tensor_input_adj_mode_0_crd");
+    let c_vals_filename = base_path.join("tensor_input_adj_mode_vals");
     let b0_seg = read_inputs::<u32>(&b0_seg_filename);
     let b0_crd = read_inputs::<u32>(&b0_crd_filename);
     let b1_seg = read_inputs::<u32>(&b1_seg_filename);
     let b1_crd = read_inputs::<u32>(&b1_crd_filename);
     // let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new());
-    let b_vals = read_inputs(&b_vals_filename);
+    let b_vals = read_inputs::<VT>(&b_vals_filename);
     let c0_seg = read_inputs::<u32>(&c0_seg_filename);
     let c0_crd = read_inputs::<u32>(&c0_crd_filename);
     let c1_seg = read_inputs::<u32>(&c1_seg_filename);
     let c1_crd = read_inputs::<u32>(&c1_crd_filename);
-    let c_vals = read_inputs(&c_vals_filename);
+    let c_vals = read_inputs::<VT>(&c_vals_filename);
 
     let chan_size = 32784;
 
@@ -76,9 +77,6 @@ fn test_matmul_ijk() {
     };
 
     let bi_rdscanner = CompressedCrdRdScan::new(bi_data, b0_seg, b0_crd);
-
-    // fiberwrite_X0
-    let x0_wrscanner = CompressedWrScan::new(bi_out_crd_receiver);
 
     // repeatsiggen
     let (bc_bi_out_ref_sender, bc_bi_out_ref_receiver) = parent.bounded(chan_size);
@@ -174,9 +172,6 @@ fn test_matmul_ijk() {
     };
     let intersect_k = Intersect::new(intersectk_data);
 
-    // fiberwrite_x1
-    let x1_wrscanner = CompressedWrScan::new(cj_out_crd_receiver);
-
     // arrayvals_b
     let (b_out_val_sender, b_out_val_receiver) = parent.bounded(chan_size);
     let arrayvals_b_data = ArrayData::<u32, VT, u32> {
@@ -202,9 +197,22 @@ fn test_matmul_ijk() {
         ALUMulOp(),
     );
 
+    let (crddrop_jk_inner_sender, crddrop_jk_inner_receiver) = parent.bounded(chan_size);
+    let (crddrop_jk_outer_sender, crddrop_jk_outer_receiver) = parent.bounded(chan_size);
+    let crddrop_jk_data = CrdDropData::<VT, u32, u32> {
+        in_crd_inner: mul_out_receiver,
+        in_crd_outer: cj_out_crd_receiver,
+        out_crd_inner: crddrop_jk_inner_sender,
+        out_crd_outer: crddrop_jk_outer_sender,
+    };
+    let crddrop_jk = CrdDrop::new(crddrop_jk_data);
+
+    let (stkn_drop_k_out_val_sender, stkn_drop_k_out_val_receiver) = parent.bounded(chan_size);
+    let stkn_drop_k = StknDrop::new(crddrop_jk_inner_receiver, stkn_drop_k_out_val_sender);
+
     let (out_val_sender, out_val_receiver) = parent.bounded(chan_size);
     let reduce_data = ReduceData::<VT, u32> {
-        in_val: mul_out_receiver,
+        in_val: stkn_drop_k_out_val_receiver,
         out_val: out_val_sender,
     };
     let red = Reduce::new(reduce_data);
@@ -212,7 +220,31 @@ fn test_matmul_ijk() {
     // fiberwrite_Xvals
     let xvals = ValsWrScan::<VT, u32>::new(out_val_receiver);
 
-    let val = xvals.out_val.clone();
+    let (crddrop_ij_inner_sender, crddrop_ij_inner_receiver) = parent.bounded(chan_size);
+    let (crddrop_ij_outer_sender, crddrop_ij_outer_receiver) = parent.bounded(chan_size);
+    let crddrop_ij_data = CrdDropData::<u32, u32, u32> {
+        in_crd_inner: crddrop_jk_outer_receiver,
+        in_crd_outer: bi_out_crd_receiver,
+        out_crd_inner: crddrop_ij_inner_sender,
+        out_crd_outer: crddrop_ij_outer_sender,
+    };
+    let crddrop_ij = CrdDrop::new(crddrop_ij_data);
+
+    let (stkn_drop_j_out_val_sender, stkn_drop_j_out_val_receiver) = parent.bounded(chan_size);
+    let stkn_drop_j = StknDrop::new(crddrop_ij_inner_receiver, stkn_drop_j_out_val_sender);
+
+    // fiberwrite_x1
+    // TODO: fix this
+    let x1_wrscanner = CompressedWrScan::new(stkn_drop_j_out_val_receiver);
+
+    // fiberwrite_X0
+    let x0_wrscanner = CompressedWrScan::new(crddrop_ij_outer_receiver);
+
+    let x_val = xvals.out_val.clone();
+    let x1_crd = x1_wrscanner.crd_arr.clone();
+    let x1_seg = x1_wrscanner.seg_arr.clone();
+    let x0_crd = x0_wrscanner.crd_arr.clone();
+    let x0_seg = x0_wrscanner.seg_arr.clone();
 
     parent.add_child(b_gen);
     parent.add_child(broadcast);
@@ -234,6 +266,10 @@ fn test_matmul_ijk() {
     parent.add_child(mul);
     parent.add_child(red);
     parent.add_child(xvals);
+    parent.add_child(crddrop_jk);
+    parent.add_child(crddrop_ij);
+    parent.add_child(stkn_drop_k);
+    parent.add_child(stkn_drop_j);
 
     let initialized = parent
         .initialize(
@@ -250,6 +286,15 @@ fn test_matmul_ijk() {
             .build()
             .unwrap(),
     );
-    dbg!(val);
+    let x0_seg_filename = base_path.join("tensor_X_mode_0_seg");
+    let x0_crd_filename = base_path.join("tensor_X_mode_0_crd");
+    let x1_seg_filename = base_path.join("tensor_X_mode_1_seg");
+    let x1_crd_filename = base_path.join("tensor_X_mode_1_crd");
+    let x_vals_filename = base_path.join("tensor_X_mode_vals");
+    write_output::<VT>(&x_vals_filename, x_val);
+    write_output::<u32>(&x0_seg_filename, x0_seg);
+    write_output::<u32>(&x0_crd_filename, x0_crd);
+    write_output::<u32>(&x1_seg_filename, x1_seg);
+    write_output::<u32>(&x1_crd_filename, x1_crd);
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }

@@ -1,9 +1,9 @@
+use dam::types::DAMType;
 use std::env;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
-
-use dam::types::DAMType;
+use std::sync::{Arc, Mutex};
 
 use super::tensor::Adapter;
 
@@ -34,4 +34,17 @@ where
         .flatten() // gets rid of Err from lines
         .flat_map(|line| line.parse::<T>()) // ignores Err variant from Result of str.parse
         .collect()
+}
+
+pub fn write_output<T>(file_path: &PathBuf, output_data: Arc<Mutex<Vec<T>>>)
+where
+    T: DAMType + std::str::FromStr,
+{
+    // get the lock for the output data
+    let output_data_locked = output_data.lock().unwrap();
+    let file = File::create(file_path).expect("Unable to open file");
+    let mut writer = BufWriter::new(file);
+    for i in output_data_locked.iter() {
+        write!(writer, "{:?}\n", *i).expect("Unable to write data");
+    }
 }

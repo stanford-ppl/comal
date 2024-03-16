@@ -8,7 +8,7 @@ use comal::templates::stkn_dropper::StknDrop;
 use comal::templates::accumulator::{Reduce, ReduceData, Spacc1, Spacc1Data};
 use comal::templates::alu::make_alu;
 use comal::templates::array::{Array, ArrayData};
-use comal::templates::crd_manager::{CrdDrop, CrdManagerData};
+use comal::templates::crd_manager::{CrdDrop, CrdManagerData, CrdDropData};
 use comal::templates::joiner::{CrdJoinerData, Intersect};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
@@ -753,7 +753,7 @@ pub fn run_mha<'a>(
 
             let (drop_out_icrd_sender, drop_out_icrd_receiver) = parent.bounded(long_chan_size);
 
-            let crd_drop_data = CrdManagerData::<u32, u32> {
+            let crd_drop_data = CrdDropData::<u32, u32, u32> {
                 in_crd_outer: chunk_qk_crd_receiver,
                 in_crd_inner: bc1_intersectl_out_crd_receiver,
                 out_crd_outer: parent.void(),
