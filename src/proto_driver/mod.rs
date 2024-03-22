@@ -365,7 +365,7 @@ pub fn build_from_proto<'a>(
                 ));
                 // root_receiver
             }
-            _ => todo!(),
+            // _ => todo!(),
         }
     }
 }

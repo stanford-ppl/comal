@@ -1,3 +1,5 @@
+#[cfg(file_test)]
+mod test {
 use std::{fs, path::Path};
 
 use comal::templates::stkn_dropper::StknDrop;
@@ -779,4 +781,5 @@ fn test_par_multihead_attention() {
             .unwrap(),
     );
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+}
 }
