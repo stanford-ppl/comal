@@ -42,56 +42,7 @@ where
 
     fn run(&mut self) {
         loop {
-            let in_ref = self.repeat_data.in_ref.peek_next(&self.time);
-            match self.repeat_data.in_repsig.dequeue(&self.time) {
-                Ok(curr_in) => {
-                    let curr_ref = in_ref.unwrap().data;
-                    match curr_in.data {
-                        Repsiggen::Repeat => {
-                            let channel_elem =
-                                ChannelElement::new(self.time.tick() + 1, curr_ref.clone());
-                            self.repeat_data
-                                .out_ref
-                                .enqueue(&self.time, channel_elem)
-                                .unwrap();
-                        }
-                        Repsiggen::Stop => {
-                            self.repeat_data.in_ref.dequeue(&self.time).unwrap();
-                            let next_tkn = self.repeat_data.in_ref.peek_next(&self.time).unwrap();
-                            let output: Token<ValType, StopType> =
-                                if let Token::Stop(stop_tkn) = next_tkn.data {
-                                    self.repeat_data.in_ref.dequeue(&self.time).unwrap();
-                                    Token::Stop(stop_tkn + 1)
-                                } else {
-                                    Token::Stop(StopType::default())
-                                };
-                            let channel_elem =
-                                ChannelElement::new(self.time.tick() + 1, output.clone());
-                            self.repeat_data
-                                .out_ref
-                                .enqueue(&self.time, channel_elem)
-                                .unwrap();
-                        }
-                        Repsiggen::Done => {
-                            if let Token::Done = curr_ref {
-                                let channel_elem =
-                                    ChannelElement::new(self.time.tick() + 1, Token::Done);
-                                self.repeat_data
-                                    .out_ref
-                                    .enqueue(&self.time, channel_elem)
-                                    .unwrap();
-                            } else {
-                                panic!("Input reference and repeat signal must both be on Done");
-                            }
-                            return;
-                        }
-                    }
-                }
-                Err(_) => {
-                    panic!("Unexpected end of stream");
-                }
-            }
-            self.time.incr_cycles(1);
+            todo!("Implement me");
         }
     }
 }
