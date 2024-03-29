@@ -576,7 +576,6 @@ pub fn run_mha<'a>(
 
             let (intersectm3_out_crd_sender, intersectm3_out_crd_receiver) =
                 parent.bounded(long_chan_size);
-
             let (intersectm3_out_ref1_sender, intersectm3_out_ref1_receiver) =
                 parent.bounded(long_chan_size);
             let (intersectm3_out_ref2_sender, intersectm3_out_ref2_receiver) =
