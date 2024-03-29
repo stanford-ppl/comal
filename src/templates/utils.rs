@@ -44,7 +44,12 @@ where
     let output_data_locked = output_data.lock().unwrap();
     let file = File::create(file_path).expect("Unable to open file");
     let mut writer = BufWriter::new(file);
-    for i in output_data_locked.iter() {
-        write!(writer, "{:?}\n", *i).expect("Unable to write data");
+    let mut it = output_data_locked.iter().peekable();
+    while let Some(data) = it.next() {
+        if it.peek().is_none() {
+            write!(writer, "{:?}", data).expect("Unabel to wrtie data");
+        } else {
+            write!(writer, "{:?}\n", data).expect("Unable to write data");
+        }
     }
 }

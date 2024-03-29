@@ -11,7 +11,7 @@ use self::util::{get_repsig_id, AsStreamID};
 use super::templates::accumulator::{Reduce, ReduceData, Spacc1, Spacc1Data};
 use super::templates::alu::make_alu;
 use super::templates::array::{Array, ArrayData};
-use super::templates::crd_manager::{CrdDrop, CrdHold, CrdManagerData, CrdDropData};
+use super::templates::crd_manager::{CrdDrop, CrdHold, CrdManagerData};
 use super::templates::joiner::{CrdJoinerData, Intersect, Union};
 use super::templates::primitive::{Repsiggen, Token};
 use super::templates::rd_scanner::{CompressedCrdRdScan, RdScanData, UncompressedCrdRdScan};
@@ -313,7 +313,7 @@ pub fn build_from_proto<'a>(
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
                 let in_outer_crd = get_crd_id(&op.input_outer_crd);
 
-                let crd_drop_data = CrdDropData {
+                let crd_drop_data = CrdManagerData {
                     in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
                     in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
                     out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
