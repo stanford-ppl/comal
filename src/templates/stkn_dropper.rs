@@ -70,3 +70,43 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use dam::{simulation::*, utility_contexts::*};
+
+    use crate::{templates::primitive::Token, token_vec};
+
+    use super::StknDrop;
+    #[test]
+    fn stkn_drop_basic_test() {
+        let in_val = || token_vec!(u32; u32; "S0", "S0", "S0", 0, "S1", "D").into_iter();
+        let out_val = || token_vec!(u32; u32; 0, "S1", "D").into_iter();
+        stkn_drop_test(in_val, out_val);
+    }
+
+    fn stkn_drop_test<IRT1, ORT1>(in_val: fn() -> IRT1, out_val: fn() -> ORT1)
+    where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let chan_size = 4;
+
+        let mut parent = ProgramBuilder::default();
+        let (in_val_sender, in_val_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (out_val_sender, out_val_receiever) = parent.bounded::<Token<u32, u32>>(chan_size);
+
+        let stkn_drop = StknDrop::new(in_val_receiver, out_val_sender);
+        let in_val_gen = GeneratorContext::new(in_val, in_val_sender);
+        let out_val_checker = CheckerContext::new(out_val, out_val_receiever);
+
+        parent.add_child(in_val_gen);
+        parent.add_child(stkn_drop);
+        parent.add_child(out_val_checker);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
+}
