@@ -35,7 +35,7 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        let mut prev_stkn = false;
+        let mut prev_stkn = true;
         loop {
             let val_deq = self.in_val.dequeue(&self.time);
             match val_deq {
