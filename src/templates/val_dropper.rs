@@ -71,10 +71,10 @@ where
                     (Token::Val(val), Token::Val(_)) if val == ValType::default() => (),
                     (tkn1 @ Token::Stop(_), tkn2 @ Token::Stop(_))
                     | (tkn1 @ Token::Done, tkn2 @ Token::Done) => {
-                        if tkn1 != Token::Done && prev_stkn {
-                            prev_stkn = false;
-                            continue;
-                        }
+                        // if tkn1 != Token::Done && prev_stkn {
+                        //     prev_stkn = false;
+                        //     continue;
+                        // }
                         let val_chan_elem = ChannelElement::new(self.time.tick() + 1, tkn1.clone());
                         self.val_drop_data
                             .out_val
