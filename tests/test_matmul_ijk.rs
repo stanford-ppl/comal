@@ -45,12 +45,13 @@ fn test_matmul_ijk() {
     let b0_crd = read_inputs::<u32>(&b0_crd_filename);
     let b1_seg = read_inputs::<u32>(&b1_seg_filename);
     let b1_crd = read_inputs::<u32>(&b1_crd_filename);
-    let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new());
+    // let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new());
+    let b_vals = read_inputs(&b_vals_filename);
     let c0_seg = read_inputs::<u32>(&c0_seg_filename);
     let c0_crd = read_inputs::<u32>(&c0_crd_filename);
     let c1_seg = read_inputs::<u32>(&c1_seg_filename);
     let c1_crd = read_inputs::<u32>(&c1_crd_filename);
-    let c_vals = read_inputs_vectorized(&c_vals_filename, PrimitiveType::<VT>::new());
+    let c_vals = read_inputs(&c_vals_filename);
 
     let chan_size = 32784;
 
@@ -211,6 +212,8 @@ fn test_matmul_ijk() {
     // fiberwrite_Xvals
     let xvals = ValsWrScan::<VT, u32>::new(out_val_receiver);
 
+    let val = xvals.out_val.clone();
+
     parent.add_child(b_gen);
     parent.add_child(broadcast);
     parent.add_child(broadcast1);
@@ -247,5 +250,6 @@ fn test_matmul_ijk() {
             .build()
             .unwrap(),
     );
+    dbg!(val);
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
 }
