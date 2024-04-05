@@ -114,20 +114,21 @@ mod tests {
         // Declare channel size
         let chan_size = 8;
 
-        // TODO: Declare channels
+        //TODO: Declare channels
 
-        // TODO: Declare unary node with input and output channels and unary function
+        //TODO: Declare unary node with input and output channels and unary function
 
-        // TODO: Use generator context to initialize input stream of input channel
-        // TODO: Use checker context to check for correctness by checking content of unary output channel with expected output that is passed in
+        //TODO: Use generator context to initialize input stream of input channel
+        //TODO: Use checker context to check for correctness by checking content of unary output channel with expected output that is passed in
 
-        // TODO: Register contexts to program builder, program builder now owns all contexts to initialize and run
+        //TODO: Register contexts to program builder, program builder now owns all contexts to initialize and run
 
         // Initialize and run program using program builder 
+        let run_options = RunOptionsBuilder::default();
         let executed = parent
             .initialize(InitializationOptions::default())
             .unwrap()
-            .run(RunOptions::default());
+            .run(run_options.build().unwrap());
         dbg!(executed.elapsed_cycles());
     }
 }
