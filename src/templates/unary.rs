@@ -33,7 +33,7 @@ where
 impl<ValType, StopType> Context for UnaryMax<ValType, StopType>
 where
     ValType: DAMType + std::cmp::PartialEq + std::cmp::PartialOrd,
-    StopType: DAMType + std::ops::Add<u32, Output = StopType> + std::cmp::PartialEq,
+    StopType: DAMType + std::cmp::PartialEq,
 {
     fn init(&mut self) {}
     fn run(&mut self) {
@@ -93,10 +93,10 @@ mod tests {
         let out_val =
             || token_vec!(f32; u32; 0.0, 0.0, 0.0, 3.0, "S0", 0.0, 1.0, 2.0, 3.0, 4.0, "S1", "D").into_iter();
 
-        max_test(in_val, out_val, 0.0);
+        unary_max_test(in_val, out_val, 0.0);
     }
 
-    fn max_test<IRT, ORT>(in_val: fn() -> IRT, out_val: fn() -> ORT, input_scalar: f32)
+    fn unary_max_test<IRT, ORT>(in_val: fn() -> IRT, out_val: fn() -> ORT, input_scalar: f32)
     where
         IRT: Iterator<Item = Token<f32, u32>> + 'static,
         ORT: Iterator<Item = Token<f32, u32>> + 'static,

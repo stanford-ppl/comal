@@ -1,6 +1,5 @@
 use std::{fs, path::Path};
 
-use comal::templates::tensor::PrimitiveType;
 use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{Reduce, ReduceData};
@@ -13,7 +12,7 @@ use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 
 use comal::config::Data;
-use comal::templates::utils::{read_inputs, read_inputs_vectorized};
+use comal::templates::utils::read_inputs;
 use dam::simulation::*;
 use dam::templates::ops::*;
 
@@ -25,7 +24,7 @@ type VT = f32;
 #[ignore = "Missing input files"]
 #[test]
 fn test_matmul_ijk() {
-    let test_name = "matmul_ijk";
+    let test_name = "matadd_100";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
