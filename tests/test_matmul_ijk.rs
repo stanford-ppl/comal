@@ -2,8 +2,7 @@
 mod test {
     use std::{fs, path::Path};
 
-    use comal::templates::tensor::PrimitiveType;
-    use dam::utility_contexts::*;
+use dam::utility_contexts::*;
 
     use comal::templates::accumulator::{Reduce, ReduceData};
     use comal::templates::alu::make_alu;
@@ -14,46 +13,45 @@ mod test {
     use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
     use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 
-    use comal::config::Data;
-    use comal::templates::utils::{read_inputs, read_inputs_vectorized};
-    use dam::simulation::*;
-    use dam::templates::ops::*;
+use comal::config::Data;
+use comal::templates::utils::read_inputs;
+use dam::simulation::*;
+use dam::templates::ops::*;
 
     use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
     use comal::token_vec;
 
     type VT = f32;
 
-    #[ignore = "Missing input files"]
-    #[test]
-    fn test_matmul_ijk() {
-        let test_name = "matmul_ijk";
-        let filename = home::home_dir().unwrap().join("sam_config.toml");
-        let contents = fs::read_to_string(filename).unwrap();
-        let data: Data = toml::from_str(&contents).unwrap();
-        let formatted_dir = data.sam_config.sam_path;
-        let base_path = Path::new(&formatted_dir).join(test_name);
-        let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
-        let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
-        let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
-        let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
-        let b_vals_filename = base_path.join("tensor_B_mode_vals");
-        let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
-        let c0_crd_filename = base_path.join("tensor_C_mode_0_crd");
-        let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
-        let c1_crd_filename = base_path.join("tensor_C_mode_1_crd");
-        let c_vals_filename = base_path.join("tensor_C_mode_vals");
-        let b0_seg = read_inputs::<u32>(&b0_seg_filename);
-        let b0_crd = read_inputs::<u32>(&b0_crd_filename);
-        let b1_seg = read_inputs::<u32>(&b1_seg_filename);
-        let b1_crd = read_inputs::<u32>(&b1_crd_filename);
-        // let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new());
-        let b_vals = read_inputs(&b_vals_filename);
-        let c0_seg = read_inputs::<u32>(&c0_seg_filename);
-        let c0_crd = read_inputs::<u32>(&c0_crd_filename);
-        let c1_seg = read_inputs::<u32>(&c1_seg_filename);
-        let c1_crd = read_inputs::<u32>(&c1_crd_filename);
-        let c_vals = read_inputs(&c_vals_filename);
+#[ignore = "Missing input files"]
+#[test]
+fn test_matmul_ijk() {
+    let test_name = "matadd_100";
+    let filename = home::home_dir().unwrap().join("sam_config.toml");
+    let contents = fs::read_to_string(filename).unwrap();
+    let data: Data = toml::from_str(&contents).unwrap();
+    let formatted_dir = data.sam_config.sam_path;
+    let base_path = Path::new(&formatted_dir).join(test_name);
+    let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
+    let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
+    let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
+    let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
+    let b_vals_filename = base_path.join("tensor_B_mode_vals");
+    let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
+    let c0_crd_filename = base_path.join("tensor_C_mode_0_crd");
+    let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
+    let c1_crd_filename = base_path.join("tensor_C_mode_1_crd");
+    let c_vals_filename = base_path.join("tensor_C_mode_vals");
+    let b0_seg = read_inputs::<u32>(&b0_seg_filename);
+    let b0_crd = read_inputs::<u32>(&b0_crd_filename);
+    let b1_seg = read_inputs::<u32>(&b1_seg_filename);
+    let b1_crd = read_inputs::<u32>(&b1_crd_filename);
+    let b_vals = read_inputs(&b_vals_filename);
+    let c0_seg = read_inputs::<u32>(&c0_seg_filename);
+    let c0_crd = read_inputs::<u32>(&c0_crd_filename);
+    let c1_seg = read_inputs::<u32>(&c1_seg_filename);
+    let c1_crd = read_inputs::<u32>(&c1_crd_filename);
+    let c_vals = read_inputs(&c_vals_filename);
 
         let chan_size = 32784;
 
