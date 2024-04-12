@@ -1,6 +1,5 @@
 use std::{fs, path::Path};
 
-use comal::templates::tensor::PrimitiveType;
 use dam::utility_contexts::*;
 
 use comal::templates::accumulator::{Reduce, ReduceData};
@@ -15,7 +14,11 @@ use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use comal::templates::stkn_dropper::StknDrop;
 
 use comal::config::Data;
+<<<<<<< HEAD
 use comal::templates::utils::{read_inputs, write_output};
+=======
+use comal::templates::utils::read_inputs;
+>>>>>>> main
 use dam::simulation::*;
 use dam::templates::ops::*;
 
@@ -26,7 +29,7 @@ type VT = f32;
 
 #[test]
 fn test_matmul_ijk() {
-    let test_name = "matmul_ijk";
+    let test_name = "matadd_100";
     let filename = home::home_dir().unwrap().join("sam_config.toml");
     let contents = fs::read_to_string(filename).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
