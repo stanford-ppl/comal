@@ -6,7 +6,7 @@ use dam::{
     },
 };
 
-use crate::config::rd_scanner::CompressedCrdRdScanConfig;
+use crate::config::{joiner::IntersectConfig, rd_scanner::CompressedCrdRdScanConfig};
 
 #[derive(Args, Debug, Clone, Copy)]
 pub struct DamOptions {
@@ -45,11 +45,15 @@ pub struct SamOptionFiles {
     /// TOML file containing a [[CompressedRdScanConfig]]
     #[arg(long)]
     compressed_read_config: Option<String>,
+
+    #[arg(long)]
+    intersect_config: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SamOptions {
     pub compressed_read_config: CompressedCrdRdScanConfig,
+    pub intersect_config: IntersectConfig,
 }
 
 // Defining a read_or_default conversion from SamOptionFiles to SamOptions
@@ -57,6 +61,7 @@ impl From<&SamOptionFiles> for SamOptions {
     fn from(val: &SamOptionFiles) -> Self {
         SamOptions {
             compressed_read_config: val.try_into().unwrap(),
+            intersect_config: val.try_into().unwrap(),
         }
     }
 }
@@ -81,3 +86,4 @@ macro_rules! config_type {
 }
 
 config_type!(compressed_read_config, CompressedCrdRdScanConfig);
+config_type!(intersect_config, IntersectConfig);
