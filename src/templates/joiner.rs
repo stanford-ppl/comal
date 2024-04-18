@@ -1,3 +1,4 @@
+use crate::config::joiner::IntersectConfig;
 use dam::{context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
@@ -15,6 +16,8 @@ pub struct CrdJoinerData<ValType: Clone, StopType: Clone> {
 #[context_macro]
 pub struct Intersect<ValType: Clone, StopType: Clone> {
     intersect_data: CrdJoinerData<ValType, StopType>,
+
+    timing_config: IntersectConfig,
 }
 
 impl<ValType: DAMType, StopType: DAMType> Intersect<ValType, StopType>
@@ -24,6 +27,7 @@ where
     pub fn new(intersect_data: CrdJoinerData<ValType, StopType>) -> Self {
         let int = Intersect {
             intersect_data,
+            timing_config: Default::default(),
             context_info: Default::default(),
         };
         (int.intersect_data.in_crd1).attach_receiver(&int);
@@ -54,6 +58,7 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        self.time.incr_cycles(self.timing_config.startup_delay);
         loop {
             let crd1_deq = self.intersect_data.in_crd1.peek_next(&self.time);
             let crd2_deq = self.intersect_data.in_crd2.peek_next(&self.time);
@@ -72,16 +77,31 @@ where
                                     .out_crd
                                     .enqueue(
                                         &self.time,
-                                        ChannelElement::new(curr_time + 1, Token::Val(crd1)),
+                                        ChannelElement::new(
+                                            curr_time + self.timing_config.output_latency,
+                                            Token::Val(crd1),
+                                        ),
                                     )
                                     .unwrap();
                                 self.intersect_data
                                     .out_ref1
-                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(
+                                            curr_time + self.timing_config.output_latency,
+                                            ref1,
+                                        ),
+                                    )
                                     .unwrap();
                                 self.intersect_data
                                     .out_ref2
-                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(
+                                            curr_time + self.timing_config.output_latency,
+                                            ref2,
+                                        ),
+                                    )
                                     .unwrap();
                                 self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
@@ -91,10 +111,12 @@ where
                             (crd1, crd2) if crd1 < crd2 => {
                                 self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
+                                self.time.incr_cycles(self.timing_config.val_advance_delay);
                             }
                             (crd1, crd2) if crd1 > crd2 => {
                                 self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
+                                self.time.incr_cycles(self.timing_config.val_advance_delay);
                             }
                             (_, _) => {
                                 panic!("Unexpected case found in val comparison");
@@ -103,6 +125,7 @@ where
                         (Token::Val(_), Token::Stop(_)) => {
                             self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                             self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
+                            self.time.incr_cycles(self.timing_config.val_stop_delay);
                         }
                         (Token::Val(_), Token::Done) | (Token::Done, Token::Val(_)) => {
                             let curr_time = self.time.tick();
@@ -110,27 +133,37 @@ where
                                 .out_crd
                                 .enqueue(
                                     &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Done),
+                                    ChannelElement::new(
+                                        curr_time + self.timing_config.output_latency,
+                                        Token::Done,
+                                    ),
                                 )
                                 .unwrap();
                             self.intersect_data
                                 .out_ref1
                                 .enqueue(
                                     &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Done),
+                                    ChannelElement::new(
+                                        curr_time + self.timing_config.output_latency,
+                                        Token::Done,
+                                    ),
                                 )
                                 .unwrap();
                             self.intersect_data
                                 .out_ref2
                                 .enqueue(
                                     &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Done),
+                                    ChannelElement::new(
+                                        curr_time + self.timing_config.output_latency,
+                                        Token::Done,
+                                    ),
                                 )
                                 .unwrap();
                         }
                         (Token::Stop(_), Token::Val(_)) => {
                             self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
                             self.intersect_data.in_ref2.dequeue(&self.time).unwrap();
+                            self.time.incr_cycles(self.timing_config.val_stop_delay);
                         }
                         (Token::Stop(stkn1), Token::Stop(stkn2)) => {
                             assert_eq!(stkn1, stkn2);
@@ -139,16 +172,31 @@ where
                                 .out_crd
                                 .enqueue(
                                     &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn1)),
+                                    ChannelElement::new(
+                                        curr_time + self.timing_config.stop_latency,
+                                        Token::Stop(stkn1),
+                                    ),
                                 )
                                 .unwrap();
                             self.intersect_data
                                 .out_ref1
-                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        curr_time + self.timing_config.stop_latency,
+                                        ref1,
+                                    ),
+                                )
                                 .unwrap();
                             self.intersect_data
                                 .out_ref2
-                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        curr_time + self.timing_config.stop_latency,
+                                        ref2,
+                                    ),
+                                )
                                 .unwrap();
                             self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                             self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
@@ -158,8 +206,10 @@ where
                         (tkn @ Token::Empty, Token::Val(_))
                         | (Token::Val(_), tkn @ Token::Empty)
                         | (tkn @ Token::Done, Token::Done) => {
-                            let channel_elem =
-                                ChannelElement::new(self.time.tick() + 1, tkn.clone());
+                            let channel_elem = ChannelElement::new(
+                                self.time.tick() + self.timing_config.output_latency,
+                                tkn.clone(),
+                            );
                             self.intersect_data
                                 .out_crd
                                 .enqueue(&self.time, channel_elem.clone())
@@ -183,7 +233,8 @@ where
                     panic!("Reached unhandled case");
                 }
             }
-            self.time.incr_cycles(1);
+            self.time
+                .incr_cycles(self.timing_config.sequential_interval);
         }
     }
 }

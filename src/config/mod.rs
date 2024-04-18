@@ -1,4 +1,5 @@
 pub mod rd_scanner;
+pub mod joiner;
 
 use serde::Deserialize;
 
