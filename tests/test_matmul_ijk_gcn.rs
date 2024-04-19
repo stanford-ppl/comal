@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::{fs, path::PathBuf, env};
 
 use dam::utility_contexts::*;
 
@@ -12,6 +12,7 @@ use comal::templates::primitive::{Repsiggen, Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use comal::templates::stkn_dropper::StknDrop;
+use comal::templates::val_dropper::{ValDrop, ValDropData};
 
 use comal::config::Data;
 use comal::templates::utils::read_inputs;
@@ -21,31 +22,30 @@ use dam::templates::ops::*;
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 
+use float_cmp::approx_eq;
+
 type VT = f32;
 
-#[test]
-fn test_matmul_ijk() {
-    let test_name = "matadd_100";
-    let filename = home::home_dir().unwrap().join("sam_config.toml");
-    let contents = fs::read_to_string(filename).unwrap();
-    let data: Data = toml::from_str(&contents).unwrap();
-    let formatted_dir = data.sam_config.sam_path;
-    let base_path = Path::new(&formatted_dir).join(test_name);
-    let b0_seg_filename = base_path.join("tensor_deg_inv_sqrt_mode_0_seg");
-    let b0_crd_filename = base_path.join("tensor_deg_inv_sqrt_mode_0_crd");
-    let b1_seg_filename = base_path.join("tensor_deg_inv_sqrt_mode_1_seg");
-    let b1_crd_filename = base_path.join("tensor_deg_inv_sqrt_mode_1_crd");
-    let b_vals_filename = base_path.join("tensor_deg_inv_sqrt_mode_vals");
-    let c0_seg_filename = base_path.join("tensor_input_adj_mode_1_seg");
-    let c0_crd_filename = base_path.join("tensor_input_adj_mode_1_crd");
-    let c1_seg_filename = base_path.join("tensor_input_adj_mode_0_seg");
-    let c1_crd_filename = base_path.join("tensor_input_adj_mode_0_crd");
-    let c_vals_filename = base_path.join("tensor_input_adj_mode_vals");
+fn test_matmul_ijk_gcn(base_path: &PathBuf) {
+    let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
+    let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
+    let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
+    let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
+    let b_vals_filename = base_path.join("tensor_B_mode_vals");
+    let c0_seg_filename = base_path.join("tensor_C_mode_1_seg");
+    let c0_crd_filename = base_path.join("tensor_C_mode_1_crd");
+    let c1_seg_filename = base_path.join("tensor_C_mode_0_seg");
+    let c1_crd_filename = base_path.join("tensor_C_mode_0_crd");
+    let c_vals_filename = base_path.join("tensor_C_mode_vals");
+    let x0_seg_gold_filename = base_path.join("tensor_X_mode_0_seg");
+    let x0_crd_gold_filename = base_path.join("tensor_X_mode_0_crd");
+    let x1_seg_gold_filename = base_path.join("tensor_X_mode_1_seg");
+    let x1_crd_gold_filename = base_path.join("tensor_X_mode_1_crd");
+    let x_vals_gold_filename = base_path.join("tensor_X_mode_vals");
     let b0_seg = read_inputs::<u32>(&b0_seg_filename);
     let b0_crd = read_inputs::<u32>(&b0_crd_filename);
     let b1_seg = read_inputs::<u32>(&b1_seg_filename);
     let b1_crd = read_inputs::<u32>(&b1_crd_filename);
-    // let b_vals = read_inputs_vectorized(&b_vals_filename, PrimitiveType::<VT>::new());
     let b_vals = read_inputs::<VT>(&b_vals_filename);
     let c0_seg = read_inputs::<u32>(&c0_seg_filename);
     let c0_crd = read_inputs::<u32>(&c0_crd_filename);
@@ -196,33 +196,30 @@ fn test_matmul_ijk() {
         ALUMulOp(),
     );
 
-    let (crddrop_jk_inner_sender, crddrop_jk_inner_receiver) = parent.bounded(chan_size);
-    let (crddrop_jk_outer_sender, crddrop_jk_outer_receiver) = parent.bounded(chan_size);
-    let crddrop_jk_data = CrdManagerData::<VT, u32> {
-        in_crd_inner: mul_out_receiver,
-        in_crd_outer: cj_out_crd_receiver,
-        out_crd_inner: crddrop_jk_inner_sender,
-        out_crd_outer: crddrop_jk_outer_sender,
-    };
-    let crddrop_jk = CrdDrop::new(crddrop_jk_data);
-
-    let (stkn_drop_k_out_val_sender, stkn_drop_k_out_val_receiver) = parent.bounded(chan_size);
-    let stkn_drop_k = StknDrop::new(crddrop_jk_inner_receiver, stkn_drop_k_out_val_sender);
-
     let (out_val_sender, out_val_receiver) = parent.bounded(chan_size);
     let reduce_data = ReduceData::<VT, u32> {
-        in_val: stkn_drop_k_out_val_receiver,
+        in_val: mul_out_receiver,
         out_val: out_val_sender,
     };
     let red = Reduce::new(reduce_data);
 
+    let (valdrop_out_val_sender, valdrop_out_val_receiver) = parent.bounded(chan_size);
+    let (valdrop_out_crd_sender, valdrop_out_crd_receiver) = parent.bounded(chan_size);
+    let valdrop_data = ValDropData::<u32, VT, u32> {
+        in_val: out_val_receiver,
+        in_crd: cj_out_crd_receiver,
+        out_val: valdrop_out_val_sender,
+        out_crd: valdrop_out_crd_sender,
+    };
+    let valdrop = ValDrop::new(valdrop_data);
+
     // fiberwrite_Xvals
-    let xvals = ValsWrScan::<VT, u32>::new(out_val_receiver);
+    let xvals = ValsWrScan::<VT, u32>::new(valdrop_out_val_receiver);
 
     let (crddrop_ij_inner_sender, crddrop_ij_inner_receiver) = parent.bounded(chan_size);
     let (crddrop_ij_outer_sender, crddrop_ij_outer_receiver) = parent.bounded(chan_size);
-    let crddrop_ij_data = CrdManagerData::<VT, u32> {
-        in_crd_inner: crddrop_jk_outer_receiver,
+    let crddrop_ij_data = CrdManagerData::<u32, u32> {
+        in_crd_inner: valdrop_out_crd_receiver,
         in_crd_outer: bi_out_crd_receiver,
         out_crd_inner: crddrop_ij_inner_sender,
         out_crd_outer: crddrop_ij_outer_sender,
@@ -265,9 +262,8 @@ fn test_matmul_ijk() {
     parent.add_child(mul);
     parent.add_child(red);
     parent.add_child(xvals);
-    parent.add_child(crddrop_jk);
+    parent.add_child(valdrop);
     parent.add_child(crddrop_ij);
-    parent.add_child(stkn_drop_k);
     parent.add_child(stkn_drop_j);
 
     let initialized = parent
@@ -285,5 +281,51 @@ fn test_matmul_ijk() {
             .build()
             .unwrap(),
     );
+
     println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    println!("Checking Results");
+
+    let x0_seg_gold = read_inputs::<u32>(&x0_seg_gold_filename);
+    let x0_crd_gold = read_inputs::<u32>(&x0_crd_gold_filename);
+    let x1_seg_gold = read_inputs::<u32>(&x1_seg_gold_filename);
+    let x1_crd_gold = read_inputs::<u32>(&x1_crd_gold_filename);
+    let x_vals_gold = read_inputs::<VT>(&x_vals_gold_filename);
+
+    let x0_seg_locked = x0_seg.lock().unwrap();
+    for (x0s, x0sg) in x0_seg_locked.iter().zip(x0_seg_gold.iter()) {
+        assert_eq!(*x0s, *x0sg);
+    }
+    let x0_crd_locked = x0_crd.lock().unwrap();
+    for (x0c, x0cg) in x0_crd_locked.iter().zip(x0_crd_gold.iter()) {
+        assert_eq!(*x0c, *x0cg);
+    }
+    let x1_seg_locked = x1_seg.lock().unwrap();
+    for (x1s, x1sg) in x1_seg_locked.iter().zip(x1_seg_gold.iter()) {
+        assert_eq!(*x1s, *x1sg);
+    }
+    let x1_crd_locked = x1_crd.lock().unwrap();
+    for (x1c, x1cg) in x1_crd_locked.iter().zip(x1_crd_gold.iter()) {
+        assert_eq!(*x1c, *x1cg);
+    }
+    let x_val_locked = x_val.lock().unwrap();
+    for (x, xg) in x_val_locked.iter().zip(x_vals_gold.iter()) {
+        assert!(approx_eq!(
+            f32,
+            *x,
+            *xg
+        ));
+    }
+}
+
+#[test]
+fn test_matmul_ijk_looper() {
+    let filename = env::current_dir().unwrap().join("tests/matmul.toml");
+    let contents = fs::read_to_string(filename).unwrap();
+    let data: Data = toml::from_str(&contents).unwrap();
+    let formatted_dir = data.sam_config.sam_path;
+    for i in formatted_dir.iter() {
+        println!("Testing {:?}", *i);
+        let path: PathBuf = PathBuf::from(i.clone());
+        test_matmul_ijk_gcn(&path);
+    }
 }

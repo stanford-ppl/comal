@@ -1,0 +1,2 @@
+[sam_config]
+sam_path = [ "/aha/gcn/citeseer/layer1/layer_output", ]

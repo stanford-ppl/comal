@@ -9,5 +9,5 @@ pub struct Data {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub sam_path: String,
+    pub sam_path: Vec<String>,
 }
