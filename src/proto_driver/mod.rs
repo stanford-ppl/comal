@@ -178,8 +178,16 @@ pub fn build_from_proto<'a>(
                 };
 
                 match op.join_type() {
-                    joiner::Type::Intersect => builder.add_child(Intersect::new(joiner_data)),
-                    joiner::Type::Union => builder.add_child(Union::new(joiner_data)),
+                    joiner::Type::Intersect => {
+                        let mut int = Intersect::new(joiner_data);
+                        int.set_timings(sam_options.intersect_config);
+                        builder.add_child(int);
+                    }
+                    joiner::Type::Union => {
+                        let uni = Union::new(joiner_data);
+                        // TODO: Add set_timings call if we're calibrating union
+                        builder.add_child(uni);
+                    }
                 };
             }
             Op::FiberLookup(op) => {

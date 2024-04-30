@@ -40,6 +40,9 @@ where
 
         int
     }
+    pub fn set_timings(&mut self, new_config: IntersectConfig) {
+        self.timing_config = new_config
+    }
 }
 
 impl<ValType, StopType> Context for Intersect<ValType, StopType>
