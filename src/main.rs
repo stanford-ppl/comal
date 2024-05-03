@@ -3,6 +3,7 @@
 use std::{fs, time::Instant};
 
 use cli_common::{DamOptions, SamOptionFiles};
+use dam::{logging::LogEvent, simulation::*};
 use prost::Message;
 use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};
 
@@ -48,6 +49,8 @@ fn main() {
         println!("Parse Time: {:?}", end_parse - start);
     }
     let initialized = program_builder.initialize(args.dam_opts.into()).unwrap();
+    println!("{}", initialized.to_dot_string());
+
     let initialized_time = Instant::now();
     if args.breakdowns {
         println!("Initialization Time: {:?}", initialized_time - end_parse);
