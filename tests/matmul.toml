@@ -1,6 +1,0 @@
-[sam_config]
-sam_path = [ "/aha/gcn/citeseer/layer1/adj_source_scaling",
-            "/aha/gcn/citeseer/layer1/adj_source_dest_scaling",
-            "/aha/gcn/citeseer/layer1/aggregate_feature",
-            "/aha/gcn/citeseer/layer2/adj_source_scaling",
-            "/aha/gcn/citeseer/layer2/adj_source_dest_scaling", ]
