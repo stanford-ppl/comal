@@ -268,15 +268,15 @@ fn test_matmul_ijk_gcn(base_path: &PathBuf) {
         )
         .unwrap();
 
-    let executed = initialized.run(
+    let _executed = initialized.run(
         RunOptionsBuilder::default()
             .mode(RunMode::Simple)
             .build()
             .unwrap(),
     );
 
-    // println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
-    // println!("Checking Results");
+    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    println!("Checking Results");
 
     let x0_seg_filename = base_path.join("tensor_X_mode_0_seg");
     let x0_crd_filename = base_path.join("tensor_X_mode_0_crd");
@@ -293,13 +293,24 @@ fn test_matmul_ijk_gcn(base_path: &PathBuf) {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let subtile_paths_file = &args[1];
-    let contents = fs::read_to_string(subtile_paths_file).unwrap();
+    let subtile_paths_file = PathBuf::from(&args[1]);
+    let contents = fs::read_to_string(subtile_paths_file.clone()).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
-    for (i, item) in formatted_dir.iter().enumerate() {
-        println!("Testing {:?}", *item);
+    // assume this file structure
+    // sparse-ml-kernel/
+    // ├─ subtile_paths_file.toml
+    // ├─ subtile_files/
+    // the paths in subtile_paths_file are relative to the subtile_path_file
+    let mut subtile_dir = subtile_paths_file.clone();
+    subtile_dir.pop();
+    for (idx, item) in formatted_dir.iter().enumerate() {
+        if idx % 100 == 0 {
+            println!("ALIVE");
+        }
         let path: PathBuf = PathBuf::from(item.clone());
-        test_matmul_ijk_gcn(&path);
+        let subtile_abs_path = subtile_dir.join(path);
+        //println!("Testing {:?}", subtile_abs_path);
+        test_matmul_ijk_gcn(&subtile_abs_path);
     }
 }
