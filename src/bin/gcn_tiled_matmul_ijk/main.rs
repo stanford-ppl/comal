@@ -268,7 +268,7 @@ fn test_matmul_ijk_gcn(base_path: &PathBuf) {
         )
         .unwrap();
 
-    let _executed = initialized.run(
+    let executed = initialized.run(
         RunOptionsBuilder::default()
             .mode(RunMode::Simple)
             .build()
