@@ -547,6 +547,31 @@ where
                             .out_ref
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
+                        let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
+                        let output: Token<ValType, StopType> = match next_tkn.data {
+                            Token::Val(_) | Token::Done | Token::Empty => {
+                                Token::Stop(StopType::default())
+                            }
+                            Token::Stop(stop_tkn) => {
+                                self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
+                                Token::Stop(stop_tkn + 1)
+                            }
+                        };
+                        let curr_time = self.time.tick();
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, output.clone()),
+                            )
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, output.clone()),
+                            )
+                            .unwrap();
                     }
                 },
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
