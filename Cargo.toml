@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dam = { git = "https://github.com/stanford-ppl/DAM-RS.git", branch = "dev", default-features=false, features = ["coroutines"]}
+dam = { git = "https://github.com/stanford-ppl/DAM-RS.git", branch = "master", default-features=false, features = ["os-threads"]}
 num = "0.4.1"
 serde_derive = "1.0.181"
 serde = "1.0.181"
@@ -26,6 +26,7 @@ rand = "0.8.5"
 clap = { version = "4.4.18", features = ["derive"] }
 anyhow = "1.0.80"
 strum = { version = "0.26", features = ["derive"] }
+indicatif = "0.17.8"
 
 [build-dependencies]
 prost-build = "0.11.9"
