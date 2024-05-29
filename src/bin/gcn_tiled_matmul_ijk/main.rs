@@ -22,6 +22,8 @@ use dam::templates::ops::*;
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 
+use indicatif::ProgressBar;
+
 type VT = f32;
 
 fn test_matmul_ijk_gcn(base_path: &PathBuf) {
@@ -268,15 +270,15 @@ fn test_matmul_ijk_gcn(base_path: &PathBuf) {
         )
         .unwrap();
 
-    let executed = initialized.run(
+    let _executed = initialized.run(
         RunOptionsBuilder::default()
             .mode(RunMode::Simple)
             .build()
             .unwrap(),
     );
 
-    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
-    println!("Checking Results");
+    // println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    // println!("Checking Results");
 
     let x0_seg_filename = base_path.join("tensor_X_mode_0_seg");
     let x0_crd_filename = base_path.join("tensor_X_mode_0_crd");
@@ -304,13 +306,13 @@ fn main() {
     // the paths in subtile_paths_file are relative to the subtile_path_file
     let mut subtile_dir = subtile_paths_file.clone();
     subtile_dir.pop();
-    for (idx, item) in formatted_dir.iter().enumerate() {
-        if idx % 100 == 0 {
-            println!("ALIVE");
-        }
+
+    let bar = ProgressBar::new(formatted_dir.len() as u64);
+    for item in formatted_dir.iter() {
+        bar.inc(1);
         let path: PathBuf = PathBuf::from(item.clone());
         let subtile_abs_path = subtile_dir.join(path);
-        //println!("Testing {:?}", subtile_abs_path);
         test_matmul_ijk_gcn(&subtile_abs_path);
     }
+    bar.finish();
 }
