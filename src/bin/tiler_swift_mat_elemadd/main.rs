@@ -210,11 +210,13 @@ fn main() {
     subtile_dir.pop();
 
     let bar = ProgressBar::new(formatted_dir.len() as u64);
+    let mut total_cycles: u64 = 0;
     for item in formatted_dir.iter() {
         bar.inc(1);
         let path: PathBuf = PathBuf::from(item.clone());
         let subtile_abs_path = subtile_dir.join(path);
-        test_mat_elemadd(&subtile_abs_path);
+        total_cycles += test_mat_elemadd(&subtile_abs_path);
     }
     bar.finish();
+    println!("Total Runtime: {:?}", total_cycles);
 }
