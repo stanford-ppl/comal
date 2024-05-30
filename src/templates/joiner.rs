@@ -403,6 +403,14 @@ where
                             get_crd1 = true;
                             get_crd2 = true;
                         }
+                        (Token::Stop(_), Token::Empty) => {
+                            get_crd1 = false;
+                            get_crd2 = true;
+                        }
+                        (Token::Empty, Token::Stop(_)) => {
+                            get_crd1 = true;
+                            get_crd2 = false;
+                        }
                         _ => (),
                     }
                 }
