@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf, env};
+use std::{env, fs, path::PathBuf};
 
 use dam::utility_contexts::*;
 
@@ -24,6 +24,8 @@ use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 
 use float_cmp::approx_eq;
+
+use indicatif::ProgressBar;
 
 type VT = f32;
 
@@ -204,8 +206,7 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
     let red = Reduce::new(reduce_data);
 
     let (max_out_val_sender, max_out_val_receiver) = parent.bounded(chan_size);
-    let unary_max =
-        UnaryMax::<VT, u32>::new(out_val_receiver, max_out_val_sender, 0.0_f32);
+    let unary_max = UnaryMax::<VT, u32>::new(out_val_receiver, max_out_val_sender, 0.0_f32);
 
     let (valdrop_out_val_sender, valdrop_out_val_receiver) = parent.bounded(chan_size);
     let (valdrop_out_crd_sender, valdrop_out_crd_receiver) = parent.bounded(chan_size);
@@ -314,24 +315,30 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
     }
     let x_val_locked = x_val.lock().unwrap();
     for (x, xg) in x_val_locked.iter().zip(x_vals_gold.iter()) {
-        assert!(approx_eq!(
-            f32,
-            *x,
-            *xg,
-            epsilon = 0.001
-        ));
+        assert!(approx_eq!(f32, *x, *xg, epsilon = 0.001));
     }
 }
 
-#[test]
-fn test_spmm_sd_ijk_relu_gcn_looper() {
-    let filename = env::current_dir().unwrap().join("tests/spmm_sd_relu.toml");
-    let contents = fs::read_to_string(filename).unwrap();
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let subtile_paths_file = PathBuf::from(&args[1]);
+    let contents = fs::read_to_string(subtile_paths_file.clone()).unwrap();
     let data: Data = toml::from_str(&contents).unwrap();
     let formatted_dir = data.sam_config.sam_path;
-    for i in formatted_dir.iter() {
-        println!("Testing {:?}", *i);
-        let path: PathBuf = PathBuf::from(i.clone());
-        test_spmm_sd_ijk_relu_gcn(&path);
+    // assume this file structure
+    // sparse-ml-kernel/
+    // ├─ subtile_paths_file.toml
+    // ├─ subtile_files/
+    // the paths in subtile_paths_file are relative to the subtile_path_file
+    let mut subtile_dir = subtile_paths_file.clone();
+    subtile_dir.pop();
+
+    let bar = ProgressBar::new(formatted_dir.len() as u64);
+    for item in formatted_dir.iter() {
+        bar.inc(1);
+        let path: PathBuf = PathBuf::from(item.clone());
+        let subtile_abs_path = subtile_dir.join(path);
+        test_spmm_sd_ijk_relu_gcn(&subtile_abs_path);
     }
+    bar.finish();
 }
