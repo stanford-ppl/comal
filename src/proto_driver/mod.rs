@@ -21,6 +21,7 @@ use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
+use crate::templates::joiner::{NIntersect, NJoinerData};
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::context_tools::*;
@@ -156,30 +157,38 @@ pub fn build_from_proto<'a>(
                 }
             },
             Op::Joiner(op) => {
-                assert!(op.input_pairs.len() == 2);
-                let mut input_channels = op.input_pairs.iter().map(|pair| {
+                // assert!(op.input_pairs.len() == 2);
+                let input_channels = op.input_pairs.iter().map(|pair| {
                     let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
                     let pair_ref = refmap.get_receiver(get_ref_id(&pair.r#ref), builder);
                     (pair_crd, pair_ref)
                 });
-                let (in_crd1, in_ref1) = input_channels.next().unwrap();
-                let (in_crd2, in_ref2) = input_channels.next().unwrap();
 
-                let joiner_data = CrdJoinerData {
-                    in_crd1,
-                    in_ref1,
-                    in_crd2,
-                    in_ref2,
-                    out_ref1: refmap
-                        .get_sender(get_ref_id(&Some(op.output_refs[0].clone())), builder),
-                    out_ref2: refmap
-                        .get_sender(get_ref_id(&Some(op.output_refs[1].clone())), builder),
+                let mut in_crds = Vec::new();
+                let mut in_refs = Vec::new();
+                for (in_crd, in_ref) in input_channels {
+                    in_crds.push(in_crd);
+                    in_refs.push(in_ref);
+                }
+                let joiner_data = NJoinerData {
+                    in_crds,
+                    in_refs,
+                    out_refs: op
+                        .output_refs
+                        .iter()
+                        .map(|out_ref: &RefStream| {
+                            refmap.get_sender(get_ref_id(&Some(out_ref.clone())), builder)
+                        })
+                        .collect(),
                     out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
                 };
+                dbg!("MAKING JOINER");
 
                 match op.join_type() {
-                    joiner::Type::Intersect => builder.add_child(Intersect::new(joiner_data)),
-                    joiner::Type::Union => builder.add_child(Union::new(joiner_data)),
+                    joiner::Type::Intersect => builder.add_child(NIntersect::new(joiner_data)),
+                    //TODO: FIX FOR UNION
+                    joiner::Type::Union => builder.add_child(NIntersect::new(joiner_data)),
+                    // joiner::Type::Union => builder.add_child(Union::new(joiner_data)),
                 };
             }
             Op::FiberLookup(op) => {
@@ -367,6 +376,7 @@ pub fn build_from_proto<'a>(
             }
         }
     }
+    dbg!("INSIDE PROTO");
 }
 
 pub fn parse_proto<'a>(
