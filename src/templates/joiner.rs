@@ -93,33 +93,21 @@ where
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
-<<<<<<< HEAD
         + std::cmp::PartialEq
         + std::hash::Hash
         + std::cmp::Eq,
-=======
-        + std::cmp::PartialEq,
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
         loop {
-<<<<<<< HEAD
             let crd_peeks = self
-=======
-            let mut crd_peeks = self
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
                 .intersect_data
                 .in_crds
                 .iter()
                 .map(|channel| channel.peek_next(&self.time))
                 .collect::<Vec<_>>();
-<<<<<<< HEAD
             let ref_peeks = self
-=======
-            let mut ref_peeks = self
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
                 .intersect_data
                 .in_refs
                 .iter()
@@ -162,18 +150,9 @@ where
                 let val = matching_values.iter().next().unwrap();
                 self.intersect_data
                     .out_crd
-<<<<<<< HEAD
                     .enqueue(&self.time, ChannelElement::new(curr_time + 1, val.clone()))
                     .unwrap();
                 dbg!(val.clone());
-=======
-                    .enqueue(
-                        &self.time,
-                        ChannelElement::new(curr_time + 1, Token::Val((*val).clone().into())),
-                    )
-                    .unwrap();
-                dbg!(Token::<ValType, StopType>::Val((*val).clone().into()));
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
 
                 for i in 0..self.intersect_data.in_crds.len() {
                     // Enqueue matching value to output channels
@@ -185,45 +164,27 @@ where
                             ref_peeks[i].as_ref().unwrap().clone(), // Assuming peek is successful
                         )
                         .unwrap();
-<<<<<<< HEAD
                     dbg!(ref_peeks[i].as_ref().unwrap().clone());
-=======
-                dbg!(ref_peeks[i].as_ref().unwrap().clone());
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
 
                     // Dequeue elements from input channels
                     self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
                     self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
                 }
             } else {
-<<<<<<< HEAD
-=======
-                let curr_time = self.time.tick();
-
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
                 // Prioritize Stop tokens
                 let mut stop_token = None;
                 for peek in &crd_peeks {
                     if let Ok(ChannelElement {
-<<<<<<< HEAD
                         data: Token::Stop(_),
                         ..
                     }) = peek
                     {
                         stop_token = Some(peek.as_ref().unwrap().data.clone());
-=======
-                        data: Token::Stop(stkn),
-                        ..
-                    }) = peek
-                    {
-                        stop_token = Some(stkn);
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
                         break;
                     }
                 }
 
                 if let Some(stkn) = stop_token {
-<<<<<<< HEAD
                     dbg!(stkn.clone());
                     (crd_peeks.iter().enumerate())
                         .into_iter()
@@ -239,26 +200,6 @@ where
                             },
                             Err(_) => todo!(),
                         });
-=======
-                    // ... (Handle Stop token - similar to original logic but for vectors)
-                    self.intersect_data
-                        .out_crd
-                        .enqueue(
-                            &self.time,
-                            ChannelElement::new(curr_time + 1, Token::Stop(stkn.clone())), // Get any matching value
-                        )
-                        .unwrap();
-
-                    // Enqueue corresponding ref token to output channels
-                    for (i, out_ref) in self.intersect_data.out_refs.iter().enumerate() {
-                        out_ref
-                            .enqueue(&self.time, ref_peeks[i].as_ref().unwrap().clone())
-                            .unwrap();
-                        // Dequeue elements from input channels
-                        self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
-                        self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
-                    }
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
                 } else {
                     // Handle mismatches or Done tokens
                     for (i, peek) in crd_peeks.iter().enumerate() {
@@ -274,10 +215,6 @@ where
                             Ok(ChannelElement {
                                 data: Token::Done, ..
                             }) => {
-<<<<<<< HEAD
-=======
-                                dbg!("DONE");
->>>>>>> 65b79cbd7724f837dc267ba3fbb4cef6b24ee2b5
                                 let channel_elem =
                                     ChannelElement::new(self.time.tick() + 1, Token::Done);
                                 self.intersect_data
