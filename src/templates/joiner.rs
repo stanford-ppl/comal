@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use dam::{context_tools::*, dam_macros::context_macro};
 
 use super::primitive::Token;
@@ -12,9 +14,48 @@ pub struct CrdJoinerData<ValType: Clone, StopType: Clone> {
     pub out_crd: Sender<Token<ValType, StopType>>,
 }
 
+pub struct NJoinerData<ValType: Clone, StopType: Clone> {
+    pub in_crds: Vec<Receiver<Token<ValType, StopType>>>,
+    pub in_refs: Vec<Receiver<Token<ValType, StopType>>>,
+    pub out_refs: Vec<Sender<Token<ValType, StopType>>>,
+    pub out_crd: Sender<Token<ValType, StopType>>,
+}
+
 #[context_macro]
 pub struct Intersect<ValType: Clone, StopType: Clone> {
     intersect_data: CrdJoinerData<ValType, StopType>,
+}
+
+#[context_macro]
+pub struct NIntersect<ValType: Clone, StopType: Clone> {
+    intersect_data: NJoinerData<ValType, StopType>,
+}
+
+impl<ValType: DAMType, StopType: DAMType> NIntersect<ValType, StopType>
+where
+    NIntersect<ValType, StopType>: Context,
+{
+    pub fn new(intersect_data: NJoinerData<ValType, StopType>) -> Self {
+        let int = NIntersect {
+            intersect_data,
+            context_info: Default::default(),
+        };
+        int.intersect_data
+            .in_crds
+            .iter()
+            .for_each(|channel| (channel).attach_receiver(&int));
+        int.intersect_data
+            .in_refs
+            .iter()
+            .for_each(|channel| (channel).attach_receiver(&int));
+        int.intersect_data
+            .out_refs
+            .iter()
+            .for_each(|channel| (channel).attach_sender(&int));
+        (int.intersect_data.out_crd).attach_sender(&int);
+
+        int
+    }
 }
 
 impl<ValType: DAMType, StopType: DAMType> Intersect<ValType, StopType>
@@ -35,6 +76,162 @@ where
         (int.intersect_data.out_crd).attach_sender(&int);
 
         int
+    }
+}
+
+impl<ValType, StopType> Context for NIntersect<ValType, StopType>
+where
+    ValType: DAMType
+        + std::ops::AddAssign<u32>
+        + std::ops::AddAssign<ValType>
+        + std::ops::Mul<ValType, Output = ValType>
+        + std::ops::Add<ValType, Output = ValType>
+        + std::cmp::PartialOrd<ValType>
+        + std::cmp::Eq
+        + std::hash::Hash
+        + Ord,
+    StopType: DAMType
+        + std::ops::Add<u32, Output = StopType>
+        + std::ops::Sub<u32, Output = StopType>
+        + std::cmp::PartialEq,
+{
+    fn init(&mut self) {}
+
+    fn run(&mut self) {
+        loop {
+            let mut crd_peeks = self
+                .intersect_data
+                .in_crds
+                .iter()
+                .map(|channel| channel.peek_next(&self.time))
+                .collect::<Vec<_>>();
+            let mut ref_peeks = self
+                .intersect_data
+                .in_refs
+                .iter()
+                .map(|channel| channel.peek_next(&self.time))
+                .collect::<Vec<_>>();
+
+            let mut matching_values = HashSet::new(); // Using HashSet for efficient lookups
+            let mut all_values_match = true;
+            let mut min_val: Option<ValType> = None;
+            for peek in &crd_peeks {
+                match peek {
+                    Ok(ChannelElement {
+                        data: Token::Val(val),
+                        ..
+                    }) => {
+                        if !matching_values.is_empty() && !matching_values.contains(&val) {
+                            all_values_match = false; // Only set to false if a mismatch is found after the first value
+                        }
+                        matching_values.insert(val);
+                        min_val = Some(min_val.map_or(val.clone(), |v| v.min(val.clone())));
+                    }
+                    Ok(_) => {
+                        all_values_match = false;
+                    }
+                    _ => {} // Handle Empty/Done tokens later
+                }
+            }
+
+            if all_values_match {
+                let curr_time = self.time.tick();
+                let val = matching_values.iter().next().unwrap();
+                self.intersect_data
+                    .out_crd
+                    .enqueue(
+                        &self.time,
+                        ChannelElement::new(curr_time + 1, Token::Val((*val).clone().into())),
+                    )
+                    .unwrap();
+                dbg!(Token::<ValType, StopType>::Val((*val).clone().into()));
+
+                for i in 0..self.intersect_data.in_crds.len() {
+                    // Enqueue matching value to output channels
+
+                    // Enqueue corresponding ref token to output channels
+                    self.intersect_data.out_refs[i]
+                        .enqueue(
+                            &self.time,
+                            ref_peeks[i].as_ref().unwrap().clone(), // Assuming peek is successful
+                        )
+                        .unwrap();
+                dbg!(ref_peeks[i].as_ref().unwrap().clone());
+
+                    // Dequeue elements from input channels
+                    self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
+                    self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
+                }
+            } else {
+                let curr_time = self.time.tick();
+
+                // Prioritize Stop tokens
+                let mut stop_token = None;
+                for peek in &crd_peeks {
+                    if let Ok(ChannelElement {
+                        data: Token::Stop(stkn),
+                        ..
+                    }) = peek
+                    {
+                        stop_token = Some(stkn);
+                        break;
+                    }
+                }
+
+                if let Some(stkn) = stop_token {
+                    // ... (Handle Stop token - similar to original logic but for vectors)
+                    self.intersect_data
+                        .out_crd
+                        .enqueue(
+                            &self.time,
+                            ChannelElement::new(curr_time + 1, Token::Stop(stkn.clone())), // Get any matching value
+                        )
+                        .unwrap();
+
+                    // Enqueue corresponding ref token to output channels
+                    for (i, out_ref) in self.intersect_data.out_refs.iter().enumerate() {
+                        out_ref
+                            .enqueue(&self.time, ref_peeks[i].as_ref().unwrap().clone())
+                            .unwrap();
+                        // Dequeue elements from input channels
+                        self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
+                        self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
+                    }
+                } else {
+                    // Handle mismatches or Done tokens
+                    for (i, peek) in crd_peeks.iter().enumerate() {
+                        match peek {
+                            Ok(ChannelElement {
+                                data: Token::Val(val),
+                                ..
+                            }) if Some(val) == min_val.as_ref() => {
+                                // Dequeue from channels with min val
+                                self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
+                                self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
+                            }
+                            Ok(ChannelElement {
+                                data: Token::Done, ..
+                            }) => {
+                                dbg!("DONE");
+                                let channel_elem =
+                                    ChannelElement::new(self.time.tick() + 1, Token::Done);
+                                self.intersect_data
+                                    .out_crd
+                                    .enqueue(&self.time, channel_elem.clone())
+                                    .unwrap();
+                                for out_ref in self.intersect_data.out_refs.iter() {
+                                    out_ref.enqueue(&self.time, channel_elem.clone()).unwrap();
+                                }
+                                return;
+                                // ... (Handle Done token - similar to original logic but for vectors)
+                            }
+                            _ => {} // Keep other tokens
+                        }
+                    }
+                }
+            }
+            self.time.incr_cycles(1);
+        }
     }
 }
 
@@ -427,7 +624,13 @@ where
 mod tests {
     use dam::{simulation::*, utility_contexts::*};
 
-    use crate::{templates::primitive::Token, token_vec};
+    use crate::{
+        templates::{
+            joiner::{NIntersect, NJoinerData},
+            primitive::Token,
+        },
+        token_vec,
+    };
 
     use super::{CrdJoinerData, Intersect, Union};
     #[test]
@@ -499,16 +702,22 @@ mod tests {
         let (out_ref1_sender, out_ref1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
         let (out_ref2_sender, out_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
 
-        let data = CrdJoinerData::<u32, u32> {
-            in_crd1: in_crd1_receiver,
-            in_ref1: in_ref1_receiver,
-            in_crd2: in_crd2_receiver,
-            in_ref2: in_ref2_receiver,
+        // let data = CrdJoinerData::<u32, u32> {
+        //     in_crd1: in_crd1_receiver,
+        //     in_ref1: in_ref1_receiver,
+        //     in_crd2: in_crd2_receiver,
+        //     in_ref2: in_ref2_receiver,
+        //     out_crd: out_crd_sender,
+        //     out_ref1: out_ref1_sender,
+        //     out_ref2: out_ref2_sender,
+        // };
+        let data = NJoinerData::<u32, u32> {
+            in_crds: vec![in_crd1_receiver, in_crd2_receiver],
+            in_refs: vec![in_ref1_receiver, in_ref2_receiver],
             out_crd: out_crd_sender,
-            out_ref1: out_ref1_sender,
-            out_ref2: out_ref2_sender,
+            out_refs: vec![out_ref1_sender, out_ref2_sender],
         };
-        let intersect = Intersect::new(data);
+        let intersect = NIntersect::new(data);
         let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);
         let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
         let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
