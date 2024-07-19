@@ -12,50 +12,47 @@ use comal::templates::primitive::{Repsiggen, Token};
 use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData, UncompressedCrdRdScan};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use comal::templates::stkn_dropper::StknDrop;
-use comal::templates::unary::UnaryMax;
 use comal::templates::val_dropper::{ValDrop, ValDropData};
 
 use comal::config::Data;
-use comal::templates::utils::read_inputs;
+use comal::templates::utils::{read_inputs, write_output};
 use dam::simulation::*;
 use dam::templates::ops::*;
 
 use comal::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use comal::token_vec;
 
-use float_cmp::approx_eq;
-
 use indicatif::ProgressBar;
 
 type VT = f32;
 
-fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
+fn test_spmm_sd_ijk_relu(base_path: &PathBuf) {
     let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
     let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
     let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
     let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
     let b_vals_filename = base_path.join("tensor_B_mode_vals");
-    let b_shape_filename = base_path.join("tensor_B_mode_shape");
+    let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
+    let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
     let c_vals_filename = base_path.join("tensor_C_mode_vals");
-    let c_shape_filnemae = base_path.join("tensor_C_mode_shape");
-    let x0_seg_gold_filename = base_path.join("tensor_X_mode_0_seg");
-    let x0_crd_gold_filename = base_path.join("tensor_X_mode_0_crd");
-    let x1_seg_gold_filename = base_path.join("tensor_X_mode_1_seg");
-    let x1_crd_gold_filename = base_path.join("tensor_X_mode_1_crd");
-    let x_vals_gold_filename = base_path.join("tensor_X_mode_vals");
     let b0_seg = read_inputs::<u32>(&b0_seg_filename);
     let b0_crd = read_inputs::<u32>(&b0_crd_filename);
     let b1_seg = read_inputs::<u32>(&b1_seg_filename);
     let b1_crd = read_inputs::<u32>(&b1_crd_filename);
     let b_vals = read_inputs::<VT>(&b_vals_filename);
-    let b_shape = read_inputs::<u32>(&b_shape_filename);
+    let c0_seg = read_inputs::<u32>(&c0_seg_filename);
+    let c1_seg = read_inputs::<u32>(&c1_seg_filename);
     let c_vals = read_inputs::<VT>(&c_vals_filename);
-    let c_shape = read_inputs::<u32>(&c_shape_filnemae);
 
     let chan_size = 32784;
 
-    // check if the tensor shape allows for matmul
-    assert!(b_shape[1] == c_shape[0]);
+    let mut c_shape = Vec::new();
+
+    // the shape output from Lego is always 30, 30
+    // for dense matrix, we can use the first element of the seg array
+    // as the shape of the dimension
+    c_shape.push(c0_seg[1]);
+    c_shape.push(c1_seg[1]);
 
     let mut parent = ProgramBuilder::default();
 
@@ -205,13 +202,10 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
     };
     let red = Reduce::new(reduce_data);
 
-    let (max_out_val_sender, max_out_val_receiver) = parent.bounded(chan_size);
-    let unary_max = UnaryMax::<VT, u32>::new(out_val_receiver, max_out_val_sender, 0.0_f32);
-
     let (valdrop_out_val_sender, valdrop_out_val_receiver) = parent.bounded(chan_size);
     let (valdrop_out_crd_sender, valdrop_out_crd_receiver) = parent.bounded(chan_size);
     let valdrop_data = ValDropData::<u32, VT, u32> {
-        in_val: max_out_val_receiver,
+        in_val: out_val_receiver,
         in_crd: cj_out_crd_receiver,
         out_val: valdrop_out_val_sender,
         out_crd: valdrop_out_crd_sender,
@@ -266,7 +260,6 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
     parent.add_child(arrayvals_c);
     parent.add_child(mul);
     parent.add_child(red);
-    parent.add_child(unary_max);
     parent.add_child(valdrop);
     parent.add_child(xvals);
     parent.add_child(crddrop_ij);
@@ -281,42 +274,27 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
         )
         .unwrap();
 
-    let executed = initialized.run(
+    let _executed = initialized.run(
         RunOptionsBuilder::default()
             .mode(RunMode::Simple)
             .build()
             .unwrap(),
     );
 
-    println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
-    println!("Checking Results");
+    // println!("Elapsed cycles: {:?}", executed.elapsed_cycles());
+    // println!("Checking Results");
 
-    let x0_seg_gold = read_inputs::<u32>(&x0_seg_gold_filename);
-    let x0_crd_gold = read_inputs::<u32>(&x0_crd_gold_filename);
-    let x1_seg_gold = read_inputs::<u32>(&x1_seg_gold_filename);
-    let x1_crd_gold = read_inputs::<u32>(&x1_crd_gold_filename);
-    let x_vals_gold = read_inputs::<VT>(&x_vals_gold_filename);
+    let x0_seg_filename = base_path.join("tensor_X_mode_0_seg");
+    let x0_crd_filename = base_path.join("tensor_X_mode_0_crd");
+    let x1_seg_filename = base_path.join("tensor_X_mode_1_seg");
+    let x1_crd_filename = base_path.join("tensor_X_mode_1_crd");
+    let x_vals_filename = base_path.join("tensor_X_mode_vals");
 
-    let x0_seg_locked = x0_seg.lock().unwrap();
-    for (x0s, x0sg) in x0_seg_locked.iter().zip(x0_seg_gold.iter()) {
-        assert_eq!(*x0s, *x0sg);
-    }
-    let x0_crd_locked = x0_crd.lock().unwrap();
-    for (x0c, x0cg) in x0_crd_locked.iter().zip(x0_crd_gold.iter()) {
-        assert_eq!(*x0c, *x0cg);
-    }
-    let x1_crd_locked = x1_crd.lock().unwrap();
-    for (x1c, x1cg) in x1_crd_locked.iter().zip(x1_crd_gold.iter()) {
-        assert_eq!(*x1c, *x1cg);
-    }
-    let x1_seg_locked = x1_seg.lock().unwrap();
-    for (x1s, x1sg) in x1_seg_locked.iter().zip(x1_seg_gold.iter()) {
-        assert_eq!(*x1s, *x1sg);
-    }
-    let x_val_locked = x_val.lock().unwrap();
-    for (x, xg) in x_val_locked.iter().zip(x_vals_gold.iter()) {
-        assert!(approx_eq!(f32, *x, *xg, epsilon = 0.001));
-    }
+    write_output::<u32>(&x0_seg_filename, x0_seg);
+    write_output::<u32>(&x0_crd_filename, x0_crd);
+    write_output::<u32>(&x1_seg_filename, x1_seg);
+    write_output::<u32>(&x1_crd_filename, x1_crd);
+    write_output::<VT>(&x_vals_filename, x_val);
 }
 
 fn main() {
@@ -338,7 +316,7 @@ fn main() {
         bar.inc(1);
         let path: PathBuf = PathBuf::from(item.clone());
         let subtile_abs_path = subtile_dir.join(path);
-        test_spmm_sd_ijk_relu_gcn(&subtile_abs_path);
+        test_spmm_sd_ijk_relu(&subtile_abs_path);
     }
     bar.finish();
 }

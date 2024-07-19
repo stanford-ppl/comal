@@ -9,7 +9,7 @@ use comal::templates::array::{Array, ArrayData};
 use comal::templates::crd_manager::{CrdDrop, CrdManagerData};
 use comal::templates::joiner::{CrdJoinerData, Intersect};
 use comal::templates::primitive::{Repsiggen, Token};
-use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData, UncompressedCrdRdScan};
+use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
 use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use comal::templates::stkn_dropper::StknDrop;
 use comal::templates::val_dropper::{ValDrop, ValDropData};
@@ -26,14 +26,16 @@ use indicatif::ProgressBar;
 
 type VT = f32;
 
-fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
+fn test_matmul_ijk(base_path: &PathBuf) {
     let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
     let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
     let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
     let b1_crd_filename = base_path.join("tensor_B_mode_1_crd");
     let b_vals_filename = base_path.join("tensor_B_mode_vals");
-    let c0_seg_filename = base_path.join("tensor_C_mode_0_seg");
-    let c1_seg_filename = base_path.join("tensor_C_mode_1_seg");
+    let c0_seg_filename = base_path.join("tensor_C_mode_1_seg");
+    let c0_crd_filename = base_path.join("tensor_C_mode_1_crd");
+    let c1_seg_filename = base_path.join("tensor_C_mode_0_seg");
+    let c1_crd_filename = base_path.join("tensor_C_mode_0_crd");
     let c_vals_filename = base_path.join("tensor_C_mode_vals");
     let b0_seg = read_inputs::<u32>(&b0_seg_filename);
     let b0_crd = read_inputs::<u32>(&b0_crd_filename);
@@ -41,18 +43,12 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
     let b1_crd = read_inputs::<u32>(&b1_crd_filename);
     let b_vals = read_inputs::<VT>(&b_vals_filename);
     let c0_seg = read_inputs::<u32>(&c0_seg_filename);
+    let c0_crd = read_inputs::<u32>(&c0_crd_filename);
     let c1_seg = read_inputs::<u32>(&c1_seg_filename);
+    let c1_crd = read_inputs::<u32>(&c1_crd_filename);
     let c_vals = read_inputs::<VT>(&c_vals_filename);
 
     let chan_size = 32784;
-
-    let mut c_shape = Vec::new();
-
-    // the shape output from Lego is always 30, 30
-    // for dense matrix, we can use the first element of the seg array
-    // as the shape of the dimension
-    c_shape.push(c0_seg[1]);
-    c_shape.push(c1_seg[1]);
 
     let mut parent = ProgramBuilder::default();
 
@@ -112,7 +108,7 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
         out_ref: cj_out_ref_sender,
         out_crd: cj_out_crd_sender,
     };
-    let cj_rdscanner = UncompressedCrdRdScan::new(cj_data, c_shape[1]);
+    let cj_rdscanner = CompressedCrdRdScan::new(cj_data, c0_seg, c0_crd);
 
     let (bc_cj_out_ref_sender, bc_cj_out_ref_receiver) = parent.bounded(chan_size);
     let (bc1_cj_out_ref_sender, bc1_cj_out_ref_receiver) = parent.bounded(chan_size);
@@ -128,7 +124,7 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
         out_ref: ck_out_ref_sender,
         out_crd: ck_out_crd_sender,
     };
-    let ck_rdscanner = UncompressedCrdRdScan::new(ck_data, c_shape[0]);
+    let ck_rdscanner = CompressedCrdRdScan::new(ck_data, c1_seg, c1_crd);
 
     // repeatsiggen
     let (out_repsig_j_sender, out_repsig_j_receiver) = parent.bounded(chan_size);
@@ -260,8 +256,8 @@ fn test_spmm_sd_ijk_relu_gcn(base_path: &PathBuf) {
     parent.add_child(arrayvals_c);
     parent.add_child(mul);
     parent.add_child(red);
-    parent.add_child(valdrop);
     parent.add_child(xvals);
+    parent.add_child(valdrop);
     parent.add_child(crddrop_ij);
     parent.add_child(stkn_drop_j);
 
@@ -316,7 +312,7 @@ fn main() {
         bar.inc(1);
         let path: PathBuf = PathBuf::from(item.clone());
         let subtile_abs_path = subtile_dir.join(path);
-        test_spmm_sd_ijk_relu_gcn(&subtile_abs_path);
+        test_matmul_ijk(&subtile_abs_path);
     }
     bar.finish();
 }
