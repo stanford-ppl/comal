@@ -26,7 +26,7 @@ use indicatif::ProgressBar;
 
 type VT = f32;
 
-fn test_spmm_sd_ijk_relu(base_path: &PathBuf) {
+fn test_spmm_sd_ijk(base_path: &PathBuf) {
     let b0_seg_filename = base_path.join("tensor_B_mode_0_seg");
     let b0_crd_filename = base_path.join("tensor_B_mode_0_crd");
     let b1_seg_filename = base_path.join("tensor_B_mode_1_seg");
@@ -316,7 +316,7 @@ fn main() {
         bar.inc(1);
         let path: PathBuf = PathBuf::from(item.clone());
         let subtile_abs_path = subtile_dir.join(path);
-        test_spmm_sd_ijk_relu(&subtile_abs_path);
+        test_spmm_sd_ijk(&subtile_abs_path);
     }
     bar.finish();
 }
