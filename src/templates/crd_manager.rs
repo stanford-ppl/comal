@@ -9,16 +9,23 @@ pub struct CrdManagerData<ValType: Clone, StopType: Clone> {
     pub out_crd_outer: Sender<Token<ValType, StopType>>,
 }
 
-#[context_macro]
-pub struct CrdDrop<ValType: Clone, StopType: Clone> {
-    crd_drop_data: CrdManagerData<ValType, StopType>,
+pub struct CrdDropData<InnerValType: Clone, OuterValType: Clone, StopType: Clone> {
+    pub in_crd_inner: Receiver<Token<InnerValType, StopType>>,
+    pub in_crd_outer: Receiver<Token<OuterValType, StopType>>,
+    pub out_crd_inner: Sender<Token<InnerValType, StopType>>,
+    pub out_crd_outer: Sender<Token<OuterValType, StopType>>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> CrdDrop<ValType, StopType>
+#[context_macro]
+pub struct CrdDrop<InnerValType: Clone, OuterValType: Clone, StopType: Clone> {
+    crd_drop_data: CrdDropData<InnerValType, OuterValType, StopType>,
+}
+
+impl<InnerValType: DAMType, OuterValType: DAMType, StopType: DAMType> CrdDrop<InnerValType, OuterValType, StopType>
 where
-    CrdDrop<ValType, StopType>: Context,
+    CrdDrop<InnerValType, OuterValType, StopType>: Context,
 {
-    pub fn new(crd_drop_data: CrdManagerData<ValType, StopType>) -> Self {
+    pub fn new(crd_drop_data: CrdDropData<InnerValType, OuterValType, StopType>) -> Self {
         let drop = CrdDrop {
             crd_drop_data,
             context_info: Default::default(),
@@ -32,12 +39,17 @@ where
     }
 }
 
-impl<ValType, StopType> Context for CrdDrop<ValType, StopType>
+impl<InnerValType, OuterValType, StopType> Context for CrdDrop<InnerValType, OuterValType, StopType>
 where
-    ValType: DAMType
-        + std::ops::Mul<ValType, Output = ValType>
-        + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>
+    InnerValType: DAMType
+        + std::ops::Mul<InnerValType, Output = InnerValType>
+        + std::ops::Add<InnerValType, Output = InnerValType>
+        + std::cmp::PartialOrd<InnerValType>
+        + std::cmp::PartialEq,
+    OuterValType: DAMType
+        + std::ops::Mul<OuterValType, Output = OuterValType>
+        + std::ops::Add<OuterValType, Output = OuterValType>
+        + std::cmp::PartialOrd<OuterValType>
         + std::cmp::PartialEq,
     StopType: DAMType + std::ops::Add<u32, Output = StopType> + std::cmp::PartialEq,
 {
@@ -251,7 +263,7 @@ mod tests {
     use crate::templates::primitive::Token;
     use crate::token_vec;
 
-    use super::CrdManagerData;
+    use super::{CrdDropData, CrdManagerData};
     use super::{CrdDrop, CrdHold};
 
     #[test]
@@ -333,7 +345,7 @@ mod tests {
         let (out_ocrd_sender, out_ocrd_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (out_icrd_sender, out_icrd_receiver) = parent.unbounded::<Token<u32, u32>>();
 
-        let crd_drop_data = CrdManagerData::<u32, u32> {
+        let crd_drop_data = CrdDropData::<u32, u32, u32> {
             in_crd_outer: in_ocrd_receiver,
             in_crd_inner: in_icrd_receiver,
             out_crd_outer: out_ocrd_sender,
