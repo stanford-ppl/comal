@@ -21,7 +21,10 @@ use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
+use crate::templates::accumulator::MaxReduce;
 use crate::templates::joiner::{NIntersect, NJoinerData};
+use crate::templates::primitive::ALUMaxOp;
+use crate::templates::scatter_gather::{Gather, Scatter};
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::context_tools::*;
@@ -40,7 +43,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 1024;
+const DEFAULT_CHAN_SIZE: usize = 3278400;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
@@ -161,6 +164,7 @@ pub fn build_from_proto<'a>(
                 let input_channels = op.input_pairs.iter().map(|pair| {
                     let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
                     let pair_ref = refmap.get_receiver(get_ref_id(&pair.r#ref), builder);
+                    // panic!("Did not get a ref or val stream in joiner input");
                     (pair_crd, pair_ref)
                 });
 
@@ -182,7 +186,6 @@ pub fn build_from_proto<'a>(
                         .collect(),
                     out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
                 };
-                dbg!("MAKING JOINER");
 
                 match op.join_type() {
                     joiner::Type::Intersect => builder.add_child(NIntersect::new(joiner_data)),
@@ -200,6 +203,8 @@ pub fn build_from_proto<'a>(
                     out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
                 };
                 if op.format == "compressed" {
+                    dbg!(op.tensor.clone());
+                    dbg!(op.mode);
                     let seg_filename =
                         base_path.join(format!("tensor_{}_mode_{}_seg", op.tensor, op.mode));
                     let crd_filename =
@@ -224,26 +229,41 @@ pub fn build_from_proto<'a>(
             Op::Repeat(op) => {
                 // TODO: Need to check if input_rep_crd exists for backwards compatibility
                 // match &op.input_rep_crd {}
+
                 let in_rep_ref = get_ref_id(&op.input_rep_ref);
 
                 let (out_repsig, in_repsig) = builder.bounded(DEFAULT_CHAN_SIZE);
-
-                // Might not matter since repsig, could just use a counter to avoid collision
                 let repsig_data = RepSigGenData {
                     input: refmap.get_receiver(in_rep_ref, builder),
                     out_repsig,
                 };
 
                 builder.add_child(RepeatSigGen::new(repsig_data));
+                match op.repeat_type() {
+                    repeat::Type::Ref => {
+                        // Might not matter since repsig, could just use a counter to avoid collision
 
-                let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
+                        let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
 
-                let rep_data = RepeatData {
-                    in_ref,
-                    in_repsig,
-                    out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
-                };
-                builder.add_child(Repeat::new(rep_data));
+                        let rep_data = RepeatData {
+                            in_ref,
+                            in_repsig,
+                            out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
+                        };
+                        builder.add_child(Repeat::new(rep_data));
+                    }
+                    repeat::Type::Val => {
+                        // Might not matter since repsig, could just use a counter to avoid collision
+                        let in_ref = valmap.get_receiver(get_ref_id(&op.input_ref), builder);
+
+                        let rep_data = RepeatData {
+                            in_ref,
+                            in_repsig,
+                            out_ref: valmap.get_sender(get_ref_id(&op.output_ref), builder),
+                        };
+                        builder.add_child(Repeat::new(rep_data));
+                    }
+                }
             }
             Op::Repeatsig(op) => {
                 let in_crd_id = get_crd_id(&op.input_crd);
@@ -289,10 +309,12 @@ pub fn build_from_proto<'a>(
                         out_val_sender,
                         match op.stages[0].op() {
                             alu::AluOp::Exp => ALUExpOp(),
+                            alu::AluOp::Max => ALUMaxOp(),
                             _ => {
                                 format!("{:?}", op.stages[0].op());
 
-                                ALUExpOp()
+                                // ALUExpOp()
+                                panic!("Invalid op found");
                             }
                         },
                     ))
@@ -304,7 +326,10 @@ pub fn build_from_proto<'a>(
                     in_val: valmap.get_receiver(in_val_id, builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                 };
-                builder.add_child(Reduce::new(reduce_data));
+                match op.reduce_type() {
+                    reduce::Type::Add => builder.add_child(Reduce::new(reduce_data)),
+                    reduce::Type::Max => builder.add_child(MaxReduce::new(reduce_data, f32::MIN)),
+                }
             }
             Op::CoordHold(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
@@ -374,9 +399,79 @@ pub fn build_from_proto<'a>(
                 ));
                 // root_receiver
             }
+            Op::Fork(op) => match op.conn.as_ref().unwrap() {
+                fork::Conn::Crd(in_crd) => {
+                    let in_crd_id = in_crd.input.try_conv();
+                    let out_crd_ids = in_crd.outputs.iter().map(|id| id.try_conv());
+                    let receiver = crdmap.get_receiver(in_crd_id, builder);
+                    let mut broadcast = Scatter::new(receiver);
+                    out_crd_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(crdmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
+                }
+                fork::Conn::Ref(in_ref) => {
+                    let in_ref_id = in_ref.input.try_conv();
+                    let out_ref_ids = in_ref.outputs.iter().map(|id| id.try_conv());
+                    let receiver = refmap.get_receiver(in_ref_id, builder);
+                    let mut scatter = Scatter::new(receiver);
+                    out_ref_ids
+                        .into_iter()
+                        .for_each(|id| scatter.add_target(refmap.get_sender(id, builder)));
+                    builder.add_child(scatter);
+                }
+                fork::Conn::Val(in_val) => {
+                    let in_val_id = in_val.input.try_conv();
+                    let out_val_ids = in_val.outputs.iter().map(|id| id.try_conv());
+                    let receiver = valmap.get_receiver(in_val_id, builder);
+                    let mut broadcast = Scatter::new(receiver);
+                    out_val_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(valmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
+                }
+                fork::Conn::Repsig(_) => {
+                    panic!("Attempting to fork a repsig");
+                }
+            },
+            Op::Join(op) => match op.conn.as_ref().unwrap() {
+                join::Conn::Crd(in_crd) => {
+                    let in_crd_id = in_crd.output.try_conv();
+                    let sender = crdmap.get_sender(in_crd_id, builder);
+                    let out_crd_ids = in_crd.inputs.iter().map(|id| id.try_conv());
+                    let mut gather = Gather::new(sender);
+                    out_crd_ids
+                        .into_iter()
+                        .for_each(|id| gather.add_target(crdmap.get_receiver(id, builder)));
+                    builder.add_child(gather);
+                }
+                join::Conn::Ref(in_ref) => {
+                    let in_ref_id = in_ref.output.try_conv();
+                    let out_ref_ids = in_ref.inputs.iter().map(|id| id.try_conv());
+                    let sender = refmap.get_sender(in_ref_id, builder);
+                    let mut gather = Gather::new(sender);
+                    out_ref_ids
+                        .into_iter()
+                        .for_each(|id| gather.add_target(refmap.get_receiver(id, builder)));
+                    builder.add_child(gather);
+                }
+                join::Conn::Val(in_val) => {
+                    let in_val_id = in_val.output.try_conv();
+                    let out_val_ids = in_val.inputs.iter().map(|id| id.try_conv());
+                    let sender = valmap.get_sender(in_val_id, builder);
+                    let mut gather = Gather::new(sender);
+                    out_val_ids
+                        .into_iter()
+                        .for_each(|id| gather.add_target(valmap.get_receiver(id, builder)));
+                    builder.add_child(gather);
+                }
+                join::Conn::Repsig(_) => {
+                    panic!("Attempting to join repsig");
+                }
+            },
+            _ => todo!(),
         }
     }
-    dbg!("INSIDE PROTO");
 }
 
 pub fn parse_proto<'a>(

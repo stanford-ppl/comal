@@ -19,7 +19,7 @@ macro_rules! RegisterArithmeticOp {
         {
             type Output = Token<ValType, StopType>;
             fn $name(self, rhs: Token<ValType, StopType>) -> Token<ValType, StopType> {
-                match (self, rhs) {
+                match (self.clone(), rhs.clone()) {
                     (Token::Val(in1), Token::Val(in2)) => Token::Val(in1.$name(in2)),
                     (Token::Stop(in1), Token::Stop(in2)) => {
                         assert_eq!(in1, in2, "Stop tokens must be the same");
@@ -34,6 +34,8 @@ macro_rules! RegisterArithmeticOp {
                         Token::Val(val.$name(num::$identity::<ValType>()))
                     }
                     _ => {
+                        dbg!(self);
+                        dbg!(rhs);
                         todo!();
                     }
                 }
