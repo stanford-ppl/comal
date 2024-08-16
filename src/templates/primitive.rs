@@ -45,6 +45,30 @@ impl<T: num::Float> Exp for T {
     }
 }
 
+pub trait Max<T> {
+    fn max(self, num: T) -> Self;
+}
+
+RegisterALUOp!(ALUMaxOp, |(i0), ()| [i0.exp()], T: DAMType + Exp);
+
+impl<ValType: DAMType, StopType: DAMType> Max<ValType> for Token<ValType, StopType>
+where
+    ValType: Max<ValType>,
+{
+    fn max(self, num: ValType) -> Self {
+        match self {
+            Token::Val(val) => Token::Val(val.max(num)),
+            _ => self,
+        }
+    }
+}
+
+impl<T: num::Float> Max<T> for T {
+    fn max(self, num: T) -> Self {
+        num::Float::max(self, num)
+    }
+}
+
 impl<ValType: DAMType, StopType: DAMType> fmt::Debug for Token<ValType, StopType> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
