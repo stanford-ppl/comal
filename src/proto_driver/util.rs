@@ -1,11 +1,4 @@
-use dam::channel::Receiver;
-
-// use crate::templates::primitive::Token;
-
 use super::proto_headers::tortilla::{CrdStream, RefStream, RepSigStream, ValStream};
-
-
-
 
 pub fn get_crd_id(stream: &Option<CrdStream>) -> u64 {
     stream.try_conv()

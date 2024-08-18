@@ -31,7 +31,7 @@ impl From<DamOptions> for InitializationOptions {
 impl From<DamOptions> for RunOptions {
     fn from(val: DamOptions) -> Self {
         match val.workers {
-            Some(num) => RunOptionsBuilder::default()
+            Some(_num) => RunOptionsBuilder::default()
                 // .mode(RunMode::Constrained(num))
                 .build()
                 .unwrap(),

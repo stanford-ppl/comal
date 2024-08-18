@@ -2,17 +2,20 @@ use std::{fs, path::Path};
 
 use dam::utility_contexts::*;
 
-use comal::templates::accumulator::{Reduce, ReduceData};
-use comal::templates::alu::make_alu;
-use comal::templates::array::{Array, ArrayData};
+use comal::{
+    config::Data,
+    templates::{
+        accumulator::{Reduce, ReduceData},
+        alu::make_alu,
+        array::{Array, ArrayData},
+        joiner::{CrdJoinerData, Intersect},
+        primitive::{Repsiggen, Token},
+        rd_scanner::{CompressedCrdRdScan, RdScanData},
+        repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen},
+        utils::read_inputs,
+    },
+};
 
-use comal::templates::joiner::{CrdJoinerData, Intersect};
-use comal::templates::primitive::{Repsiggen, Token};
-use comal::templates::rd_scanner::{CompressedCrdRdScan, RdScanData};
-use comal::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
-
-use comal::config::Data;
-use comal::templates::utils::read_inputs;
 use dam::simulation::*;
 use dam::templates::ops::*;
 

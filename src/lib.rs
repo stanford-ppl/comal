@@ -2,9 +2,9 @@
 
 use pyo3::prelude::*;
 
-use std::{fs};
+use std::fs;
 
-use dam::{simulation::*};
+use dam::simulation::*;
 use prost::Message;
 use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};
 
@@ -16,7 +16,7 @@ pub mod utils;
 
 /// Runs proto graph given data and returns elapsed cycles
 #[pyfunction]
-fn run_graph(proto : String, data : String) -> PyResult<u64> {
+fn run_graph(proto: String, data: String) -> PyResult<u64> {
     let comal_graph = {
         let file_contents = fs::read(proto).unwrap();
         ComalGraph::decode(file_contents.as_slice()).unwrap()
@@ -27,7 +27,7 @@ fn run_graph(proto : String, data : String) -> PyResult<u64> {
     let executed = initialized.run(Default::default());
     let cycles = executed.elapsed_cycles().unwrap();
     println!("Elapsed Cycles: {}", cycles);
-    return Ok(cycles)
+    return Ok(cycles);
 }
 
 /// A Python module implemented in Rust.
@@ -36,4 +36,3 @@ fn comal(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run_graph, m)?)?;
     Ok(())
 }
-

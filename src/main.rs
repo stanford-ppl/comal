@@ -3,7 +3,7 @@
 use std::{fs, time::Instant};
 
 use cli_common::{DamOptions, SamOptionFiles};
-use dam::{simulation::*};
+use dam::{logging::LogEvent, simulation::*};
 use prost::Message;
 use proto_driver::{parse_proto, proto_headers::tortilla::ComalGraph};
 
@@ -18,12 +18,12 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 struct Cli {
     /// Protobuffer containing a tortilla graph
-    // #[arg(long)]
-    // proto: String,
+    #[arg(long)]
+    proto: String,
 
     /// Data directory for the graph
-    // #[arg(long)]
-    // data: String,
+    #[arg(long)]
+    data: String,
 
     /// Print timing breakdowns
     #[arg(long)]
@@ -40,12 +40,10 @@ fn main() {
     let start = Instant::now();
     let args = Cli::parse();
     let comal_graph = {
-        // let file_contents = fs::read(&args.proto).unwrap();
-        let file_contents = fs::read("/tmp/op.bin").unwrap();
+        let file_contents = fs::read(&args.proto).unwrap();
         ComalGraph::decode(file_contents.as_slice()).unwrap()
     };
-    let path = "/home/rubensl/Documents/data/B_linear/fused_gcn";
-    let program_builder = parse_proto(comal_graph, path.into(), (&args.sam_opts).into());
+    let program_builder = parse_proto(comal_graph, args.data.into(), (&args.sam_opts).into());
     let end_parse = Instant::now();
     if args.breakdowns {
         println!("Parse Time: {:?}", end_parse - start);

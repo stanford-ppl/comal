@@ -324,9 +324,6 @@ pub fn build_from_proto<'a>(
                             alu::AluOp::Exp => ALUExpOp(),
                             alu::AluOp::Max => ALUMaxOp(),
                             _ => {
-                                format!("{:?}", op.stages[0].op());
-
-                                // ALUExpOp()
                                 panic!("Invalid op found");
                             }
                         },
