@@ -39,6 +39,30 @@ where
     }
 }
 
+impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<f32, StopType> {
+    type Error = u32;
+
+    fn try_into(self) -> Result<Token<u32, StopType>, Self::Error> {
+        match self {
+            Token::Val(val) => Ok(Token::Val(val.to_bits())),
+            Token::Stop(stop) => Ok(Token::Stop(stop)),
+            Token::Empty => Ok(Token::Empty),
+            Token::Done => Ok(Token::Done),
+        }
+    }
+}
+
+impl<StopType: DAMType> From<Token<u32, StopType>> for Token<f32, StopType> {
+    fn from(value: Token<u32, StopType>) -> Self {
+        match value {
+            Token::Val(val) => Token::Val(f32::from_bits(val)),
+            Token::Stop(stop) => Token::Stop(stop),
+            Token::Empty => Token::Empty,
+            Token::Done => Token::Done,
+        }
+    }
+}
+
 impl<T: num::Float> Exp for T {
     fn exp(self) -> Self {
         num::Float::exp(self)

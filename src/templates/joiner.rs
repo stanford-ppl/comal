@@ -1,6 +1,10 @@
 use std::collections::HashSet;
 
-use dam::{context_tools::*, dam_macros::context_macro};
+use dam::{
+    channel::adapters::{RecvAdapter, SendAdapter},
+    context_tools::*,
+    dam_macros::context_macro,
+};
 
 use super::primitive::Token;
 
@@ -16,8 +20,9 @@ pub struct CrdJoinerData<ValType: Clone, StopType: Clone> {
 
 pub struct NJoinerData<ValType: Clone, StopType: Clone> {
     pub in_crds: Vec<Receiver<Token<ValType, StopType>>>,
-    pub in_refs: Vec<Receiver<Token<ValType, StopType>>>,
-    pub out_refs: Vec<Sender<Token<ValType, StopType>>>,
+    pub in_refs: Vec<Box<dyn RecvAdapter<Token<ValType, StopType>> + Send + Sync>>,
+    // pub in_refs: Vec<Receiver<Token<ValType, StopType>>>,
+    pub out_refs: Vec<Box<dyn SendAdapter<Token<ValType, StopType>> + Send + Sync>>,
     pub out_crd: Sender<Token<ValType, StopType>>,
 }
 
@@ -137,7 +142,7 @@ where
                             }
                             matching_values.insert(Token::Stop(stkn.clone()));
                         }
-                        _ => all_values_match=false,
+                        _ => all_values_match = false,
                     },
                     Err(_) => {
                         panic!("Unexpected error in stream");
@@ -715,9 +720,9 @@ mod tests {
         // };
         let data = NJoinerData::<u32, u32> {
             in_crds: vec![in_crd1_receiver, in_crd2_receiver],
-            in_refs: vec![in_ref1_receiver, in_ref2_receiver],
+            in_refs: vec![Box::new(in_ref1_receiver), Box::new(in_ref2_receiver)],
             out_crd: out_crd_sender,
-            out_refs: vec![out_ref1_sender, out_ref2_sender],
+            out_refs: vec![Box::new(out_ref1_sender), Box::new(out_ref2_sender)],
         };
         let intersect = NIntersect::new(data);
         let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);

@@ -12,7 +12,7 @@ use super::templates::accumulator::{Reduce, ReduceData, Spacc1, Spacc1Data};
 use super::templates::alu::make_alu;
 use super::templates::array::{Array, ArrayData};
 use super::templates::crd_manager::{CrdDrop, CrdHold, CrdManagerData};
-use super::templates::joiner::{CrdJoinerData, Intersect, Union};
+// use super::templates::joiner::{CrdJoinerData, Intersect, Union};
 use super::templates::primitive::{Repsiggen, Token};
 use super::templates::rd_scanner::{CompressedCrdRdScan, RdScanData, UncompressedCrdRdScan};
 use super::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
@@ -27,11 +27,13 @@ use crate::templates::primitive::ALUMaxOp;
 use crate::templates::scatter_gather::{Gather, Scatter};
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
+use dam::channel::adapters::{RecvAdapter, SendAdapter};
 use dam::context_tools::*;
 use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
 use dam::utility_contexts::{BroadcastContext, GeneratorContext};
 
+// use joiner::Payload;
 use proto_headers::tortilla::*;
 
 type VT = f32;
@@ -161,37 +163,48 @@ pub fn build_from_proto<'a>(
             },
             Op::Joiner(op) => {
                 // assert!(op.input_pairs.len() == 2);
-                let input_channels = op.input_pairs.iter().map(|pair| {
-                    let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
-                    let pair_ref = refmap.get_receiver(get_ref_id(&pair.r#ref), builder);
-                    // panic!("Did not get a ref or val stream in joiner input");
-                    (pair_crd, pair_ref)
-                });
-
                 let mut in_crds = Vec::new();
-                let mut in_refs = Vec::new();
-                for (in_crd, in_ref) in input_channels {
-                    in_crds.push(in_crd);
-                    in_refs.push(in_ref);
-                }
+                let mut in_refs: Vec<Box<dyn RecvAdapter<Token<_, ST>> + Send + Sync>> = Vec::new();
+                let mut out_refs: Vec<Box<dyn SendAdapter<Token<_, ST>> + Send + Sync>> =
+                    Vec::new();
+                op.input_pairs.iter().for_each(|pair| {
+                    let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
+                    match pair.in_ref.clone().unwrap().stream.as_ref().unwrap() {
+                        joiner::payload::Stream::RefStream(ref_stream) => {
+                            in_refs.push(Box::new(
+                                refmap.get_receiver(get_ref_id(&Some(ref_stream.clone())), builder),
+                            ));
+                        }
+                        joiner::payload::Stream::ValStream(val_stream) => {
+                            in_refs.push(Box::new(
+                                valmap.get_receiver(get_val_id(&Some(val_stream.clone())), builder),
+                            ));
+                        }
+                    }
+
+                    in_crds.push(pair_crd);
+                });
+                op.output_refs.iter().for_each(|output_ref| {
+                    match output_ref.stream.as_ref().unwrap() {
+                        joiner::payload::Stream::RefStream(ref_stream) => out_refs.push(Box::new(
+                            refmap.get_sender(get_ref_id(&Some(ref_stream.clone())), builder),
+                        )),
+                        joiner::payload::Stream::ValStream(val_stream) => out_refs.push(Box::new(
+                            valmap.get_sender(get_val_id(&Some(val_stream.clone())), builder),
+                        )),
+                    }
+                });
                 let joiner_data = NJoinerData {
                     in_crds,
                     in_refs,
-                    out_refs: op
-                        .output_refs
-                        .iter()
-                        .map(|out_ref: &RefStream| {
-                            refmap.get_sender(get_ref_id(&Some(out_ref.clone())), builder)
-                        })
-                        .collect(),
+                    out_refs,
                     out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
                 };
 
-                match op.join_type() {
-                    joiner::Type::Intersect => builder.add_child(NIntersect::new(joiner_data)),
-                    //TODO: FIX FOR UNION
-                    joiner::Type::Union => builder.add_child(NIntersect::new(joiner_data)),
-                    // joiner::Type::Union => builder.add_child(Union::new(joiner_data)),
+                if let joiner::Type::Intersect = op.join_type() {
+                    builder.add_child(NIntersect::new(joiner_data))
+                } else {
+                    builder.add_child(NIntersect::new(joiner_data))
                 };
             }
             Op::FiberLookup(op) => {
