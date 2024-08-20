@@ -21,7 +21,6 @@ pub struct CrdJoinerData<ValType: Clone, StopType: Clone> {
 pub struct NJoinerData<ValType: Clone, StopType: Clone> {
     pub in_crds: Vec<Receiver<Token<ValType, StopType>>>,
     pub in_refs: Vec<Box<dyn RecvAdapter<Token<ValType, StopType>> + Send + Sync>>,
-    // pub in_refs: Vec<Receiver<Token<ValType, StopType>>>,
     pub out_refs: Vec<Box<dyn SendAdapter<Token<ValType, StopType>> + Send + Sync>>,
     pub out_crd: Sender<Token<ValType, StopType>>,
 }
@@ -157,7 +156,7 @@ where
                     .out_crd
                     .enqueue(&self.time, ChannelElement::new(curr_time + 1, val.clone()))
                     .unwrap();
-                dbg!(val.clone());
+                // dbg!(val.clone());
 
                 for i in 0..self.intersect_data.in_crds.len() {
                     // Enqueue matching value to output channels
@@ -169,7 +168,7 @@ where
                             ref_peeks[i].as_ref().unwrap().clone(), // Assuming peek is successful
                         )
                         .unwrap();
-                    dbg!(ref_peeks[i].as_ref().unwrap().clone());
+                    // dbg!(ref_peeks[i].as_ref().unwrap().clone());
 
                     // Dequeue elements from input channels
                     self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
@@ -189,8 +188,8 @@ where
                     }
                 }
 
-                if let Some(stkn) = stop_token {
-                    dbg!(stkn.clone());
+                if let Some(_) = stop_token {
+                    // dbg!(stkn.clone());
                     (crd_peeks.iter().enumerate())
                         .into_iter()
                         .for_each(|(i, peek)| match peek {

@@ -216,8 +216,8 @@ pub fn build_from_proto<'a>(
                     out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
                 };
                 if op.format == "compressed" {
-                    dbg!(op.tensor.clone());
-                    dbg!(op.mode);
+                    // dbg!(op.tensor.clone());
+                    // dbg!(op.mode);
                     let seg_filename =
                         base_path.join(format!("tensor_{}_mode_{}_seg", op.tensor, op.mode));
                     let crd_filename =
