@@ -243,39 +243,81 @@ pub fn build_from_proto<'a>(
                 // TODO: Need to check if input_rep_crd exists for backwards compatibility
                 // match &op.input_rep_crd {}
 
-                let in_rep_ref = get_ref_id(&op.input_rep_ref);
-
                 let (out_repsig, in_repsig) = builder.bounded(DEFAULT_CHAN_SIZE);
-                let repsig_data = RepSigGenData {
-                    input: refmap.get_receiver(in_rep_ref, builder),
-                    out_repsig,
-                };
+                match op.input_rep_sig {
+                    Some(in_rep) => match in_rep {
+                        repeat::InputRepSig::RepRef(rep_ref) => {
+                            let in_rep_ref = get_ref_id(&Some(rep_ref));
+                            let repsig_data = RepSigGenData {
+                                input: refmap.get_receiver(in_rep_ref, builder),
+                                out_repsig,
+                            };
+                            builder.add_child(RepeatSigGen::new(repsig_data));
+                        }
+                        repeat::InputRepSig::RepVal(rep_val) => {
+                            let in_rep_val = get_val_id(&Some(rep_val));
+                            let repsig_data = RepSigGenData {
+                                input: valmap.get_receiver(in_rep_val, builder),
+                                out_repsig,
+                            };
+                            builder.add_child(RepeatSigGen::new(repsig_data));
+                        }
+                    },
+                    None => todo!(),
+                }
+                // let repsig_data = RepSigGenData {
+                //     input: refmap.get_receiver(in_rep_ref, builder),
+                //     out_repsig,
+                // };
 
-                builder.add_child(RepeatSigGen::new(repsig_data));
-                match op.repeat_type() {
-                    repeat::Type::Ref => {
-                        // Might not matter since repsig, could just use a counter to avoid collision
+                match op.input_ref {
+                    Some(input_ref) => match input_ref {
+                        repeat::InputRef::InRef(in_ref_stream) => {
+                            let in_ref =
+                                refmap.get_receiver(get_ref_id(&Some(in_ref_stream)), builder);
 
-                        let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
+                            match op.output_ref {
+                                Some(out_ref) => match out_ref {
+                                    repeat::OutputRef::OutRef(out_ref_stream) => {
+                                        let rep_data = RepeatData {
+                                            in_ref,
+                                            in_repsig,
+                                            out_ref: refmap.get_sender(
+                                                get_ref_id(&Some(out_ref_stream)),
+                                                builder,
+                                            ),
+                                        };
+                                        builder.add_child(Repeat::new(rep_data));
+                                    }
+                                    repeat::OutputRef::OutVal(_) => todo!(),
+                                },
+                                None => todo!(),
+                            }
+                        }
+                        repeat::InputRef::InVal(in_val_stream) => {
+                            let in_val =
+                                valmap.get_receiver(get_val_id(&Some(in_val_stream)), builder);
 
-                        let rep_data = RepeatData {
-                            in_ref,
-                            in_repsig,
-                            out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
-                        };
-                        builder.add_child(Repeat::new(rep_data));
-                    }
-                    repeat::Type::Val => {
-                        // Might not matter since repsig, could just use a counter to avoid collision
-                        let in_ref = valmap.get_receiver(get_ref_id(&op.input_ref), builder);
-
-                        let rep_data = RepeatData {
-                            in_ref,
-                            in_repsig,
-                            out_ref: valmap.get_sender(get_ref_id(&op.output_ref), builder),
-                        };
-                        builder.add_child(Repeat::new(rep_data));
-                    }
+                            match op.output_ref {
+                                Some(out_ref) => match out_ref {
+                                    repeat::OutputRef::OutRef(_) => todo!(),
+                                    repeat::OutputRef::OutVal(out_val_stream) => {
+                                        let rep_data = RepeatData {
+                                            in_ref: in_val,
+                                            in_repsig,
+                                            out_ref: valmap.get_sender(
+                                                get_val_id(&Some(out_val_stream)),
+                                                builder,
+                                            ),
+                                        };
+                                        builder.add_child(Repeat::new(rep_data));
+                                    }
+                                },
+                                None => todo!(),
+                            }
+                        }
+                    },
+                    None => todo!(),
                 }
             }
             Op::Repeatsig(op) => {
