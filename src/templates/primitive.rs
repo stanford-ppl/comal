@@ -4,8 +4,9 @@ use dam::context_tools::*;
 use dam::templates::ops::*;
 use dam::types::StaticallySized;
 use dam::RegisterALUOp;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, PartialEq, PartialOrd, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Token<ValType, StopType> {
     Val(ValType),
     Stop(StopType),
@@ -13,7 +14,7 @@ pub enum Token<ValType, StopType> {
     Done,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug, PartialEq, Default)]
 pub enum Repsiggen {
     #[default]
     Repeat,

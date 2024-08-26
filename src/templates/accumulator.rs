@@ -1,7 +1,11 @@
 use core::hash::Hash;
 use std::collections::BTreeMap;
 
-use dam::{context_tools::*, dam_macros::context_macro};
+use dam::{
+    context_tools::*,
+    dam_macros::{context_macro, event_type},
+};
+use serde::{Deserialize, Serialize};
 
 use super::primitive::Token;
 
@@ -31,6 +35,13 @@ where
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[event_type]
+pub struct ReduceLog {
+    out_val: Token<f32, u32>,
+    // val: Token<f32, u32>,
+}
+
 impl<ValType, StopType> Context for Reduce<ValType, StopType>
 where
     ValType: DAMType + std::ops::AddAssign<ValType>,
@@ -38,35 +49,52 @@ where
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
         + std::cmp::PartialEq,
+    Token<f32, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
         let mut sum = ValType::default();
+        let mut default_val = true;
         loop {
             match self.reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         sum += val;
+                        default_val = false;
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
-                        self.reduce_data
-                            .out_val
-                            .enqueue(
-                                &self.time,
-                                ChannelElement::new(curr_time + 1, Token::Val(sum)),
-                            )
-                            .unwrap();
+                        if !default_val {
+                            self.reduce_data
+                                .out_val
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
+                                )
+                                .unwrap();
+                            // let out_val = Token::<ValType, StopType>::Val(sum.clone());
+                            // let _ = dam::logging::log_event(&ReduceLog {
+                                // out_val: out_val.clone().into(),
+                            // });
+                        }
                         sum = ValType::default();
+                        default_val = true;
                         if stkn != StopType::default() {
                             self.reduce_data
                                 .out_val
                                 .enqueue(
                                     &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn - 1)),
+                                    ChannelElement::new(
+                                        curr_time + 1,
+                                        Token::Stop(stkn.clone() - 1),
+                                    ),
                                 )
                                 .unwrap();
+                            // let stk = Token::<ValType, StopType>::Stop(stkn.clone() - 1);
+                            // let _ = dam::logging::log_event(&ReduceLog {
+                                // out_val: stk.clone().into(),
+                            // });
                         }
                     }
                     Token::Empty => {
@@ -341,12 +369,38 @@ mod tests {
     }
 
     #[test]
+    fn reduce_2d_test1() {
+        let in_val = || token_vec!(u32; u32; "S0", "S0", "S1", "S1", "D").into_iter();
+        let out_val = || token_vec!(u32; u32; 10, 5, 12, 7, 7, "S0", "D").into_iter();
+        reduce_test(in_val, out_val);
+    }
+
+    #[test]
     fn spacc1_2d_test() {
         let in_ocrd = || token_vec!(u32; u32; 0, 2, "S0", 2, "S1", "D").into_iter();
         let in_icrd =
             || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", 0, 2, 3, "S2", "D").into_iter();
         let in_val = || {
             token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 40.0, 4.0, 8.0, "S1", -40.0, 33.0, 36.0, "S2", "D")
+                    .into_iter()
+        };
+        let out_icrd = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", "D").into_iter();
+        let out_val = || {
+            token_vec!(f32; u32; 90.0, 9.0, 18.0, "S0", -40.0, 33.0, 36.0, "S1", "D").into_iter()
+        };
+        spacc1_test(in_ocrd, in_icrd, in_val, out_icrd, out_val);
+    }
+
+    #[test]
+    fn spacc1_2d_test1() {
+        let in_ocrd = || {
+            token_vec!(u32; u32; 0,"S0",1,"S0",2,"S0",3,"S0",4,"S0",5,"S0",6,"S0",7,"S0",6,"S0",0,"S0",2,"S0",3,"S0",1,"S0",5,"S1","D").into_iter()
+        };
+        let in_icrd = || {
+            token_vec!(u32; u32; 478,479,480,481,482,483,484,485,486,487,488,489,490,491,492,"S1",0,346,"S1",1,696,"S1",2,353,"S1",3,666,"S1",4,"S1",5,699,"S1",6,22,"S1",5,699,"S1",478,479,480,481,482,483,484,485,486,487,488,489,490,491,492,"S1",1,696,"S1",2,353,"S1",0,346,"S1",4,"S2","D").into_iter()
+        };
+        let in_val = || {
+            token_vec!(f32; u32; 2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,"S1",2.0,2.0,"S1",2.0,2.0,"S1",2.0,2.0,"S1",2.0,2.0,"S1",2.0,"S1",2.0,2.0,"S1",2.0,2.0,"S1",2.0,2.0,"S1",2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,2.0,"S1",2.0,2.0,"S1",2.0,2.0,"S1",2.0,2.0,"S1",2.0,"S2","D")
                     .into_iter()
         };
         let out_icrd = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", "D").into_iter();
@@ -380,7 +434,8 @@ mod tests {
         };
         let red = Reduce::new(data);
         let gen1 = GeneratorContext::new(in_val, in_val_sender);
-        let val_checker = CheckerContext::new(out_val, out_val_receiver);
+        let val_checker = PrinterContext::new(out_val_receiver);
+        // let val_checker = CheckerContext::new(out_val, out_val_receiver);
         parent.add_child(gen1);
         parent.add_child(val_checker);
         parent.add_child(red);
@@ -421,8 +476,8 @@ mod tests {
         let gen1 = GeneratorContext::new(in_ocrd, in_ocrd_sender);
         let gen2 = GeneratorContext::new(in_icrd, in_icrd_sender);
         let gen3 = GeneratorContext::new(in_val, in_val_sender);
-        let icrd_checker = CheckerContext::new(out_icrd, out_icrd_receiver);
-        let val_checker = CheckerContext::new(out_val, out_val_receiver);
+        let icrd_checker = PrinterContext::new(out_icrd_receiver);
+        let val_checker = PrinterContext::new(out_val_receiver);
         parent.add_child(gen1);
         parent.add_child(gen2);
         parent.add_child(gen3);
