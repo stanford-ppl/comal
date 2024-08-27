@@ -55,31 +55,26 @@ where
 
     fn run(&mut self) {
         let mut sum = ValType::default();
-        let mut default_val = true;
         loop {
             match self.reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         sum += val;
-                        default_val = false;
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
-                        if !default_val {
-                            self.reduce_data
-                                .out_val
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
-                                )
-                                .unwrap();
-                            // let out_val = Token::<ValType, StopType>::Val(sum.clone());
-                            // let _ = dam::logging::log_event(&ReduceLog {
-                                // out_val: out_val.clone().into(),
-                            // });
-                        }
+                        self.reduce_data
+                            .out_val
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
+                            )
+                            .unwrap();
+                        let out_val = Token::<ValType, StopType>::Val(sum.clone());
+                        // let _ = dam::logging::log_event(&ReduceLog {
+                            // out_val: out_val.clone().into(),
+                        // });
                         sum = ValType::default();
-                        default_val = true;
                         if stkn != StopType::default() {
                             self.reduce_data
                                 .out_val
@@ -91,7 +86,7 @@ where
                                     ),
                                 )
                                 .unwrap();
-                            // let stk = Token::<ValType, StopType>::Stop(stkn.clone() - 1);
+                            let stk = Token::<ValType, StopType>::Stop(stkn.clone() - 1);
                             // let _ = dam::logging::log_event(&ReduceLog {
                                 // out_val: stk.clone().into(),
                             // });
