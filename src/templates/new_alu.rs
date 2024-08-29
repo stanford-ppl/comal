@@ -61,9 +61,27 @@ where
                         self.in_val2.dequeue(&self.time).unwrap();
                     }
                     (Token::Val(_), Token::Stop(_)) => {
+                        self.out_val
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(
+                                    self.time.tick() + 1,
+                                    Token::<ValType, StopType>::default(),
+                                ),
+                            )
+                            .unwrap();
                         self.in_val1.dequeue(&self.time).unwrap();
                     }
                     (Token::Stop(_), Token::Val(_)) => {
+                        self.out_val
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(
+                                    self.time.tick() + 1,
+                                    Token::<ValType, StopType>::default(),
+                                ),
+                            )
+                            .unwrap();
                         self.in_val2.dequeue(&self.time).unwrap();
                     }
                     (Token::Stop(stkn1), Token::Stop(stkn2)) => {
@@ -94,7 +112,10 @@ where
                     }
                     _ => todo!(),
                 },
-                (_, _) => todo!(),
+                (_, _) => {
+                    println!("Err in new ALU");
+                    return;
+                },
             }
             self.time.incr_cycles(1);
         }
