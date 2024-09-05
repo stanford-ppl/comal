@@ -1,10 +1,13 @@
 use std::collections::HashSet;
 
+use dam::structures::Identifiable;
 use dam::{
     channel::adapters::{RecvAdapter, SendAdapter},
     context_tools::*,
-    dam_macros::context_macro,
+    dam_macros::{context_macro, event_type},
+    structures::Identifier,
 };
+use serde::{Deserialize, Serialize};
 
 use super::primitive::Token;
 
@@ -104,8 +107,9 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let curr_id = self.id();
         loop {
-            let crd_peeks = self
+            let mut crd_peeks = self
                 .intersect_data
                 .in_crds
                 .iter()
@@ -122,6 +126,12 @@ where
             let mut all_values_match = true;
             let mut min_val: Option<ValType> = None;
             for peek in &crd_peeks {
+                let crd1 = peek.as_ref().unwrap().clone().data;
+                let id = Identifier { id: 39 };
+                // if self.id() == id {
+
+                // dbg!("Crd {count}: {:?}", crd1.clone());
+                // }
                 match peek {
                     Ok(curr_in) => match curr_in.clone().data {
                         Token::Val(val) => {
@@ -144,7 +154,9 @@ where
                         _ => all_values_match = false,
                     },
                     Err(_) => {
-                        panic!("Unexpected error in stream");
+                        println!("Unexpected error in Joiner stream");
+                        panic!();
+                        // std::process::exit(1);
                     }
                 }
             }
@@ -178,27 +190,43 @@ where
                 // Prioritize Stop tokens
                 let mut stop_token = None;
                 for peek in &crd_peeks {
+                    // crd_peeks.retain(|peek| {
                     if let Ok(ChannelElement {
-                        data: Token::Stop(_),
+                        data: Token::Stop(stkn),
                         ..
                     }) = peek
                     {
+                        // stop_token = Some(peek.as_ref().unwrap().data.clone());
+                        // if stop_token.is_none() {
                         stop_token = Some(peek.as_ref().unwrap().data.clone());
                         break;
+                        // } else {
+                        // assert_eq!(Token::<ValType, StopType>::Stop(stkn.clone()).clone(), stop_token.clone().unwrap());
+                        // }
                     }
                 }
+                // });
 
-                if let Some(_) = stop_token {
+                if let Some(token) = stop_token {
                     // dbg!(stkn.clone());
                     (crd_peeks.iter().enumerate())
                         .into_iter()
                         .for_each(|(i, peek)| match peek {
-                            Ok(curr_in) => match curr_in.data {
+                            Ok(curr_in) => match &curr_in.data {
                                 Token::Val(_) => {
                                     self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
                                     self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
                                 }
-                                Token::Stop(_) => {}
+                                Token::Stop(stkn) => {
+                                    if token.clone() != Token::<ValType, StopType>::Stop(stkn.clone()) {
+                                        let test = self.id();
+                                        println!("ID: {:?}", test);
+                                    }
+                                    assert_eq!(
+                                        Token::<ValType, StopType>::Stop(stkn.clone()),
+                                        token.clone()
+                                    );
+                                }
                                 Token::Done => {}
                                 _ => todo!(),
                             },
@@ -241,6 +269,14 @@ where
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[event_type]
+pub struct JoinerLog {
+    out_ref1: Token<u32, u32>,
+    out_ref2: Token<u32, u32>,
+    out_crd: Token<u32, u32>,
+}
+
 impl<ValType, StopType> Context for Intersect<ValType, StopType>
 where
     ValType: DAMType
@@ -253,6 +289,7 @@ where
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
         + std::cmp::PartialEq,
+    Token<u32, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
@@ -267,6 +304,7 @@ where
                 (Ok(crd1), Ok(crd2)) => {
                     let ref1: Token<ValType, StopType> = ref1_deq.unwrap().data;
                     let ref2: Token<ValType, StopType> = ref2_deq.unwrap().data;
+
                     match (crd1.data, crd2.data) {
                         (Token::Val(crd1), Token::Val(crd2)) => match (crd1, crd2) {
                             (crd1, crd2) if crd1 == crd2 => {
@@ -275,17 +313,43 @@ where
                                     .out_crd
                                     .enqueue(
                                         &self.time,
-                                        ChannelElement::new(curr_time + 1, Token::Val(crd1)),
+                                        ChannelElement::new(
+                                            curr_time + 1,
+                                            Token::Val(crd1.clone()),
+                                        ),
+                                    )
+                                    .unwrap();
+
+                                let id = self.id;
+                                let joiner_id = Identifier { id: 39 };
+                                if id == joiner_id {
+                                    println!(
+                                        "id: {id}, {:?}",
+                                        Token::<ValType, StopType>::Val(crd1.clone())
+                                    );
+                                }
+
+                                self.intersect_data
+                                    .out_ref1
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(curr_time + 1, ref1.clone()),
                                     )
                                     .unwrap();
                                 self.intersect_data
-                                    .out_ref1
-                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
-                                    .unwrap();
-                                self.intersect_data
                                     .out_ref2
-                                    .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(curr_time + 1, ref2.clone()),
+                                    )
                                     .unwrap();
+                                // let out_crd = Token::<ValType, StopType>::Val(crd1);
+                                // let _ = dam::logging::log_event(&JoinerLog {
+                                    // out_ref1: ref1.clone().into(),
+                                    // out_ref2: ref2.clone().into(),
+                                    // out_crd: out_crd.clone().into(),
+                                // });
+
                                 self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
                                 self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
@@ -316,6 +380,11 @@ where
                                     ChannelElement::new(curr_time + 1, Token::Done),
                                 )
                                 .unwrap();
+                            let id = self.id;
+                            let joiner_id = Identifier { id: 39 };
+                            if id == joiner_id {
+                                println!("id: {id}, {:?}", Token::<ValType, StopType>::Done);
+                            }
                             self.intersect_data
                                 .out_ref1
                                 .enqueue(
@@ -330,6 +399,15 @@ where
                                     ChannelElement::new(curr_time + 1, Token::Done),
                                 )
                                 .unwrap();
+                            // let _ = dam::logging::log_event(&JoinerLog {
+                                // crd1: crd1.clone().into(),
+                                // ref1: ref1.clone().into(),
+                                // crd2: crd2.clone().into(),
+                                // ref2: ref2.clone().into(),
+                                // out_ref1: Token::Done,
+                                // out_ref2: Token::Done,
+                                // out_crd: Token::Done,
+                            // });
                         }
                         (Token::Stop(_), Token::Val(_)) => {
                             self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
@@ -342,17 +420,39 @@ where
                                 .out_crd
                                 .enqueue(
                                     &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn1)),
+                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn1.clone())),
                                 )
                                 .unwrap();
                             self.intersect_data
                                 .out_ref1
-                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref1))
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, ref1.clone()),
+                                )
                                 .unwrap();
                             self.intersect_data
                                 .out_ref2
-                                .enqueue(&self.time, ChannelElement::new(curr_time + 1, ref2))
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, ref2.clone()),
+                                )
                                 .unwrap();
+                            let id = self.id;
+                            let joiner_id = Identifier { id: 39 };
+                            if id == joiner_id {
+                                println!(
+                                    "id: {id}, {:?}",
+                                    Token::<ValType, StopType>::Stop(stkn1.clone())
+                                );
+                            }
+
+                            // let stk = Token::<ValType, StopType>::Stop(stkn1.clone());
+
+                            // let _ = dam::logging::log_event(&JoinerLog {
+                                // out_ref1: ref1.clone().into(),
+                                // out_ref2: ref2.clone().into(),
+                                // out_crd: stk.into(),
+                            // });
                             self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
                             self.intersect_data.in_ref1.dequeue(&self.time).unwrap();
                             self.intersect_data.in_crd2.dequeue(&self.time).unwrap();
@@ -363,6 +463,11 @@ where
                         | (tkn @ Token::Done, Token::Done) => {
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, tkn.clone());
+                            let id = self.id;
+                            let joiner_id = Identifier { id: 39 };
+                            if id == joiner_id {
+                                println!("id: {id}, {:?}", tkn.clone());
+                            }
                             self.intersect_data
                                 .out_crd
                                 .enqueue(&self.time, channel_elem.clone())
@@ -632,7 +737,7 @@ mod tests {
 
     use crate::{
         templates::{
-            joiner::{NIntersect, NJoinerData},
+            joiner::{Intersect, NIntersect, NJoinerData},
             primitive::Token,
         },
         token_vec,
@@ -649,9 +754,40 @@ mod tests {
         let out_crd = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
         let out_ref1 = || token_vec!(u32; u32; 0, "S0", 1, 2, 3, "S1", "D").into_iter();
         let out_ref2 = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
+        nintersect_test(
+            in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
+        );
+
         intersect_test(
             in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
         );
+    }
+
+    #[test]
+    fn intersect_2d_test1() {
+        let in_crd1 = || {
+            token_vec!(u32; u32; 0, 2, 6, 7, 9, "S0", 0, 2, 6, 7, 9, "S0", 0, 2, 6, 7, 9, "S0", 0, 2, "S1", "D").into_iter()
+        };
+        let in_ref1 = || {
+            token_vec!(u32; u32; 0, 1, 2, 3, 4, "S0", 0, 1, 2, 3, 4, "S0",0, 1, 2, 3, 4, "S0", 0, 1, "S1", "D").into_iter()
+        };
+        let in_crd2 = || {
+            token_vec!(u32; u32; 1, 7, "S0", 3, "S0", 6, "S0", 9, "S0", 9, "S1", 1, 7, "S0", 3, "S0", 6, "S0", 9, "S0", "S1", "D").into_iter()
+        };
+        let in_ref2 = || {
+            token_vec!(u32; u32; 0, 1, "S0", 2, "S0", 3, "S0", 4, "S0", 5, "S1", 0, 1, "S0", 2, "S0", 3, "S0", 4, "S0", "S1", "D").into_iter()
+        };
+
+        let out_crd = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
+        let out_ref1 = || token_vec!(u32; u32; 0, "S0", 1, 2, 3, "S1", "D").into_iter();
+        let out_ref2 = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
+        nintersect_test(
+            in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
+        );
+
+        // intersect_test(
+        // in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
+        // );
     }
 
     #[test]
@@ -680,7 +816,7 @@ mod tests {
         );
     }
 
-    fn intersect_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2, ORT3>(
+    fn nintersect_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2, ORT3>(
         in_crd1: fn() -> IRT1,
         in_ref1: fn() -> IRT2,
         in_crd2: fn() -> IRT3,
@@ -728,7 +864,78 @@ mod tests {
         let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
         let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
         let gen4 = GeneratorContext::new(in_ref2, in_ref2_sender);
-        let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
+
+        let crd_checker = PrinterContext::new(out_crd_receiver);
+        let ref1_checker = ConsumerContext::new(out_ref1_receiver);
+        let ref2_checker = ConsumerContext::new(out_ref2_receiver);
+        // let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
+        // let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
+        // let ref2_checker = CheckerContext::new(out_ref2, out_ref2_receiver);
+
+        parent.add_child(gen1);
+        parent.add_child(gen2);
+        parent.add_child(gen3);
+        parent.add_child(gen4);
+        parent.add_child(crd_checker);
+        parent.add_child(ref1_checker);
+        parent.add_child(ref2_checker);
+        parent.add_child(intersect);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
+
+    fn intersect_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2, ORT3>(
+        in_crd1: fn() -> IRT1,
+        in_ref1: fn() -> IRT2,
+        in_crd2: fn() -> IRT3,
+        in_ref2: fn() -> IRT4,
+        out_crd: fn() -> ORT1,
+        out_ref1: fn() -> ORT2,
+        out_ref2: fn() -> ORT3,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT3: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT4: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT2: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT3: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let chan_size = 4;
+
+        let mut parent = ProgramBuilder::default();
+        let (in_crd1_sender, in_crd1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (in_crd2_sender, in_crd2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (in_ref1_sender, in_ref1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (in_ref2_sender, in_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (out_crd_sender, out_crd_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (out_ref1_sender, out_ref1_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+        let (out_ref2_sender, out_ref2_receiver) = parent.bounded::<Token<u32, u32>>(chan_size);
+
+        let data = CrdJoinerData::<u32, u32> {
+            in_crd1: in_crd1_receiver,
+            in_ref1: in_ref1_receiver,
+            in_crd2: in_crd2_receiver,
+            in_ref2: in_ref2_receiver,
+            out_crd: out_crd_sender,
+            out_ref1: out_ref1_sender,
+            out_ref2: out_ref2_sender,
+        };
+        // let data = NJoinerData::<u32, u32> {
+        //     in_crds: vec![in_crd1_receiver, in_crd2_receiver],
+        //     in_refs: vec![Box::new(in_ref1_receiver), Box::new(in_ref2_receiver)],
+        //     out_crd: out_crd_sender,
+        //     out_refs: vec![Box::new(out_ref1_sender), Box::new(out_ref2_sender)],
+        // };
+        let intersect = Intersect::new(data);
+        let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);
+        let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
+        let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
+        let gen4 = GeneratorContext::new(in_ref2, in_ref2_sender);
+        let crd_checker = PrinterContext::new(out_crd_receiver);
         let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
         let ref2_checker = CheckerContext::new(out_ref2, out_ref2_receiver);
 
