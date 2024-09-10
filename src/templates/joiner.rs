@@ -435,7 +435,17 @@ where
                         .into_iter()
                         .for_each(|(i, peek)| match peek {
                             Ok(curr_in) => match &curr_in.data {
-                                Token::Val(_) => {
+                                Token::Val(val) => {
+                                    self.union_data
+                                        .out_crd
+                                        .enqueue(
+                                            &self.time,
+                                            ChannelElement::new(
+                                                self.time.tick() + 1,
+                                                Token::<ValType, StopType>::Val(val.clone()),
+                                            ),
+                                        )
+                                        .unwrap();
                                     self.union_data.out_refs[i]
                                         .enqueue(
                                             &self.time,
@@ -452,6 +462,7 @@ where
                                         let test = self.id();
                                         println!("ID: {:?}", test);
                                     }
+
                                     self.union_data.out_refs[i]
                                         .enqueue(
                                             &self.time,
@@ -461,6 +472,8 @@ where
                                             ),
                                         )
                                         .unwrap();
+                                    // self.union_data.in_crds[i].dequeue(&self.time).unwrap();
+                                    // self.union_data.in_refs[i].dequeue(&self.time).unwrap();
                                     assert_eq!(
                                         Token::<ValType, StopType>::Stop(stkn.clone()),
                                         token.clone()
@@ -480,13 +493,6 @@ where
                                 ..
                             }) if Some(val) == min_val.as_ref() => {
                                 // Dequeue from channels with min val
-                                self.union_data.in_crds[i].dequeue(&self.time).unwrap();
-                                self.union_data.in_refs[i].dequeue(&self.time).unwrap();
-                            }
-                            Ok(ChannelElement {
-                                data: Token::Val(val),
-                                ..
-                            }) if Some(val) > min_val.as_ref() => {
                                 self.union_data
                                     .out_crd
                                     .enqueue(
@@ -498,13 +504,7 @@ where
                                     )
                                     .unwrap();
                                 self.union_data.out_refs[i]
-                                    .enqueue(
-                                        &self.time,
-                                        ChannelElement::new(
-                                            self.time.tick() + 1,
-                                            Token::<ValType, StopType>::Empty,
-                                        ),
-                                    )
+                                    .enqueue(&self.time, ref_peeks[i].as_ref().unwrap().clone())
                                     .unwrap();
                                 self.union_data.in_crds[i].dequeue(&self.time).unwrap();
                                 self.union_data.in_refs[i].dequeue(&self.time).unwrap();
@@ -1002,7 +1002,7 @@ mod tests {
 
     use crate::{
         templates::{
-            joiner::{Intersect, NIntersect, NJoinerData},
+            joiner::{Intersect, NIntersect, NJoinerData, NUnion},
             primitive::Token,
         },
         token_vec,
@@ -1076,7 +1076,7 @@ mod tests {
         let out_ref2 = || {
             token_vec!(u32; u32; "N", 0, 1, 2, "S0", "N", "N", "S0", 2, 3, 4, "S0", "N", "N", "S1", "D").into_iter()
         };
-        union_test(
+        nintersect_test(
             in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
         );
     }
@@ -1124,14 +1124,14 @@ mod tests {
             out_crd: out_crd_sender,
             out_refs: vec![Box::new(out_ref1_sender), Box::new(out_ref2_sender)],
         };
-        let intersect = NIntersect::new(data);
+        let intersect = NUnion::new(data);
         let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);
         let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
         let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
         let gen4 = GeneratorContext::new(in_ref2, in_ref2_sender);
 
-        let crd_checker = PrinterContext::new(out_crd_receiver);
-        let ref1_checker = ConsumerContext::new(out_ref1_receiver);
+        let crd_checker = ConsumerContext::new(out_crd_receiver);
+        let ref1_checker = PrinterContext::new(out_ref1_receiver);
         let ref2_checker = ConsumerContext::new(out_ref2_receiver);
         // let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
         // let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
