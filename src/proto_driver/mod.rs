@@ -22,7 +22,7 @@ use super::token_vec;
 use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 use crate::templates::accumulator::MaxReduce;
-use crate::templates::joiner::{NIntersect, NJoinerData};
+use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
 use crate::templates::primitive::ALUMaxOp;
 use crate::templates::scatter_gather::{Gather, Scatter};
 
@@ -45,7 +45,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 1024;
+const DEFAULT_CHAN_SIZE: usize = 102400;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
@@ -204,7 +204,7 @@ pub fn build_from_proto<'a>(
                 if let joiner::Type::Intersect = op.join_type() {
                     builder.add_child(NIntersect::new(joiner_data))
                 } else {
-                    builder.add_child(NIntersect::new(joiner_data))
+                    builder.add_child(NUnion::new(joiner_data))
                 };
             }
             Op::FiberLookup(op) => {
@@ -345,6 +345,7 @@ pub fn build_from_proto<'a>(
                 if in_val_ids.len() == 2 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
+                    // builder.add_child(ALUMul::new(val_receiver1, val_receiver2, out_val_sender));
                     builder.add_child(make_alu(
                         val_receiver1,
                         val_receiver2,
