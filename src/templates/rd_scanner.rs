@@ -1,5 +1,11 @@
 use crate::config::rd_scanner::CompressedCrdRdScanConfig;
-use dam::{context_tools::*, dam_macros::context_macro};
+use dam::structures::Identifiable;
+use dam::{
+    context_tools::*,
+    dam_macros::{context_macro, event_type},
+    structures::Identifier,
+};
+use serde::{Deserialize, Serialize};
 
 use super::primitive::Token;
 
@@ -106,6 +112,13 @@ where
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[event_type]
+pub struct LSLog {
+    out_crd: Token<u32, u32>,
+    out_ref: Token<u32, u32>,
+}
+
 impl<ValType, StopType> Context for UncompressedCrdRdScan<ValType, StopType>
 where
     ValType: DAMType
@@ -118,6 +131,8 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let id = Identifier { id: 0 };
+        let curr_id = self.id();
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -142,11 +157,19 @@ where
                                     ChannelElement::new(
                                         curr_time + 1,
                                         super::primitive::Token::Val(
-                                            crd_count.clone() + val.clone() * self.meta_dim.clone(),
+                                            crd_count.clone()
+                                                + (val.clone() * self.meta_dim.clone()),
                                         ),
                                     ),
                                 )
                                 .unwrap();
+                            if curr_id == id {
+                                println!(
+                                    "ID: {:?}, Val: {:?}",
+                                    id,
+                                    crd_count.clone() + (val.clone() * self.meta_dim.clone())
+                                );
+                            }
                             crd_count += 1;
                             self.time.incr_cycles(1);
                         }
@@ -178,6 +201,9 @@ where
                                 ChannelElement::new(curr_time + 1, output.clone()),
                             )
                             .unwrap();
+                        if curr_id == id {
+                            println!("ID: {:?}, Val: {:?}", id, output.clone());
+                        }
                     }
                     Token::Stop(token) => {
                         let curr_time = self.time.tick();
@@ -195,6 +221,9 @@ where
                                 ChannelElement::new(curr_time + 1, Token::Stop(token.clone() + 1)),
                             )
                             .unwrap();
+                        if curr_id == id {
+                            println!("ID: {:?}, Val: {:?}", id, Token::<ValType, StopType>::Stop(token.clone() + 1));
+                        }
                     }
                     // Could either be a done token or an empty token
                     // In the case of done token, return
@@ -208,6 +237,9 @@ where
                             .out_ref
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
+                        if curr_id == id {
+                            println!("ID: {:?}, Val: {:?}", id, Token::<ValType, StopType>::Done);
+                        }
                         return;
                     }
                     Token::Empty => {
@@ -220,6 +252,9 @@ where
                             .out_ref
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
+                        if curr_id == id {
+                            println!("ID: {:?}, Val: {:?}", id, Token::<ValType, StopType>::Empty);
+                        }
                     }
                 },
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
@@ -386,6 +421,7 @@ where
     ValType: TryInto<usize>,
     <ValType as TryInto<usize>>::Error: std::fmt::Debug,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
+    Token<u32, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
@@ -397,6 +433,7 @@ where
         self.time.incr_cycles(crd_arr_len.ceil() as u64);
         self.time.incr_cycles(self.timing_config.startup_delay);
         let mut seg_initiated = false;
+        let id = Identifier { id: 49 };
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -440,7 +477,7 @@ where
                                     &self.time,
                                     ChannelElement::new(
                                         curr_time + final_rd_latency,
-                                        super::primitive::Token::Val(coord),
+                                        Token::Val(coord.clone()),
                                     ),
                                 )
                                 .unwrap();
@@ -450,10 +487,28 @@ where
                                     &self.time,
                                     ChannelElement::new(
                                         curr_time + final_rd_latency,
-                                        super::primitive::Token::Val(curr_addr.clone()),
+                                        Token::Val(curr_addr.clone()),
                                     ),
                                 )
                                 .unwrap();
+
+                            let _ = dam::logging::log_event(&LSLog {
+                                out_crd: Token::Val(coord.clone()).into(),
+                                out_ref: Token::Val(curr_addr.clone()).into(),
+                            });
+                            if self.id() == id.clone() {
+                                println!(
+                                    "Id: {:?}, Out crd: {:?}",
+                                    self.id(),
+                                    Token::<ValType, StopType>::Val(coord.clone())
+                                );
+                                println!(
+                                    "Id: {:?}, Out ref: {:?}",
+                                    self.id(),
+                                    Token::<ValType, StopType>::Val(curr_addr.clone())
+                                );
+                            }
+
                             curr_addr += 1;
                             self.time
                                 .incr_cycles(self.timing_config.sequential_interval);
@@ -492,6 +547,14 @@ where
                                 ),
                             )
                             .unwrap();
+                        let _ = dam::logging::log_event(&LSLog {
+                            out_crd: output.clone().into(),
+                            out_ref: output.clone().into(),
+                        });
+                        if self.id() == id.clone() {
+                            println!("Id: {:?}, Out crd: {:?}", self.id(), output.clone());
+                            println!("Id: {:?}, Out ref: {:?}", self.id(), output.clone());
+                        }
                     }
                     Token::Stop(token) => {
                         let curr_time = self.time.tick();
@@ -515,6 +578,15 @@ where
                                 ),
                             )
                             .unwrap();
+                        let stkn: Token<ValType, StopType> = Token::Stop(token.clone() + 1);
+                        let _ = dam::logging::log_event(&LSLog {
+                            out_crd: stkn.clone().into(),
+                            out_ref: stkn.clone().into(),
+                        });
+                        if self.id() == id.clone() {
+                            println!("Id: {:?}, Out crd: {:?}", self.id(), stkn.clone());
+                            println!("Id: {:?}, Out ref: {:?}", self.id(), stkn.clone());
+                        }
                     }
                     // Could either be a done token or an empty token
                     // In the case of done token, return
@@ -531,8 +603,15 @@ where
                             .out_ref
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
-                        // dbg!(Token::<ValType, StopType>::Done);
+                        let _ = dam::logging::log_event(&LSLog {
+                            out_crd: Token::Done,
+                            out_ref: Token::Done,
+                        });
+                        if self.id() == id.clone() {
+                            println!("Done");
+                        }
                         return;
+                        // dbg!(Token::<ValType, StopType>::Done);
                     }
                     Token::Empty => {
                         let channel_elem = ChannelElement::new(

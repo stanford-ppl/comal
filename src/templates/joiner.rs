@@ -7,7 +7,10 @@ use dam::{
     dam_macros::{context_macro, event_type},
     structures::Identifier,
 };
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+
+use crate::config;
 
 use super::primitive::Token;
 
@@ -142,6 +145,7 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let id = Identifier { id: 0 };
         let curr_id = self.id();
         loop {
             let crd_peeks = self
@@ -205,6 +209,12 @@ where
                     .unwrap();
                 // dbg!(val.clone());
 
+                let mut ref_vec = Vec::new();
+
+                if curr_id == id {
+                    println!("ID: {:?}, Output: {:?}", curr_id, val.clone());
+                }
+
                 for i in 0..self.intersect_data.in_crds.len() {
                     // Enqueue matching value to output channels
 
@@ -216,10 +226,15 @@ where
                         )
                         .unwrap();
                     // dbg!(ref_peeks[i].as_ref().unwrap().clone());
+                    ref_vec.push(ref_peeks[i].as_ref().unwrap().clone().data);
 
                     // Dequeue elements from input channels
                     self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
                     self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
+                }
+                // let sep_str = ref_vec.iter().format(",");
+                if curr_id == id {
+                    println!("ID: {:?}, Output: {:?}", curr_id, val.clone());
                 }
             } else {
                 // Prioritize Stop tokens
@@ -316,17 +331,22 @@ where
         + std::cmp::PartialOrd<ValType>
         + std::cmp::Eq
         + std::hash::Hash
-        + Ord,
+        + Ord
+        + serde::Serialize,
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
         + std::cmp::PartialEq
         + std::hash::Hash
-        + std::cmp::Eq,
+        + std::cmp::Eq
+        + TryInto<u32>,
+    Vec<Token<ValType, u32>>: From<Vec<Token<ValType, StopType>>>,
+    Token<u32, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let id = Identifier { id: 0 };
         let curr_id = self.id();
         loop {
             let crd_peeks = self
@@ -347,7 +367,6 @@ where
             let mut min_val: Option<ValType> = None;
             for peek in &crd_peeks {
                 let crd1 = peek.as_ref().unwrap().clone().data;
-                let id = Identifier { id: 39 };
                 // if self.id() == id {
 
                 // dbg!("Crd {count}: {:?}", crd1.clone());
@@ -389,6 +408,11 @@ where
                     .enqueue(&self.time, ChannelElement::new(curr_time + 1, val.clone()))
                     .unwrap();
                 // dbg!(val.clone());
+                if curr_id == id {
+                    println!("ID: {:?}, Crd: {:?}", curr_id, val.clone());
+                }
+
+                let mut ref_vec = Vec::new();
 
                 for i in 0..self.union_data.in_crds.len() {
                     // Enqueue matching value to output channels
@@ -402,25 +426,35 @@ where
                         .unwrap();
                     // dbg!(ref_peeks[i].as_ref().unwrap().clone());
 
+                    ref_vec.push(ref_peeks[i].as_ref().unwrap().clone().data);
+
                     // Dequeue elements from input channels
                     self.union_data.in_crds[i].dequeue(&self.time).unwrap();
                     self.union_data.in_refs[i].dequeue(&self.time).unwrap();
                 }
+                let sep_str = &ref_vec.iter().format(",");
+                if curr_id == id {
+                    println!("ID: {:?}, Refs: {:?}", curr_id, sep_str);
+                }
+                let _ = dam::logging::log_event(&JoinerLog::<ValType> {
+                    in_refs: ref_vec.clone().into(),
+                    in_crds: vec![val.clone().into(); ref_vec.len()],
+                    out_refs: ref_vec.clone().into(),
+                    out_crd: val.clone().into(),
+                });
             } else {
                 // Prioritize Stop tokens
                 let mut stop_token = None;
-                let mut idx = None;
                 for (i, peek) in crd_peeks.iter().enumerate() {
                     // crd_peeks.retain(|peek| {
                     if let Ok(ChannelElement {
-                        data: Token::Stop(stkn),
+                        data: Token::Stop(_),
                         ..
                     }) = peek
                     {
                         // stop_token = Some(peek.as_ref().unwrap().data.clone());
                         // if stop_token.is_none() {
                         stop_token = Some(peek.as_ref().unwrap().data.clone());
-                        idx = Some(i);
                         break;
                         // } else {
                         // assert_eq!(Token::<ValType, StopType>::Stop(stkn.clone()).clone(), stop_token.clone().unwrap());
@@ -431,6 +465,8 @@ where
 
                 if let Some(token) = stop_token {
                     // dbg!(stkn.clone());
+                    let mut ref_vec = Vec::new();
+                    let mut crd_vec: Vec<Token<u32, u32>> = Vec::new();
                     (crd_peeks.iter().enumerate())
                         .into_iter()
                         .for_each(|(i, peek)| match peek {
@@ -446,6 +482,8 @@ where
                                             ),
                                         )
                                         .unwrap();
+                                    crd_vec
+                                        .push(Token::<ValType, StopType>::Val(val.clone()).into());
                                     self.union_data.out_refs[i]
                                         .enqueue(
                                             &self.time,
@@ -454,6 +492,7 @@ where
                                         .unwrap();
                                     self.union_data.in_crds[i].dequeue(&self.time).unwrap();
                                     self.union_data.in_refs[i].dequeue(&self.time).unwrap();
+                                    ref_vec.push(ref_peeks[i].as_ref().unwrap().clone().data);
                                 }
                                 Token::Stop(stkn) => {
                                     if token.clone()
@@ -472,6 +511,7 @@ where
                                             ),
                                         )
                                         .unwrap();
+                                    ref_vec.push(Token::<ValType, StopType>::Empty);
                                     // self.union_data.in_crds[i].dequeue(&self.time).unwrap();
                                     // self.union_data.in_refs[i].dequeue(&self.time).unwrap();
                                     assert_eq!(
@@ -479,13 +519,23 @@ where
                                         token.clone()
                                     );
                                 }
-                                Token::Done => {}
+                                Token::Done => {
+                                    panic!("Panicked at done");
+                                }
                                 _ => todo!(),
                             },
                             Err(_) => todo!(),
                         });
+                    let _ = dam::logging::log_event(&JoinerLog::<ValType> {
+                        in_refs: ref_vec.clone().into(),
+                        in_crds: crd_vec.clone().into(),
+                        out_refs: ref_vec.clone().into(),
+                        out_crd: crd_vec[0].clone().into(),
+                    });
                 } else {
                     // Handle mismatches or Done tokens
+                    let mut ref_vec = Vec::new();
+                    let mut crd_vec = Vec::new();
                     for (i, peek) in crd_peeks.iter().enumerate() {
                         match peek {
                             Ok(ChannelElement {
@@ -508,10 +558,31 @@ where
                                     .unwrap();
                                 self.union_data.in_crds[i].dequeue(&self.time).unwrap();
                                 self.union_data.in_refs[i].dequeue(&self.time).unwrap();
+                                ref_vec.push(ref_peeks[i].as_ref().unwrap().clone().data);
+                                crd_vec.push(Token::<ValType, StopType>::Val(val.clone()).into());
                             }
                             Ok(ChannelElement {
                                 data: Token::Done, ..
                             }) => {
+                                for (i, out_ref) in ref_peeks.iter().enumerate() {
+                                    if curr_id == id {
+                                        println!(
+                                            "ID: {:?}, Ref[{}]: {:?}",
+                                            curr_id,
+                                            i,
+                                            out_ref.as_ref().unwrap().clone().data
+                                        );
+                                    }
+                                    if out_ref.as_ref().unwrap().clone().data
+                                        != Token::<ValType, StopType>::Done
+                                    {
+                                        panic!(
+                                            "Expected Done token but found {:?} for ref[{}]",
+                                            out_ref, i
+                                        );
+                                    }
+                                }
+                                // TODO: Add assertion for checking all refs
                                 let channel_elem =
                                     ChannelElement::new(self.time.tick() + 1, Token::Done);
                                 self.union_data
@@ -521,12 +592,34 @@ where
                                 for out_ref in self.union_data.out_refs.iter() {
                                     out_ref.enqueue(&self.time, channel_elem.clone()).unwrap();
                                 }
+
+                                let _ = dam::logging::log_event(&JoinerLog::<ValType> {
+                                    in_refs: vec![
+                                        Token::<ValType, u32>::Done;
+                                        self.union_data.out_refs.len()
+                                    ],
+                                    in_crds: vec![
+                                        Token::<u32, u32>::Done;
+                                        self.union_data.out_refs.len()
+                                    ],
+                                    out_refs: vec![
+                                        Token::<ValType, u32>::Done;
+                                        self.union_data.out_refs.len()
+                                    ],
+                                    out_crd: Token::<u32, u32>::Done,
+                                });
                                 return;
                                 // ... (Handle Done token - similar to original logic but for vectors)
                             }
                             _ => {} // Keep other tokens
                         }
                     }
+                    let _ = dam::logging::log_event(&JoinerLog::<ValType> {
+                        in_refs: ref_vec.clone().into(),
+                        in_crds: crd_vec.clone().into(),
+                        out_refs: ref_vec.clone().into(),
+                        out_crd: crd_vec[0].clone().into(),
+                    });
                 }
             }
             self.time.incr_cycles(1);
@@ -536,9 +629,10 @@ where
 
 #[derive(Serialize, Deserialize, Debug)]
 #[event_type]
-pub struct JoinerLog {
-    out_ref1: Token<u32, u32>,
-    out_ref2: Token<u32, u32>,
+pub struct JoinerLog<T: dam::types::DAMType + serde::Serialize> {
+    in_refs: Vec<Token<T, u32>>,
+    in_crds: Vec<Token<u32, u32>>,
+    out_refs: Vec<Token<T, u32>>,
     out_crd: Token<u32, u32>,
 }
 
@@ -610,9 +704,13 @@ where
                                     .unwrap();
                                 // let out_crd = Token::<ValType, StopType>::Val(crd1);
                                 // let _ = dam::logging::log_event(&JoinerLog {
-                                // out_ref1: ref1.clone().into(),
-                                // out_ref2: ref2.clone().into(),
-                                // out_crd: out_crd.clone().into(),
+                                //     in_ref1: ref1.clone().into(),
+                                //     in_crd1: out_crd.clone().into(),
+                                //     in_ref2: ref2.clone().into(),
+                                //     in_crd2: out_crd.clone().into(),
+                                //     out_ref1: ref1.clone().into(),
+                                //     out_ref2: ref2.clone().into(),
+                                //     out_crd: out_crd.clone().into(),
                                 // });
 
                                 self.intersect_data.in_crd1.dequeue(&self.time).unwrap();
@@ -664,14 +762,15 @@ where
                                     ChannelElement::new(curr_time + 1, Token::Done),
                                 )
                                 .unwrap();
+                            // let out_crd = Token::<ValType, StopType>::Done;
                             // let _ = dam::logging::log_event(&JoinerLog {
-                            // crd1: crd1.clone().into(),
-                            // ref1: ref1.clone().into(),
-                            // crd2: crd2.clone().into(),
-                            // ref2: ref2.clone().into(),
-                            // out_ref1: Token::Done,
-                            // out_ref2: Token::Done,
-                            // out_crd: Token::Done,
+                            //     in_ref1: ref1.clone().into(),
+                            //     in_crd1: out_crd.clone().into(),
+                            //     in_ref2: ref2.clone().into(),
+                            //     in_crd2: out_crd.clone().into(),
+                            //     out_ref1: Token::Done,
+                            //     out_ref2: Token::Done,
+                            //     out_crd: Token::Done,
                             // });
                         }
                         (Token::Stop(_), Token::Val(_)) => {
@@ -702,6 +801,19 @@ where
                                     ChannelElement::new(curr_time + 1, ref2.clone()),
                                 )
                                 .unwrap();
+
+                            let out_crd = Token::<ValType, StopType>::Stop(stkn1.clone());
+
+                            // let _ = dam::logging::log_event(&JoinerLog {
+                            //     in_ref1: ref1.clone().into(),
+                            //     in_crd1: out_crd.clone().into(),
+                            //     in_ref2: ref2.clone().into(),
+                            //     in_crd2: out_crd.clone().into(),
+                            //     out_ref1: Token::Done,
+                            //     out_ref2: Token::Done,
+                            //     out_crd: Token::Done,
+                            // });
+
                             let id = self.id;
                             let joiner_id = Identifier { id: 39 };
                             if id == joiner_id {
