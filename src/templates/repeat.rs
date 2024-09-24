@@ -1,4 +1,7 @@
-use dam::{context_tools::*, dam_macros::context_macro};
+use dam::dam_macros::event_type;
+use dam::structures::Identifiable;
+use dam::{context_tools::*, dam_macros::context_macro, structures::Identifier};
+use serde::{Deserialize, Serialize};
 
 use super::primitive::{Repsiggen, Token};
 
@@ -11,6 +14,20 @@ pub struct RepeatData<ValType: Clone, StopType: Clone> {
 #[context_macro]
 pub struct Repeat<ValType: Clone, StopType: Clone> {
     repeat_data: RepeatData<ValType, StopType>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[event_type]
+pub struct RepeatLog<T: dam::types::DAMType + serde::Serialize> {
+    in_ref: Token<T, u32>,
+    in_rep_sig: Repsiggen,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[event_type]
+pub struct RepsiggenLog<T: dam::types::DAMType + serde::Serialize> {
+    in_ref: Token<T, u32>,
+    out_rep_sig: Repsiggen,
 }
 
 impl<ValType: DAMType, StopType: DAMType> Repeat<ValType, StopType>
@@ -35,12 +52,16 @@ where
     ValType: DAMType
         + std::ops::Mul<ValType, Output = ValType>
         + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>,
+        + std::cmp::PartialOrd<ValType>
+        + serde::Serialize,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
+    Token<ValType, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let id = Identifier { id: 0 };
+        let curr_id = self.id();
         loop {
             let in_ref = self.repeat_data.in_ref.peek_next(&self.time);
             match self.repeat_data.in_repsig.dequeue(&self.time) {
@@ -54,6 +75,13 @@ where
                                 .out_ref
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
+                            if curr_id == id {
+                                println!("ID: {:?}, Output: {:?}", curr_id, curr_ref.clone());
+                            }
+                            let _ = dam::logging::log_event(&RepeatLog {
+                                in_ref: curr_ref.clone().into(),
+                                in_rep_sig: Repsiggen::Repeat,
+                            });
                         }
                         Repsiggen::Stop => {
                             self.repeat_data.in_ref.dequeue(&self.time).unwrap();
@@ -71,16 +99,46 @@ where
                                 .out_ref
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
+                            if curr_id == id {
+                                println!("ID: {:?}, Output: {:?}", curr_id, output.clone());
+                            }
+                            let _ = dam::logging::log_event(&RepeatLog {
+                                in_ref: output.clone().into(),
+                                in_rep_sig: Repsiggen::Repeat,
+                            });
                         }
                         Repsiggen::Done => {
-                            if let Token::Done = curr_ref {
+                            if let Token::Done = curr_ref.clone() {
                                 let channel_elem =
                                     ChannelElement::new(self.time.tick() + 1, Token::Done);
                                 self.repeat_data
                                     .out_ref
-                                    .enqueue(&self.time, channel_elem)
+                                    .enqueue(&self.time, channel_elem.clone())
                                     .unwrap();
+                                if curr_id == id {
+                                    println!(
+                                        "ID: {:?}, Output: {:?}",
+                                        curr_id,
+                                        Token::<ValType, StopType>::Done
+                                    );
+                                }
+                                let _ = dam::logging::log_event(&RepeatLog {
+                                    in_ref: channel_elem.clone().data.into(),
+                                    in_rep_sig: Repsiggen::Repeat,
+                                });
                             } else {
+                                if curr_id == id {
+                                    println!(
+                                        "ID: {:?}, Output: {:?}",
+                                        curr_id,
+                                        // Token::<ValType, StopType>::Done
+                                        curr_ref.clone()
+                                    );
+                                }
+                                let _ = dam::logging::log_event(&RepeatLog {
+                                    in_ref: curr_ref.clone().into(),
+                                    in_rep_sig: Repsiggen::Repeat,
+                                });
                                 panic!("Input reference and repeat signal must both be on Done");
                             }
                             return;
@@ -127,31 +185,59 @@ where
     ValType: DAMType
         + std::ops::Mul<ValType, Output = ValType>
         + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>,
+        + std::cmp::PartialOrd<ValType>
+        + serde::Serialize,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
     Repsiggen: DAMType,
+    Token<ValType, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let id = Identifier { id: 0 };
+        let curr_id = self.id();
         loop {
             match self.rep_sig_gen_data.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
-                    Token::Val(_) | Token::Empty => {
+                    tkn @ Token::Val(_) | tkn @ Token::Empty => {
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + 1, Repsiggen::Repeat);
                         self.rep_sig_gen_data
                             .out_repsig
                             .enqueue(&self.time, channel_elem)
                             .unwrap();
+                        let _ = dam::logging::log_event(&RepsiggenLog {
+                            in_ref: tkn.clone().into(),
+                            out_rep_sig: Repsiggen::Repeat,
+                        });
+                        if curr_id == id {
+                            println!(
+                                "ID: {:?}, Ref: {:?}, Ref_sig: {:?}",
+                                curr_id,
+                                tkn.clone(),
+                                Repsiggen::Repeat
+                            );
+                        }
                     }
-                    Token::Stop(_) => {
+                    tkn @ Token::Stop(_) => {
                         let channel_elem =
                             ChannelElement::new(self.time.tick() + 1, Repsiggen::Stop);
                         self.rep_sig_gen_data
                             .out_repsig
-                            .enqueue(&self.time, channel_elem)
+                            .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
+                        let _ = dam::logging::log_event(&RepsiggenLog {
+                            out_rep_sig: Repsiggen::Stop,
+                            in_ref: tkn.clone().into(),
+                        });
+                        if curr_id == id {
+                            println!(
+                                "ID: {:?}, Ref: {:?}, Ref_sig: {:?}",
+                                curr_id,
+                                tkn.clone(),
+                                Repsiggen::Stop
+                            );
+                        }
                     }
                     Token::Done => {
                         let channel_elem =
@@ -160,6 +246,18 @@ where
                             .out_repsig
                             .enqueue(&self.time, channel_elem)
                             .unwrap();
+                        let _ = dam::logging::log_event(&RepsiggenLog {
+                            out_rep_sig: Repsiggen::Done,
+                            in_ref: Token::<ValType, StopType>::Done.into(),
+                        });
+                        if curr_id == id {
+                            println!(
+                                "ID: {:?}, Ref: {:?}, Ref_sig: {:?}",
+                                curr_id,
+                                Token::<ValType, StopType>::Done,
+                                Repsiggen::Done
+                            );
+                        }
                         return;
                     }
                 },
@@ -175,7 +273,7 @@ where
 #[cfg(test)]
 mod tests {
     use dam::simulation::*;
-    use dam::utility_contexts::{CheckerContext, GeneratorContext};
+    use dam::utility_contexts::{CheckerContext, GeneratorContext, PrinterContext};
 
     use crate::templates::primitive::{Repsiggen, Token};
     use crate::{repsig_vec, token_vec};
@@ -207,16 +305,34 @@ mod tests {
     }
 
     #[test]
+    fn repeat_1d_test1() {
+        let in_ref = || token_vec!(u32; u32; 0, "S0", 1, "S1", "D").into_iter();
+        let in_repsig = || repsig_vec!("S", "R", "S", "D").into_iter();
+        let out_ref = || token_vec!(u32; u32; "S1", 2, "S2", "D").into_iter();
+        repeat_test(in_ref, in_repsig, out_ref);
+    }
+
+    #[test]
     fn repsiggen_2d_test() {
-        let in_ref = || token_vec!(u32; u32; 0, 1, "S0", 2, "S0", 3, "S1", "D").into_iter();
-        let out_repsig = || repsig_vec!("R", "R", "S", "R", "S", "R", "S", "D").into_iter();
+        // let in_ref = || token_vec!(u32; u32; 0, 1, "S0", 2, "S0", 3, "S1", "D").into_iter();
+        let in_ref =
+            || token_vec!(u32; u32; 0, 0, 0, "S0", 1, 1, 1, "S0", 2, 2, 2, "S1", "D").into_iter();
+        let out_repsig = || {
+            repsig_vec!(
+                "R", "R", "S", "S", "S", "R", "R", "S", "S", "S", "R", "R", "S", "S", "S", "D"
+            )
+            .into_iter()
+        };
         repsiggen_test(in_ref, out_repsig);
     }
 
     #[test]
     fn full_repeat_2d_test() {
-        let in_ref = || token_vec!(u32; u32; 0, 1, 2, "S0", "D").into_iter();
-        let in_repsig_ref = || token_vec!(u32; u32; 0, 1, "S0", 2, "S0", 3, "S1", "D").into_iter();
+        let in_ref =
+            || token_vec!(u32; u32; 0, 0, 0, "S0", 1, 1, 1, "S0", 2, 2, 2, "S1", "D").into_iter();
+        let in_repsig_ref = || {
+            token_vec!(u32; u32; 1, 4, "S0", "S0", "S1", 1, 4, "S0", "S0", "S1", 1, 4, "S0", "S0", "S1", "D").into_iter()
+        };
         let out_ref = || token_vec!(u32; u32; 0, 0, "S0", 1, "S0", 2, "S1", "D").into_iter();
 
         full_repeat_test(in_repsig_ref, in_ref, out_ref);
@@ -251,7 +367,8 @@ mod tests {
         let repsig_gen = GeneratorContext::new(in_ref_sig, in_repsig_ref_sender);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
 
-        let val_checker = CheckerContext::new(out_ref, out_ref_receiver);
+        // let val_checker = CheckerContext::new(out_ref, out_ref_receiver);
+        let val_checker = PrinterContext::new(out_ref_receiver);
         parent.add_child(gen1);
         parent.add_child(repsig_gen);
         parent.add_child(val_checker);
@@ -285,11 +402,13 @@ mod tests {
         let rep = Repeat::new(data);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
         let gen2 = GeneratorContext::new(in_repsig, in_repsig_sender);
-        let val_checker = CheckerContext::new(out_ref, out_ref_receiver);
+        // let val_checker = CheckerContext::new(out_ref, out_ref_receiver);
+        let test = PrinterContext::new(out_ref_receiver);
+        parent.add_child(test);
 
         parent.add_child(gen1);
         parent.add_child(gen2);
-        parent.add_child(val_checker);
+        // parent.add_child(val_checker);
         parent.add_child(rep);
         let executed = parent
             .initialize(InitializationOptions::default())

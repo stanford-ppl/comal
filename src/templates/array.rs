@@ -1,4 +1,10 @@
-use dam::{context_tools::*, dam_macros::context_macro};
+use dam::structures::Identifiable;
+use dam::{
+    context_tools::*,
+    dam_macros::{context_macro, event_type},
+    structures::Identifier,
+};
+use serde::{Deserialize, Serialize};
 
 use super::primitive::Token;
 
@@ -30,6 +36,13 @@ where
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[event_type]
+pub struct ArrayLog {
+    in_ref: Token<u32, u32>,
+    val: Token<f32, u32>,
+}
+
 impl<RefType, ValType, StopType> Context for Array<RefType, ValType, StopType>
 where
     RefType: DAMType
@@ -39,52 +52,94 @@ where
     <RefType as TryInto<usize>>::Error: std::fmt::Debug,
     ValType: DAMType,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
+    Token<u32, u32>: From<Token<RefType, StopType>>,
+    Token<f32, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let id = Identifier { id: 0 };
+        let curr_id = self.id();
         loop {
             match self.array_data.in_ref.dequeue(&self.time) {
-                Ok(curr_in) => match curr_in.data {
-                    Token::Val(val) => {
-                        let idx: usize = val.try_into().unwrap();
-                        let channel_elem = ChannelElement::new(
-                            self.time.tick() + 1,
-                            Token::Val(self.val_arr[idx].clone()),
-                        );
-                        self.array_data
-                            .out_val
-                            .enqueue(&self.time, channel_elem)
-                            .unwrap();
-                    }
-                    Token::Stop(stkn) => {
-                        let channel_elem =
-                            ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn));
-                        self.array_data
-                            .out_val
-                            .enqueue(&self.time, channel_elem)
-                            .unwrap();
-                    }
-                    Token::Empty => {
-                        let channel_elem = ChannelElement::new(
-                            self.time.tick() + 1,
-                            Token::Val(ValType::default()),
-                        );
+                Ok(curr_in) => {
+                    let data = curr_in.data;
+                    match data.clone() {
+                        Token::Val(val) => {
+                            let idx: usize = val.try_into().unwrap();
+                            let channel_elem = ChannelElement::new(
+                                self.time.tick() + 1,
+                                Token::Val(self.val_arr[idx].clone()),
+                            );
+                            self.array_data
+                                .out_val
+                                .enqueue(&self.time, channel_elem)
+                                .unwrap();
+                            let out_val =
+                                Token::Val::<ValType, StopType>(self.val_arr[idx].clone());
+                            let _ = dam::logging::log_event(&ArrayLog {
+                                in_ref: data.clone().into(),
+                                val: out_val.clone().into(),
+                            });
+                            if id == curr_id {
+                                println!("ID: {:?}, Val: {:?}", id, out_val.clone());
+                            }
+                        }
+                        Token::Stop(stkn) => {
+                            let channel_elem = ChannelElement::new(
+                                self.time.tick() + 1,
+                                Token::Stop(stkn.clone()),
+                            );
+                            self.array_data
+                                .out_val
+                                .enqueue(&self.time, channel_elem)
+                                .unwrap();
+                            let out_val = Token::<ValType, StopType>::Stop(stkn.clone());
+                            let _ = dam::logging::log_event(&ArrayLog {
+                                in_ref: data.clone().into(),
+                                val: out_val.clone().into(),
+                            });
+                            if id == curr_id {
+                                println!("ID: {:?}, Val: {:?}", id, out_val.clone());
+                            }
+                        }
+                        Token::Empty => {
+                            let channel_elem = ChannelElement::new(
+                                self.time.tick() + 1,
+                                Token::Val(ValType::default()),
+                            );
 
-                        self.array_data
-                            .out_val
-                            .enqueue(&self.time, channel_elem)
-                            .unwrap();
+                            self.array_data
+                                .out_val
+                                .enqueue(&self.time, channel_elem)
+                                .unwrap();
+                            if id == curr_id {
+                                println!(
+                                    "ID: {:?}, Val: {:?}",
+                                    id,
+                                    Token::<ValType, StopType>::Val(ValType::default())
+                                );
+                            }
+                        }
+                        Token::Done => {
+                            let channel_elem =
+                                ChannelElement::new(self.time.tick() + 1, Token::Done);
+                            self.array_data
+                                .out_val
+                                .enqueue(&self.time, channel_elem)
+                                .unwrap();
+                            let out_val = Token::<ValType, StopType>::Done;
+                            let _ = dam::logging::log_event(&ArrayLog {
+                                in_ref: data.clone().into(),
+                                val: out_val.clone().into(),
+                            });
+                            if id == curr_id {
+                                println!("ID: {:?}, Val: {:?}", id, out_val.clone());
+                            }
+                            return;
+                        }
                     }
-                    Token::Done => {
-                        let channel_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
-                        self.array_data
-                            .out_val
-                            .enqueue(&self.time, channel_elem)
-                            .unwrap();
-                        return;
-                    }
-                },
+                }
                 Err(_) => {
                     panic!("Unexpected end of stream");
                 }

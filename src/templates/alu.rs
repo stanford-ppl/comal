@@ -33,10 +33,14 @@ macro_rules! RegisterArithmeticOp {
                     (Token::Val(val), Token::Empty) => {
                         Token::Val(val.$name(num::$identity::<ValType>()))
                     }
+                    // (Token::Val(val), Token::Stop(stkn)) => {
+
+                    // }
                     _ => {
                         dbg!(self);
                         dbg!(rhs);
-                        todo!();
+                        // std::process::exit(1);
+                        panic!("INVALID ALU OPERANDS");
                     }
                 }
             }
