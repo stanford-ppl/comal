@@ -117,6 +117,7 @@ where
             match self.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
+                        // println!("Value: {:?}", Token::<ValType, StopType>::Val(val.clone()));
                         locked.push(val);
                     }
                     Token::Empty | Token::Stop(_) => {

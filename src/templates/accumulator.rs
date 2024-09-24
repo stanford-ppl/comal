@@ -1,6 +1,7 @@
 use core::hash::Hash;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, u32};
 
+use dam::structures::{Identifiable, Identifier};
 use dam::{
     context_tools::*,
     dam_macros::{context_macro, event_type},
@@ -42,19 +43,33 @@ pub struct ReduceLog {
     // val: Token<f32, u32>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+#[event_type]
+pub struct SpaccLog {
+    out_val: Token<f32, u32>,
+    out_crd: Token<u32, u32>,
+    // val: Token<f32, u32>,
+}
+
 impl<ValType, StopType> Context for Reduce<ValType, StopType>
 where
-    ValType: DAMType + std::ops::AddAssign<ValType>,
+    ValType: DAMType + std::ops::AddAssign<ValType> + std::cmp::PartialEq,
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
-        + std::cmp::PartialEq,
+        + std::cmp::PartialEq
+        + std::convert::From<u32>,
     Token<f32, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
         let mut sum = ValType::default();
+        // let max_num = ValType::MAX;
+        // let max_tkn: StopType = max_num.into();
+        // let mut prev_tkn: StopType = max_tkn.clone();
+        // let mut prev_tkn: StopType = StopType::default();
+        let mut prev_tkn = Token::default();
         loop {
             match self.reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
@@ -63,17 +78,22 @@ where
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
-                        self.reduce_data
-                            .out_val
-                            .enqueue(
-                                &self.time,
-                                ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
-                            )
-                            .unwrap();
+                        if prev_tkn != Token::Stop(StopType::default())
+                            || stkn == StopType::default()
+                        {
+                            self.reduce_data
+                                .out_val
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
+                                )
+                                .unwrap();
+                        }
                         let out_val = Token::<ValType, StopType>::Val(sum.clone());
-                        // let _ = dam::logging::log_event(&ReduceLog {
-                            // out_val: out_val.clone().into(),
-                        // });
+                        prev_tkn = out_val.clone();
+                        let _ = dam::logging::log_event(&ReduceLog {
+                            out_val: out_val.clone().into(),
+                        });
                         sum = ValType::default();
                         if stkn != StopType::default() {
                             self.reduce_data
@@ -87,9 +107,10 @@ where
                                 )
                                 .unwrap();
                             let stk = Token::<ValType, StopType>::Stop(stkn.clone() - 1);
-                            // let _ = dam::logging::log_event(&ReduceLog {
-                                // out_val: stk.clone().into(),
-                            // });
+                            prev_tkn = stk.clone();
+                            let _ = dam::logging::log_event(&ReduceLog {
+                                out_val: stk.clone().into(),
+                            });
                         }
                     }
                     Token::Empty => {
@@ -157,11 +178,14 @@ where
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
         + std::cmp::PartialEq,
+    Token<f32, u32>: From<Token<ValType, StopType>>,
+    Token<u32, u32>: From<Token<CrdType, StopType>>,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
         let mut accum_storage: BTreeMap<CrdType, ValType> = BTreeMap::new();
+        let id = Identifier { id: 0 };
         loop {
             let in_ocrd = self.spacc1_data.in_crd_outer.peek_next(&self.time).unwrap();
             let in_icrd = self.spacc1_data.in_crd_inner.peek_next(&self.time).unwrap();
@@ -169,13 +193,24 @@ where
 
             match in_ocrd.data {
                 Token::Val(_) => {
-                    match in_val.data {
-                        Token::Val(val) => match in_icrd.data {
+                    if self.id() == id.clone() {
+                        println!("Id: {:?}", self.id());
+                        println!("Icrd: {:?}", in_icrd.data.clone());
+                        println!("Ocrd: {:?}", in_ocrd.data.clone());
+                        println!("Val: {:?}", in_val.data.clone());
+                    }
+                    match in_val.data.clone() {
+                        Token::Val(val) => match in_icrd.data.clone() {
                             Token::Val(crd) => {
                                 *accum_storage.entry(crd).or_default() += val.clone();
                             }
                             _ => {
-                                panic!("Invalid token found");
+                                // self.spacc1_data.in_val.dequeue(&self.time).unwrap();
+                                println!("Icrd: {:?}", in_icrd.data.clone());
+                                println!("Val: {:?}", in_val.data.clone());
+                                println!("Invalid token found in Spacc1");
+                                panic!("Exiting spacc");
+                                // std::process::exit(1);
                             }
                         },
                         Token::Stop(val_stkn) => match in_icrd.data {
@@ -216,6 +251,10 @@ where
                             .out_val
                             .enqueue(&self.time, val_chan_elem)
                             .unwrap();
+                        let _ = dam::logging::log_event(&SpaccLog {
+                            out_val: Token::Val(value.clone()).into(),
+                            out_crd: Token::Val(key.clone()).into(),
+                        });
                     }
                     let val_stkn_chan_elem =
                         ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
@@ -229,6 +268,10 @@ where
                         .out_crd_inner
                         .enqueue(&self.time, crd_stkn_chan_elem)
                         .unwrap();
+                    let _ = dam::logging::log_event(&SpaccLog {
+                        out_val: Token::<ValType, StopType>::Stop(stkn.clone()).into(),
+                        out_crd: Token::<CrdType, StopType>::Stop(stkn.clone()).into(),
+                    });
                     accum_storage.clear();
                     self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
                 }
@@ -243,10 +286,16 @@ where
                         .out_val
                         .enqueue(&self.time, val_chan_elem)
                         .unwrap();
+                    let _ = dam::logging::log_event(&SpaccLog {
+                        out_val: Token::<ValType, StopType>::Done.into(),
+                        out_crd: Token::<CrdType, StopType>::Done.into(),
+                    });
                     return;
                 }
                 _ => {
-                    panic!("Unexpected empty token found");
+                    println!("Unexpected empty token found in spacc");
+                    panic!();
+                    // std::process::exit(1);
                 }
             }
             self.time.incr_cycles(1);
@@ -365,7 +414,9 @@ mod tests {
 
     #[test]
     fn reduce_2d_test1() {
-        let in_val = || token_vec!(u32; u32; "S0", "S0", "S1", "S1", "D").into_iter();
+        let in_val = || {
+            token_vec!(u32; u32; "S0", "S1", "S1", "S2", 2, "S0", "S1", "S1", "S2", "S0", 3, "S1", "S1", "S3", "D").into_iter()
+        };
         let out_val = || token_vec!(u32; u32; 10, 5, 12, 7, 7, "S0", "D").into_iter();
         reduce_test(in_val, out_val);
     }

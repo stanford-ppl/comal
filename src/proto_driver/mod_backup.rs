@@ -22,7 +22,8 @@ use super::token_vec;
 use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 use crate::templates::accumulator::MaxReduce;
-use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
+use crate::templates::joiner::{CrdJoinerData, Intersect, NIntersect, NJoinerData};
+use crate::templates::new_alu::ALUMul;
 use crate::templates::primitive::ALUMaxOp;
 use crate::templates::scatter_gather::{Gather, Scatter};
 
@@ -45,7 +46,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 102400;
+const DEFAULT_CHAN_SIZE: usize = 1024;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
@@ -163,49 +164,110 @@ pub fn build_from_proto<'a>(
             },
             Op::Joiner(op) => {
                 // assert!(op.input_pairs.len() == 2);
+                let mut all_refs = true;
                 let mut in_crds = Vec::new();
                 let mut in_refs: Vec<Box<dyn RecvAdapter<Token<_, ST>> + Send + Sync>> = Vec::new();
                 let mut out_refs: Vec<Box<dyn SendAdapter<Token<_, ST>> + Send + Sync>> =
                     Vec::new();
-                op.input_pairs.iter().for_each(|pair| {
-                    let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
-                    match pair.in_ref.clone().unwrap().stream.as_ref().unwrap() {
-                        joiner::payload::Stream::RefStream(ref_stream) => {
-                            in_refs.push(Box::new(
-                                refmap.get_receiver(get_ref_id(&Some(ref_stream.clone())), builder),
-                            ));
-                        }
-                        joiner::payload::Stream::ValStream(val_stream) => {
-                            in_refs.push(Box::new(
-                                valmap.get_receiver(get_val_id(&Some(val_stream.clone())), builder),
-                            ));
-                        }
-                    }
 
-                    in_crds.push(pair_crd);
-                });
-                op.output_refs.iter().for_each(|output_ref| {
-                    match output_ref.stream.as_ref().unwrap() {
-                        joiner::payload::Stream::RefStream(ref_stream) => out_refs.push(Box::new(
-                            refmap.get_sender(get_ref_id(&Some(ref_stream.clone())), builder),
-                        )),
-                        joiner::payload::Stream::ValStream(val_stream) => out_refs.push(Box::new(
-                            valmap.get_sender(get_val_id(&Some(val_stream.clone())), builder),
-                        )),
-                    }
-                });
-                let joiner_data = NJoinerData {
-                    in_crds,
-                    in_refs,
-                    out_refs,
-                    out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
-                };
+                if all_refs == true {
+                    let mut refs = Vec::new();
+                    let mut refs_out = Vec::new();
 
-                if let joiner::Type::Intersect = op.join_type() {
-                    builder.add_child(NIntersect::new(joiner_data))
+                    op.input_pairs.iter().for_each(|pair| {
+                        match pair.in_ref.clone().unwrap().stream.as_ref().unwrap() {
+                            joiner::payload::Stream::RefStream(ref_stream) => refs.push(
+                                ref_stream.clone(),
+                                // refmap.get_receiver(get_ref_id(&Some(ref_stream.clone())), builder),
+                            ),
+                            joiner::payload::Stream::ValStream(_) => todo!(),
+                        }
+                    });
+
+                    op.output_refs.iter().for_each(|output_ref| {
+                        match output_ref.stream.as_ref().unwrap() {
+                            joiner::payload::Stream::RefStream(ref_stream) => refs_out.push(
+                                ref_stream.clone(),
+                                // refmap.get_sender(get_ref_id(&Some(ref_stream.clone())), builder),
+                            ),
+                            joiner::payload::Stream::ValStream(_) => todo!(),
+                        }
+                    });
+                    let joiner_data = CrdJoinerData {
+                        in_crd1: crdmap.get_receiver(
+                            get_crd_id(&Some(op.input_pairs[0].crd.clone().unwrap().clone())),
+                            builder,
+                        ),
+                        in_ref1: refmap.get_receiver(get_ref_id(&Some(refs[0].clone())), builder),
+                        in_crd2: crdmap.get_receiver(
+                            get_crd_id(&Some(op.input_pairs[1].crd.clone().unwrap().clone())),
+                            builder,
+                        ),
+                        in_ref2: refmap.get_receiver(get_ref_id(&Some(refs[1].clone())), builder),
+                        out_ref1: refmap
+                            .get_sender(get_ref_id(&Some(refs_out[0].clone())), builder),
+                        out_ref2: refmap
+                            .get_sender(get_ref_id(&Some(refs_out[1].clone())), builder),
+                        out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
+                    };
+                    if let joiner::Type::Intersect = op.join_type() {
+                        builder.add_child(Intersect::new(joiner_data));
+                    } else {
+                    }
                 } else {
-                    builder.add_child(NUnion::new(joiner_data))
-                };
+                    op.input_pairs.iter().for_each(|pair| {
+                        let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
+                        match pair.in_ref.clone().unwrap().stream.as_ref().unwrap() {
+                            joiner::payload::Stream::RefStream(ref_stream) => {
+                                in_refs.push(Box::new(
+                                    refmap.get_receiver(
+                                        get_ref_id(&Some(ref_stream.clone())),
+                                        builder,
+                                    ),
+                                ));
+                            }
+                            joiner::payload::Stream::ValStream(val_stream) => {
+                                in_refs.push(Box::new(
+                                    valmap.get_receiver(
+                                        get_val_id(&Some(val_stream.clone())),
+                                        builder,
+                                    ),
+                                ));
+                                all_refs = false;
+                            }
+                        }
+
+                        in_crds.push(pair_crd);
+                    });
+                    op.output_refs.iter().for_each(|output_ref| {
+                        match output_ref.stream.as_ref().unwrap() {
+                            joiner::payload::Stream::RefStream(ref_stream) => {
+                                out_refs.push(Box::new(
+                                    refmap
+                                        .get_sender(get_ref_id(&Some(ref_stream.clone())), builder),
+                                ))
+                            }
+                            joiner::payload::Stream::ValStream(val_stream) => {
+                                out_refs.push(Box::new(
+                                    valmap
+                                        .get_sender(get_val_id(&Some(val_stream.clone())), builder),
+                                ))
+                            }
+                        }
+                    });
+                    let joiner_data = NJoinerData {
+                        in_crds,
+                        in_refs,
+                        out_refs,
+                        out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
+                    };
+
+                    if let joiner::Type::Intersect = op.join_type() {
+                        builder.add_child(NIntersect::new(joiner_data))
+                    } else {
+                        builder.add_child(NIntersect::new(joiner_data))
+                    };
+                }
             }
             Op::FiberLookup(op) => {
                 let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
@@ -345,18 +407,20 @@ pub fn build_from_proto<'a>(
                 if in_val_ids.len() == 2 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
-                    builder.add_child(make_alu(
-                        val_receiver1,
-                        val_receiver2,
-                        out_val_sender,
-                        match op.stages[0].op() {
-                            alu::AluOp::Add => ALUAddOp(),
-                            alu::AluOp::Sub => ALUSubOp(),
-                            alu::AluOp::Mul => ALUMulOp(),
-                            alu::AluOp::Div => ALUDivOp(),
-                            _ => todo!(),
-                        },
-                    ));
+
+                    builder.add_child(ALUMul::new(val_receiver1, val_receiver2, out_val_sender));
+                    // builder.add_child(make_alu(
+                    // val_receiver1,
+                    // val_receiver2,
+                    // out_val_sender,
+                    // match op.stages[0].op() {
+                    // alu::AluOp::Add => ALUAddOp(),
+                    // alu::AluOp::Sub => ALUSubOp(),
+                    // alu::AluOp::Mul => ALUMulOp(),
+                    // alu::AluOp::Div => ALUDivOp(),
+                    // _ => todo!(),
+                    // },
+                    // ));
                 } else if in_val_ids.len() == 1 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     builder.add_child(make_unary_alu(
@@ -524,6 +588,7 @@ pub fn build_from_proto<'a>(
             _ => todo!(),
         }
     }
+    dbg!("Help");
 }
 
 pub fn parse_proto<'a>(
