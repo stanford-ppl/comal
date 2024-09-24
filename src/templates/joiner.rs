@@ -9,7 +9,6 @@ use dam::{
 };
 use serde::{Deserialize, Serialize};
 
-
 use super::primitive::Token;
 
 pub struct CrdJoinerData<ValType: Clone, StopType: Clone> {
@@ -145,6 +144,7 @@ where
     fn run(&mut self) {
         let id = Identifier { id: 0 };
         let curr_id = self.id();
+        let target_id = Identifier { id: 0 };
         loop {
             let crd_peeks = self
                 .intersect_data
@@ -158,6 +158,19 @@ where
                 .iter()
                 .map(|channel| channel.peek_next(&self.time))
                 .collect::<Vec<_>>();
+
+            if curr_id == target_id {
+                for (i, ref_peek) in ref_peeks.iter().enumerate() {
+                    println!(
+                        "Crd{}: {:?}, Ref{}: {:?}",
+                        i,
+                        crd_peeks[i].as_ref().unwrap().clone().data,
+                        i,
+                        ref_peek.as_ref().unwrap().clone().data
+                    );
+                }
+                println!();
+            }
 
             let mut matching_values = HashSet::new(); // Using HashSet for efficient lookups
             let mut all_values_match = true;
@@ -182,12 +195,25 @@ where
                             }
                             matching_values.insert(Token::Stop(stkn.clone()));
                         }
-                        _ => all_values_match = false,
+                        Token::Done => {
+                            if !matching_values.is_empty()
+                                && !matching_values.contains(&Token::Done)
+                            {
+                                all_values_match = false;
+                            }
+                            matching_values.insert(Token::Done);
+                        }
+                        Token::Empty => {
+                            if !matching_values.is_empty()
+                                && !matching_values.contains(&Token::Empty)
+                            {
+                                all_values_match = false;
+                            }
+                            matching_values.insert(Token::Empty);
+                        }
                     },
                     Err(_) => {
-                        println!("Unexpected error in Joiner stream");
-                        panic!();
-                        // std::process::exit(1);
+                        panic!("Unexpected error in Joiner stream");
                     }
                 }
             }
@@ -219,15 +245,24 @@ where
                         .unwrap();
                     // dbg!(ref_peeks[i].as_ref().unwrap().clone());
                     ref_vec.push(ref_peeks[i].as_ref().unwrap().clone().data);
+                    if curr_id == id {
+                        println!(
+                            "ID: {:?}, Ref{}: {:?}",
+                            curr_id,
+                            i,
+                            ref_peeks[i].as_ref().unwrap().clone().data
+                        );
+                    }
 
                     // Dequeue elements from input channels
                     self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
                     self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
                 }
-                // let sep_str = ref_vec.iter().format(",");
-                if curr_id == id {
-                    println!("ID: {:?}, Output: {:?}", curr_id, val.clone());
+
+                if val.clone() == Token::Done {
+                    return;
                 }
+                // let sep_str = ref_vec.iter().fmt(",");
             } else {
                 // Prioritize Stop tokens
                 let mut stop_token = None;
@@ -271,19 +306,21 @@ where
                                         token.clone()
                                     );
                                 }
-                                Token::Done => {}
+                                Token::Done => {
+                                    panic!("Reached done unexpectedly");
+                                }
                                 _ => todo!(),
                             },
                             Err(_) => todo!(),
                         });
                 } else {
-                    // Handle mismatches or Done tokens
+                    let min = min_val.clone();
                     for (i, peek) in crd_peeks.iter().enumerate() {
                         match peek {
                             Ok(ChannelElement {
                                 data: Token::Val(val),
                                 ..
-                            }) if Some(val) == min_val.as_ref() => {
+                            }) if Some(val) == min.as_ref() => {
                                 // Dequeue from channels with min val
                                 self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
                                 self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
@@ -303,7 +340,25 @@ where
                                 return;
                                 // ... (Handle Done token - similar to original logic but for vectors)
                             }
-                            _ => {} // Keep other tokens
+                            Ok(ChannelElement {
+                                data: Token::Empty, ..
+                            }) => {
+                                let channel_elem =
+                                    ChannelElement::new(self.time.tick() + 1, Token::Empty);
+                                self.intersect_data
+                                    .out_crd
+                                    .enqueue(&self.time, channel_elem.clone())
+                                    .unwrap();
+                                for out_ref in self.intersect_data.out_refs.iter() {
+                                    out_ref.enqueue(&self.time, channel_elem.clone()).unwrap();
+                                }
+                            }
+                            _ => {
+                                for out_ref in ref_peeks.iter() {
+                                    // println!("out: {:?}", out_ref.as_ref().unwrap().clone().data);
+                                }
+                                // todo!();
+                            } // Keep other tokens
                         }
                     }
                 }
@@ -312,6 +367,223 @@ where
         }
     }
 }
+
+// impl<ValType, StopType> Context for NIntersect<ValType, StopType>
+// where
+//     ValType: DAMType
+//         + std::ops::AddAssign<u32>
+//         + std::ops::AddAssign<ValType>
+//         + std::ops::Mul<ValType, Output = ValType>
+//         + std::ops::Add<ValType, Output = ValType>
+//         + std::cmp::PartialOrd<ValType>
+//         + std::cmp::Eq
+//         + std::hash::Hash
+//         + Ord,
+//     StopType: DAMType
+//         + std::ops::Add<u32, Output = StopType>
+//         + std::ops::Sub<u32, Output = StopType>
+//         + std::cmp::PartialEq
+//         + std::hash::Hash
+//         + std::cmp::Eq,
+// {
+//     fn init(&mut self) {}
+
+//     fn run(&mut self) {
+//         let id = Identifier { id: 1000 };
+//         let curr_id = self.id();
+//         loop {
+//             let crd_peeks = self
+//                 .intersect_data
+//                 .in_crds
+//                 .iter()
+//                 .map(|channel| channel.peek_next(&self.time))
+//                 .collect::<Vec<_>>();
+//             let ref_peeks = self
+//                 .intersect_data
+//                 .in_refs
+//                 .iter()
+//                 .map(|channel| channel.peek_next(&self.time))
+//                 .collect::<Vec<_>>();
+
+//             if curr_id == id {
+//                 for (i, _) in ref_peeks.iter().enumerate() {
+//                     println!(
+//                         "ID: {:?}, Crd{}: {:?}, Ref{}: {:?}",
+//                         id,
+//                         i,
+//                         crd_peeks[i].as_ref().unwrap().clone().data,
+//                         i,
+//                         ref_peeks[i].as_ref().unwrap().clone().data
+//                     );
+//                 }
+//             }
+
+//             let mut matching_values = HashSet::new(); // Using HashSet for efficient lookups
+//             let mut all_values_match = true;
+//             let mut min_val: Option<ValType> = None;
+//             for peek in &crd_peeks {
+//                 match peek {
+//                     Ok(curr_in) => match curr_in.clone().data {
+//                         Token::Val(val) => {
+//                             if !matching_values.is_empty()
+//                                 && !matching_values.contains(&Token::Val(val.clone()))
+//                             {
+//                                 all_values_match = false; // Only set to false if a mismatch is found after the first value
+//                             }
+//                             matching_values.insert(Token::Val(val.clone()));
+//                             min_val = Some(min_val.map_or(val.clone(), |v| v.min(val.clone())));
+//                         }
+//                         Token::Stop(stkn) => {
+//                             if !matching_values.is_empty()
+//                                 && !matching_values.contains(&Token::Stop(stkn.clone()))
+//                             {
+//                                 all_values_match = false; // Only set to false if a mismatch is found after the first value
+//                             }
+//                             matching_values.insert(Token::Stop(stkn.clone()));
+//                         }
+//                         Token::Done => {
+//                             if !matching_values.is_empty()
+//                                 && !matching_values.contains(&Token::Done)
+//                             {
+//                                 all_values_match = false;
+//                             }
+//                             matching_values.insert(Token::Done);
+//                         }
+//                         Token::Empty => {
+//                             if !matching_values.is_empty()
+//                                 && !matching_values.contains(&Token::Empty)
+//                             {
+//                                 all_values_match = false;
+//                             }
+//                             matching_values.insert(Token::Empty);
+//                         }
+//                     },
+//                     Err(_) => {
+//                         panic!("Unexpected error in Joiner stream");
+//                     }
+//                 }
+//             }
+
+//             if all_values_match {
+//                 let curr_time = self.time.tick();
+//                 let val = matching_values.iter().next().unwrap();
+//                 self.intersect_data
+//                     .out_crd
+//                     .enqueue(&self.time, ChannelElement::new(curr_time + 1, val.clone()))
+//                     .unwrap();
+//                 // dbg!(val.clone());
+
+//                 let mut ref_vec = Vec::new();
+
+//                 if curr_id == id {
+//                     println!("ID: {:?}, Output: {:?}", curr_id, val.clone());
+//                 }
+
+//                 for i in 0..self.intersect_data.in_crds.len() {
+//                     // Enqueue matching value to output channels
+
+//                     // Enqueue corresponding ref token to output channels
+//                     self.intersect_data.out_refs[i]
+//                         .enqueue(
+//                             &self.time,
+//                             ref_peeks[i].as_ref().unwrap().clone(), // Assuming peek is successful
+//                         )
+//                         .unwrap();
+//                     // dbg!(ref_peeks[i].as_ref().unwrap().clone());
+//                     ref_vec.push(ref_peeks[i].as_ref().unwrap().clone().data);
+
+//                     // Dequeue elements from input channels
+//                     self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
+//                     self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
+//                 }
+//                 // let sep_str = ref_vec.iter().format(",");
+//                 if curr_id == id {
+//                     println!("ID: {:?}, Output: {:?}", curr_id, val.clone());
+//                 }
+//             } else {
+//                 // Prioritize Stop tokens
+//                 let mut stop_token = None;
+//                 for peek in &crd_peeks {
+//                     // crd_peeks.retain(|peek| {
+//                     if let Ok(ChannelElement {
+//                         data: Token::Stop(_),
+//                         ..
+//                     }) = peek
+//                     {
+//                         // stop_token = Some(peek.as_ref().unwrap().data.clone());
+//                         // if stop_token.is_none() {
+//                         stop_token = Some(peek.as_ref().unwrap().data.clone());
+//                         break;
+//                         // } else {
+//                         // assert_eq!(Token::<ValType, StopType>::Stop(stkn.clone()).clone(), stop_token.clone().unwrap());
+//                         // }
+//                     }
+//                 }
+//                 // });
+
+//                 if let Some(token) = stop_token {
+//                     // dbg!(stkn.clone());
+//                     (crd_peeks.iter().enumerate())
+//                         .into_iter()
+//                         .for_each(|(i, peek)| match peek {
+//                             Ok(curr_in) => match &curr_in.data {
+//                                 Token::Val(_) => {
+//                                     self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
+//                                     self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
+//                                 }
+//                                 Token::Stop(stkn) => {
+//                                     if token.clone()
+//                                         != Token::<ValType, StopType>::Stop(stkn.clone())
+//                                     {
+//                                         let test = self.id();
+//                                         println!("ID: {:?}", test);
+//                                     }
+//                                     assert_eq!(
+//                                         Token::<ValType, StopType>::Stop(stkn.clone()),
+//                                         token.clone()
+//                                     );
+//                                 }
+//                                 Token::Done => {}
+//                                 _ => todo!(),
+//                             },
+//                             Err(_) => todo!(),
+//                         });
+//                 } else {
+//                     // Handle mismatches or Done tokens
+//                     for (i, peek) in crd_peeks.iter().enumerate() {
+//                         match peek {
+//                             Ok(ChannelElement {
+//                                 data: Token::Val(val),
+//                                 ..
+//                             }) if Some(val) == min_val.as_ref() => {
+//                                 // Dequeue from channels with min val
+//                                 self.intersect_data.in_crds[i].dequeue(&self.time).unwrap();
+//                                 self.intersect_data.in_refs[i].dequeue(&self.time).unwrap();
+//                             }
+//                             Ok(ChannelElement {
+//                                 data: Token::Done, ..
+//                             }) => {
+//                                 let channel_elem =
+//                                     ChannelElement::new(self.time.tick() + 1, Token::Done);
+//                                 self.intersect_data
+//                                     .out_crd
+//                                     .enqueue(&self.time, channel_elem.clone())
+//                                     .unwrap();
+//                                 for out_ref in self.intersect_data.out_refs.iter() {
+//                                     out_ref.enqueue(&self.time, channel_elem.clone()).unwrap();
+//                                 }
+//                                 return;
+//                                 // ... (Handle Done token - similar to original logic but for vectors)
+//                             }
+//                             _ => {} // Keep other tokens
+//                         }
+//                     }
+//                 }
+//             }
+//             self.time.incr_cycles(1);
+//         }
+//     }
+// }
 
 impl<ValType, StopType> Context for NUnion<ValType, StopType>
 where
@@ -339,9 +611,12 @@ where
 
     fn run(&mut self) {
         let id = Identifier { id: 0 };
-        let target_id = Identifier { id: 64 };
+        let target_id = Identifier { id: 0 };
         let curr_id = self.id();
         loop {
+            if id == curr_id {
+                println!("New iteration");
+            }
             let crd_peeks = self
                 .union_data
                 .in_crds
@@ -365,6 +640,7 @@ where
                         ref_peek.as_ref().unwrap().clone().data
                     );
                 }
+                println!();
             }
 
             let mut matching_values = HashSet::new(); // Using HashSet for efficient lookups
@@ -390,12 +666,18 @@ where
                             }
                             matching_values.insert(Token::Stop(stkn.clone()));
                         }
+                        Token::Done => {
+                            if !matching_values.is_empty()
+                                && !matching_values.contains(&Token::Done)
+                            {
+                                all_values_match = false; // Only set to false if a mismatch is found after the first value
+                            }
+                            matching_values.insert(Token::Done);
+                        }
                         _ => all_values_match = false,
                     },
                     Err(_) => {
-                        println!("Unexpected error in Joiner stream");
-                        panic!();
-                        // std::process::exit(1);
+                        panic!("Unexpected error in Joiner stream");
                     }
                 }
             }
@@ -439,12 +721,19 @@ where
                     self.union_data.in_crds[i].dequeue(&self.time).unwrap();
                     self.union_data.in_refs[i].dequeue(&self.time).unwrap();
                 }
+                if curr_id == id {
+                    println!();
+                }
                 let _ = dam::logging::log_event(&JoinerLog::<ValType> {
                     in_refs: ref_vec.clone().into(),
                     in_crds: vec![val.clone().into(); ref_vec.len()],
                     out_refs: ref_vec.clone().into(),
                     out_crd: val.clone().into(),
                 });
+
+                if val.clone() == Token::Done {
+                    return;
+                }
             } else {
                 // Prioritize Stop tokens
                 let mut stop_token = None;
@@ -455,43 +744,41 @@ where
                         ..
                     }) = peek
                     {
-                        // stop_token = Some(peek.as_ref().unwrap().data.clone());
-                        // if stop_token.is_none() {
                         stop_token = Some(peek.as_ref().unwrap().data.clone());
                         break;
-                        // } else {
-                        // assert_eq!(Token::<ValType, StopType>::Stop(stkn.clone()).clone(), stop_token.clone().unwrap());
-                        // }
                     }
                 }
-                // });
 
                 if let Some(token) = stop_token {
                     // dbg!(stkn.clone());
+                    let min = min_val.clone();
                     let mut ref_vec = Vec::new();
                     let mut crd_vec: Vec<Token<u32, u32>> = Vec::new();
+                    let mut emitted = false;
                     (crd_peeks.iter().enumerate())
                         .into_iter()
                         .for_each(|(i, peek)| match peek {
-                            Ok(curr_in) => match &curr_in.data {
-                                Token::Val(val) => {
-                                    self.union_data
-                                        .out_crd
-                                        .enqueue(
-                                            &self.time,
-                                            ChannelElement::new(
-                                                self.time.tick() + 1,
-                                                Token::<ValType, StopType>::Val(val.clone()),
-                                            ),
-                                        )
-                                        .unwrap();
-                                    if curr_id == id {
-                                        println!(
-                                            "ID: {:?}, Ref{}: {:?}",
-                                            curr_id,
-                                            i,
-                                            Token::<ValType, StopType>::Val(val.clone())
-                                        );
+                            Ok(curr_in) => match &curr_in.data.clone() {
+                                Token::Val(val) if Some(val.clone()) == min => {
+                                    if !emitted {
+                                        self.union_data
+                                            .out_crd
+                                            .enqueue(
+                                                &self.time,
+                                                ChannelElement::new(
+                                                    self.time.tick() + 1,
+                                                    Token::<ValType, StopType>::Val(val.clone()),
+                                                ),
+                                            )
+                                            .unwrap();
+                                        emitted = true;
+                                        if curr_id == id {
+                                            println!(
+                                                "ID: {:?}, Crd: {:?}",
+                                                curr_id,
+                                                Token::<ValType, StopType>::Val(val.clone())
+                                            );
+                                        }
                                     }
                                     crd_vec
                                         .push(Token::<ValType, StopType>::Val(val.clone()).into());
@@ -513,6 +800,18 @@ where
                                     self.union_data.in_refs[i].dequeue(&self.time).unwrap();
                                     ref_vec.push(ref_peeks[i].as_ref().unwrap().clone().data);
                                 }
+                                Token::Val(val) if Some(val.clone()) > min.clone() => {
+                                    // println!("Error val: {:?}", curr_in.data.clone());
+                                    self.union_data.out_refs[i]
+                                        .enqueue(
+                                            &self.time,
+                                            ChannelElement::new(
+                                                self.time.tick() + 1,
+                                                Token::<ValType, StopType>::Empty,
+                                            ),
+                                        )
+                                        .unwrap();
+                                }
                                 Token::Stop(stkn) => {
                                     if token.clone()
                                         != Token::<ValType, StopType>::Stop(stkn.clone())
@@ -520,6 +819,10 @@ where
                                         let test = self.id();
                                         println!("ID: {:?}", test);
                                     }
+                                    assert_eq!(
+                                        Token::<ValType, StopType>::Stop(stkn.clone()),
+                                        token.clone()
+                                    );
 
                                     self.union_data.out_refs[i]
                                         .enqueue(
@@ -530,21 +833,49 @@ where
                                             ),
                                         )
                                         .unwrap();
+                                    if curr_id == id {
+                                        println!(
+                                            "id: {:?}, Ref{}: {:?}",
+                                            id,
+                                            i,
+                                            Token::<ValType, StopType>::Empty
+                                        )
+                                    }
                                     ref_vec.push(Token::<ValType, StopType>::Empty);
-                                    self.union_data.in_crds[i].dequeue(&self.time).unwrap();
-                                    self.union_data.in_refs[i].dequeue(&self.time).unwrap();
-                                    assert_eq!(
-                                        Token::<ValType, StopType>::Stop(stkn.clone()),
-                                        token.clone()
-                                    );
+                                    // ref_vec.push(Token::<ValType, StopType>::Empty);
+                                    // self.union_data.in_crds[i].dequeue(&self.time).unwrap();
+                                    // self.union_data.in_refs[i].dequeue(&self.time).unwrap();
                                 }
                                 Token::Done => {
-                                    panic!("Panicked at done");
+                                    // panic!("Panicked at done");
+                                    for peek in crd_peeks.iter() {
+                                        if !(peek.as_ref().unwrap().clone().data
+                                            == Token::<ValType, StopType>::Done)
+                                        {
+                                            panic!("Unmatched done token found");
+                                        }
+                                    }
+                                    if curr_id == id {
+                                        println!(
+                                            "id: {:?}, Ref{}: {:?}",
+                                            id,
+                                            i,
+                                            Token::<ValType, StopType>::Done
+                                        )
+                                    }
                                 }
-                                _ => todo!(),
+                                Token::Empty => {
+                                    panic!("Coord should never be empty");
+                                },
+                                _ => {
+                                    panic!("Unhandled case: {:?}", curr_in.data.clone());
+                                }
                             },
                             Err(_) => todo!(),
                         });
+                    if curr_id == id {
+                        println!();
+                    }
                     let _ = dam::logging::log_event(&JoinerLog::<ValType> {
                         in_refs: ref_vec.clone().into(),
                         in_crds: crd_vec.clone().into(),
@@ -553,6 +884,7 @@ where
                     });
                 } else {
                     // Handle mismatches or Done tokens
+                    let min = min_val.clone();
                     let mut ref_vec = Vec::new();
                     let mut crd_vec = Vec::new();
                     let mut emitted = false;
@@ -561,8 +893,7 @@ where
                             Ok(ChannelElement {
                                 data: Token::Val(val),
                                 ..
-                            }) if Some(val) == min_val.as_ref() => {
-                                // Dequeue from channels with min val
+                            }) if Some(val) == min.as_ref() => {
                                 if !emitted {
                                     self.union_data
                                         .out_crd
@@ -574,23 +905,16 @@ where
                                             ),
                                         )
                                         .unwrap();
-
-                                    // Emit empty tokens for all out ref channels that are not at the minimum
-                                    for j in 0..self.union_data.in_refs.len() {
-                                        if i != j {
-                                            self.union_data.out_refs[j]
-                                                .enqueue(
-                                                    &self.time,
-                                                    ChannelElement::new(
-                                                        self.time.tick() + 1,
-                                                        Token::<ValType, StopType>::Empty,
-                                                    ),
-                                                )
-                                                .unwrap();
-                                        }
+                                    emitted = true;
+                                    if curr_id == id {
+                                        println!(
+                                            "id: {:?}, Crd:{:?}",
+                                            id,
+                                            Token::<ValType, StopType>::Val(val.clone())
+                                        )
                                     }
-                                    emitted = false;
                                 }
+
                                 // Enqueue ref of channel with current minimum crd
                                 self.union_data.out_refs[i]
                                     .enqueue(
@@ -601,10 +925,42 @@ where
                                         ),
                                     )
                                     .unwrap();
+                                if curr_id == id {
+                                    println!(
+                                        "id: {:?}, Ref{}: {:?}",
+                                        id,
+                                        i,
+                                        ref_peeks[i].as_ref().unwrap().clone().data
+                                    );
+                                }
+                                // Dequeue from channels with min val
                                 self.union_data.in_crds[i].dequeue(&self.time).unwrap();
                                 self.union_data.in_refs[i].dequeue(&self.time).unwrap();
                                 ref_vec.push(ref_peeks[i].as_ref().unwrap().clone().data);
                                 crd_vec.push(Token::<ValType, StopType>::Val(val.clone()).into());
+                            }
+                            Ok(ChannelElement {
+                                data: Token::Val(val),
+                                ..
+                            }) if Some(val) > min.as_ref() => {
+                                self.union_data.out_refs[i]
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(
+                                            self.time.tick() + 1,
+                                            Token::<ValType, StopType>::Empty,
+                                        ),
+                                    )
+                                    .unwrap();
+                                ref_vec.push(Token::<ValType, StopType>::Empty);
+                                if curr_id == id {
+                                    println!(
+                                        "id: {:?}, Ref{}: {:?}",
+                                        id,
+                                        i,
+                                        Token::<ValType, StopType>::Empty
+                                    );
+                                }
                             }
                             Ok(ChannelElement {
                                 data: Token::Done, ..
@@ -636,6 +992,14 @@ where
                                     .unwrap();
                                 for out_ref in self.union_data.out_refs.iter() {
                                     out_ref.enqueue(&self.time, channel_elem.clone()).unwrap();
+                                }
+                                if curr_id == id {
+                                    println!(
+                                        "id: {:?}, Ref{}: {:?}",
+                                        id,
+                                        i,
+                                        Token::<ValType, StopType>::Done
+                                    );
                                 }
 
                                 let _ = dam::logging::log_event(&JoinerLog::<ValType> {
@@ -1147,7 +1511,7 @@ mod tests {
 
     use crate::{
         templates::{
-            joiner::{Intersect, NJoinerData, NUnion},
+            joiner::{Intersect, NIntersect, NJoinerData, NUnion},
             primitive::Token,
         },
         token_vec,
@@ -1176,21 +1540,19 @@ mod tests {
     #[test]
     fn intersect_2d_test1() {
         let in_crd1 = || {
-            token_vec!(u32; u32; 0, 2, 6, 7, 9, "S0", 0, 2, 6, 7, 9, "S0", 0, 2, 6, 7, 9, "S0", 0, 2, "S1", "D").into_iter()
+            token_vec!(u32; u32; 0, 1, 2, 3, "S0", 0, 1, 2, 3, "S0", 0, 1, 2, 3, "S1", "D")
+                .into_iter()
         };
         let in_ref1 = || {
-            token_vec!(u32; u32; 0, 1, 2, 3, 4, "S0", 0, 1, 2, 3, 4, "S0",0, 1, 2, 3, 4, "S0", 0, 1, "S1", "D").into_iter()
+            token_vec!(u32; u32; 0, 1, 2, 3, "S0", 4, 5, 6, 7, "S0", 8, 9, 10, 11, "S1", "D")
+                .into_iter()
         };
-        let in_crd2 = || {
-            token_vec!(u32; u32; 1, 7, "S0", 3, "S0", 6, "S0", 9, "S0", 9, "S1", 1, 7, "S0", 3, "S0", 6, "S0", 9, "S0", "S1", "D").into_iter()
-        };
-        let in_ref2 = || {
-            token_vec!(u32; u32; 0, 1, "S0", 2, "S0", 3, "S0", 4, "S0", 5, "S1", 0, 1, "S0", 2, "S0", 3, "S0", 4, "S0", "S1", "D").into_iter()
-        };
+        let in_crd2 = || token_vec!(u32; u32; 4, "S0", 0, 1, "S0", 0, "S1", "D").into_iter();
+        let in_ref2 = || token_vec!(u32; u32; 0, "S0", 1, 2, "S0", 3, "S1", "D").into_iter();
 
-        let out_crd = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
-        let out_ref1 = || token_vec!(u32; u32; 0, "S0", 1, 2, 3, "S1", "D").into_iter();
-        let out_ref2 = || token_vec!(u32; u32; 0, "S0", 0, 1, 2, "S1", "D").into_iter();
+        let out_crd = || token_vec!(u32; u32; "S0", 0, 1, "S0", 0, "S1", "D").into_iter();
+        let out_ref1 = || token_vec!(u32; u32; "S0", 4, 5, "S0", 8, "S1", "D").into_iter();
+        let out_ref2 = || token_vec!(u32; u32; "S0", 1, 2, "S0", 3, "S1", "D").into_iter();
         nintersect_test(
             in_crd1, in_ref1, in_crd2, in_ref2, out_crd, out_ref1, out_ref2,
         );
@@ -1269,18 +1631,18 @@ mod tests {
             out_crd: out_crd_sender,
             out_refs: vec![Box::new(out_ref1_sender), Box::new(out_ref2_sender)],
         };
-        let intersect = NUnion::new(data);
+        let intersect = NIntersect::new(data);
         let gen1 = GeneratorContext::new(in_crd1, in_crd1_sender);
         let gen2 = GeneratorContext::new(in_ref1, in_ref1_sender);
         let gen3 = GeneratorContext::new(in_crd2, in_crd2_sender);
         let gen4 = GeneratorContext::new(in_ref2, in_ref2_sender);
 
-        let crd_checker = ConsumerContext::new(out_crd_receiver);
-        let ref1_checker = PrinterContext::new(out_ref1_receiver);
-        let ref2_checker = ConsumerContext::new(out_ref2_receiver);
-        // let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
-        // let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
-        // let ref2_checker = CheckerContext::new(out_ref2, out_ref2_receiver);
+        // let crd_checker = ConsumerContext::new(out_crd_receiver);
+        // let ref1_checker = PrinterContext::new(out_ref1_receiver);
+        // let ref2_checker = ConsumerContext::new(out_ref2_receiver);
+        let crd_checker = CheckerContext::new(out_crd, out_crd_receiver);
+        let ref1_checker = CheckerContext::new(out_ref1, out_ref1_receiver);
+        let ref2_checker = CheckerContext::new(out_ref2, out_ref2_receiver);
 
         parent.add_child(gen1);
         parent.add_child(gen2);
