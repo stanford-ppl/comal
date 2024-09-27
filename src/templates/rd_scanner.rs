@@ -222,7 +222,11 @@ where
                             )
                             .unwrap();
                         if curr_id == id {
-                            println!("ID: {:?}, Val: {:?}", id, Token::<ValType, StopType>::Stop(token.clone() + 1));
+                            println!(
+                                "ID: {:?}, Val: {:?}",
+                                id,
+                                Token::<ValType, StopType>::Stop(token.clone() + 1)
+                            );
                         }
                     }
                     // Could either be a done token or an empty token
@@ -433,10 +437,12 @@ where
         self.time.incr_cycles(crd_arr_len.ceil() as u64);
         self.time.incr_cycles(self.timing_config.startup_delay);
         let mut seg_initiated = false;
-        let id = Identifier { id: 49 };
+        let id = Identifier { id: 0 };
+        let curr_id = self.id();
+        let mut stkn_cnt = 0;
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
-                Ok(curr_ref) => match curr_ref.data {
+                Ok(curr_ref) => match curr_ref.data.clone() {
                     Token::Val(val) => {
                         let idx: usize = val.try_into().unwrap();
                         let mut curr_addr = self.seg_arr[idx].clone();
@@ -498,13 +504,10 @@ where
                             });
                             if self.id() == id.clone() {
                                 println!(
-                                    "Id: {:?}, Out crd: {:?}",
+                                    "Id: {:?}, In_ref: {:?}, Out crd: {:?}, Out ref: {:?}",
                                     self.id(),
-                                    Token::<ValType, StopType>::Val(coord.clone())
-                                );
-                                println!(
-                                    "Id: {:?}, Out ref: {:?}",
-                                    self.id(),
+                                    curr_ref.data.clone(),
+                                    Token::<ValType, StopType>::Val(coord.clone()),
                                     Token::<ValType, StopType>::Val(curr_addr.clone())
                                 );
                             }
@@ -537,6 +540,7 @@ where
                                 ),
                             )
                             .unwrap();
+
                         self.rd_scan_data
                             .out_ref
                             .enqueue(
@@ -547,13 +551,19 @@ where
                                 ),
                             )
                             .unwrap();
+                        stkn_cnt += 1;
                         let _ = dam::logging::log_event(&LSLog {
                             out_crd: output.clone().into(),
                             out_ref: output.clone().into(),
                         });
                         if self.id() == id.clone() {
-                            println!("Id: {:?}, Out crd: {:?}", self.id(), output.clone());
-                            println!("Id: {:?}, Out ref: {:?}", self.id(), output.clone());
+                            println!(
+                                "Id: {:?}, In_ref: {:?}, Out crd: {:?}, Out ref: {:?}",
+                                self.id(),
+                                curr_ref.data.clone(),
+                                output.clone(),
+                                output.clone()
+                            );
                         }
                     }
                     Token::Stop(token) => {
@@ -578,14 +588,20 @@ where
                                 ),
                             )
                             .unwrap();
+                        stkn_cnt += 1;
                         let stkn: Token<ValType, StopType> = Token::Stop(token.clone() + 1);
                         let _ = dam::logging::log_event(&LSLog {
                             out_crd: stkn.clone().into(),
                             out_ref: stkn.clone().into(),
                         });
                         if self.id() == id.clone() {
-                            println!("Id: {:?}, Out crd: {:?}", self.id(), stkn.clone());
-                            println!("Id: {:?}, Out ref: {:?}", self.id(), stkn.clone());
+                            println!(
+                                "Id: {:?}, In ref: {:?}, Out crd: {:?}, Out ref: {:?}",
+                                self.id(),
+                                curr_ref.data.clone(),
+                                stkn.clone(),
+                                stkn.clone()
+                            );
                         }
                     }
                     // Could either be a done token or an empty token
@@ -655,6 +671,7 @@ where
                 },
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
             }
+            // println!("Stop token cnt: {}", stkn_cnt);
             self.time
                 .incr_cycles(self.timing_config.sequential_interval);
         }

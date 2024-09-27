@@ -60,13 +60,13 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        let id = Identifier { id: 0 };
+        let id = Identifier { id: 33 };
         let curr_id = self.id();
         loop {
             let in_ref = self.repeat_data.in_ref.peek_next(&self.time);
             match self.repeat_data.in_repsig.dequeue(&self.time) {
                 Ok(curr_in) => {
-                    let curr_ref = in_ref.unwrap().data;
+                    let curr_ref = in_ref.as_ref().unwrap().data.clone();
                     match curr_in.data {
                         Repsiggen::Repeat => {
                             let channel_elem =
@@ -76,7 +76,13 @@ where
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
                             if curr_id == id {
-                                println!("ID: {:?}, Output: {:?}", curr_id, curr_ref.clone());
+                                println!(
+                                    "ID: {:?}, In ref: {:?}, Output: {:?}, In repsig: {:?}",
+                                    curr_id,
+                                    curr_ref.clone(),
+                                    curr_ref.clone(),
+                                    Repsiggen::Repeat
+                                );
                             }
                             let _ = dam::logging::log_event(&RepeatLog {
                                 in_ref: curr_ref.clone().into(),
@@ -84,15 +90,28 @@ where
                             });
                         }
                         Repsiggen::Stop => {
+                            // Always dequeue when we see a stop
                             self.repeat_data.in_ref.dequeue(&self.time).unwrap();
-                            let next_tkn = self.repeat_data.in_ref.peek_next(&self.time).unwrap();
-                            let output: Token<ValType, StopType> =
-                                if let Token::Stop(stop_tkn) = next_tkn.data {
+                            let output: Token<ValType, StopType>;
+                            // If the dequeued token is a val, look at next token for stop level to increment 
+                            if let Token::Val(_) = in_ref.as_ref().unwrap().data.clone() {
+                                let next_tkn =
+                                    self.repeat_data.in_ref.peek_next(&self.time).unwrap();
+                                output = if let Token::Stop(stop_tkn) = next_tkn.data.clone() {
                                     self.repeat_data.in_ref.dequeue(&self.time).unwrap();
                                     Token::Stop(stop_tkn + 1)
                                 } else {
                                     Token::Stop(StopType::default())
                                 };
+                            } else {
+                                // If dequeued token is a stop token, increment but don't look at next token
+                                output = if let Token::Stop(stop_tkn) = in_ref.as_ref().unwrap().data.clone() {
+                                    // self.repeat_data.in_ref.dequeue(&self.time).unwrap();
+                                    Token::Stop(stop_tkn + 1)
+                                } else {
+                                    Token::Stop(StopType::default())
+                                };
+                            }
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, output.clone());
                             self.repeat_data
@@ -100,11 +119,17 @@ where
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
                             if curr_id == id {
-                                println!("ID: {:?}, Output: {:?}", curr_id, output.clone());
+                                println!(
+                                    "ID: {:?}, In ref: {:?}, Output: {:?}, In repsig: {:?}",
+                                    curr_id,
+                                    in_ref.as_ref().unwrap().data.clone(),
+                                    output.clone(),
+                                    Repsiggen::Stop
+                                );
                             }
                             let _ = dam::logging::log_event(&RepeatLog {
                                 in_ref: output.clone().into(),
-                                in_rep_sig: Repsiggen::Repeat,
+                                in_rep_sig: Repsiggen::Stop,
                             });
                         }
                         Repsiggen::Done => {
@@ -124,7 +149,7 @@ where
                                 }
                                 let _ = dam::logging::log_event(&RepeatLog {
                                     in_ref: channel_elem.clone().data.into(),
-                                    in_rep_sig: Repsiggen::Repeat,
+                                    in_rep_sig: Repsiggen::Done,
                                 });
                             } else {
                                 if curr_id == id {

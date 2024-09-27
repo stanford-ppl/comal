@@ -51,6 +51,65 @@ pub struct SpaccLog {
     // val: Token<f32, u32>,
 }
 
+// impl<ValType, StopType> Context for Reduce<ValType, StopType>
+// where
+//     ValType: DAMType + std::ops::AddAssign<ValType>,
+//     StopType: DAMType
+//         + std::ops::Add<u32, Output = StopType>
+//         + std::ops::Sub<u32, Output = StopType>
+//         + std::cmp::PartialEq,
+// {
+//     fn init(&mut self) {}
+
+//     fn run(&mut self) {
+//         let mut sum = ValType::default();
+//         loop {
+//             match self.reduce_data.in_val.dequeue(&self.time) {
+//                 Ok(curr_in) => match curr_in.data {
+//                     Token::Val(val) => {
+//                         sum += val;
+//                     }
+//                     Token::Stop(stkn) => {
+//                         let curr_time = self.time.tick();
+//                         self.reduce_data
+//                             .out_val
+//                             .enqueue(
+//                                 &self.time,
+//                                 ChannelElement::new(curr_time + 1, Token::Val(sum)),
+//                             )
+//                             .unwrap();
+//                         sum = ValType::default();
+//                         if stkn != StopType::default() {
+//                             self.reduce_data
+//                                 .out_val
+//                                 .enqueue(
+//                                     &self.time,
+//                                     ChannelElement::new(curr_time + 1, Token::Stop(stkn - 1)),
+//                                 )
+//                                 .unwrap();
+//                         }
+//                     }
+//                     Token::Empty => {
+//                         continue;
+//                     }
+//                     Token::Done => {
+//                         let curr_time = self.time.tick();
+//                         self.reduce_data
+//                             .out_val
+//                             .enqueue(&self.time, ChannelElement::new(curr_time + 1, Token::Done))
+//                             .unwrap();
+//                         return;
+//                     }
+//                 },
+//                 Err(_) => {
+//                     panic!("Unexpected end of stream");
+//                 }
+//             }
+//             self.time.incr_cycles(1);
+//         }
+//     }
+// }
+
 impl<ValType, StopType> Context for Reduce<ValType, StopType>
 where
     ValType: DAMType + std::ops::AddAssign<ValType> + std::cmp::PartialEq,
@@ -69,25 +128,49 @@ where
         // let max_tkn: StopType = max_num.into();
         // let mut prev_tkn: StopType = max_tkn.clone();
         // let mut prev_tkn: StopType = StopType::default();
+        let id = self.id();
+        let curr_id = Identifier { id: 0 };
         let mut prev_tkn = Token::default();
         loop {
             match self.reduce_data.in_val.dequeue(&self.time) {
-                Ok(curr_in) => match curr_in.data {
+                Ok(curr_in) => match curr_in.data.clone() {
                     Token::Val(val) => {
-                        sum += val;
+                        sum += val.clone();
+                        prev_tkn = Token::Val(val.clone());
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
-                        if prev_tkn != Token::Stop(StopType::default())
-                            || stkn == StopType::default()
-                        {
-                            self.reduce_data
-                                .out_val
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
-                                )
-                                .unwrap();
+                        // if prev_tkn != Token::Stop(StopType::default())
+                        //     || stkn == StopType::default()
+                        // {
+                        //     self.reduce_data
+                        //         .out_val
+                        //         .enqueue(
+                        //             &self.time,
+                        //             ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
+                        //         )
+                        //         .unwrap();
+                        //     if id == curr_id {
+                        //         println!(
+                        //             "Out val: {:?}",
+                        //             // Token::<ValType, StopType>::Val(sum.clone())
+                        //             curr_in.data.clone()
+                        //         );
+                        //     }
+                        // }
+                        self.reduce_data
+                            .out_val
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
+                            )
+                            .unwrap();
+                        if id == curr_id {
+                            println!(
+                                "In val: {:?}, Out val: {:?}",
+                                curr_in.data.clone(),
+                                Token::<ValType, StopType>::Val(sum.clone())
+                            );
                         }
                         let out_val = Token::<ValType, StopType>::Val(sum.clone());
                         prev_tkn = out_val.clone();
@@ -111,6 +194,13 @@ where
                             let _ = dam::logging::log_event(&ReduceLog {
                                 out_val: stk.clone().into(),
                             });
+                            if id == curr_id {
+                                println!(
+                                    "In val: {:?}, Out val: {:?}",
+                                    curr_in.data.clone(),
+                                    Token::<ValType, StopType>::Stop(stkn.clone() - 1)
+                                );
+                            }
                         }
                     }
                     Token::Empty => {
@@ -122,6 +212,14 @@ where
                             .out_val
                             .enqueue(&self.time, ChannelElement::new(curr_time + 1, Token::Done))
                             .unwrap();
+                        if id == curr_id {
+                            println!(
+                                "In val: {:?}, Out val: {:?}",
+                                curr_in.data.clone(),
+                                Token::<ValType, StopType>::Done
+                            );
+                            // println!("Out val: {:?}", curr_in.data.clone());
+                        }
                         return;
                     }
                 },
@@ -185,20 +283,29 @@ where
 
     fn run(&mut self) {
         let mut accum_storage: BTreeMap<CrdType, ValType> = BTreeMap::new();
-        let id = Identifier { id: 0 };
+        let id = Identifier { id: 42 };
+        let id1 = Identifier { id: 0 };
+        let mut icrd_stkn_pop_cnt = 0;
+        let mut ocrd_val_pop_cnt = 0;
         loop {
             let in_ocrd = self.spacc1_data.in_crd_outer.peek_next(&self.time).unwrap();
             let in_icrd = self.spacc1_data.in_crd_inner.peek_next(&self.time).unwrap();
             let in_val = self.spacc1_data.in_val.peek_next(&self.time).unwrap();
 
-            match in_ocrd.data {
+            let matches = match (in_icrd.data.clone(), in_val.data.clone()) {
+                (Token::Val(_), Token::Val(_)) => true,
+                (Token::Stop(_), Token::Stop(_)) => true,
+                (Token::Empty, Token::Empty) => true,
+                (Token::Done, Token::Done) => true,
+                (_, _) => false,
+            };
+
+            if !matches {
+                panic!("in_icrd and in_val don't match types");
+            }
+
+            match in_ocrd.data.clone() {
                 Token::Val(_) => {
-                    if self.id() == id.clone() {
-                        println!("Id: {:?}", self.id());
-                        println!("Icrd: {:?}", in_icrd.data.clone());
-                        println!("Ocrd: {:?}", in_ocrd.data.clone());
-                        println!("Val: {:?}", in_val.data.clone());
-                    }
                     match in_val.data.clone() {
                         Token::Val(val) => match in_icrd.data.clone() {
                             Token::Val(crd) => {
@@ -217,6 +324,8 @@ where
                             Token::Stop(icrd_stkn) => {
                                 assert_eq!(val_stkn, icrd_stkn);
                                 self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
+                                ocrd_val_pop_cnt += 1;
+                                icrd_stkn_pop_cnt += 1;
                             }
                             _ => {
                                 panic!("Stop tokens must match for inner crd");
@@ -255,6 +364,20 @@ where
                             out_val: Token::Val(value.clone()).into(),
                             out_crd: Token::Val(key.clone()).into(),
                         });
+                        if self.id() == id.clone() || self.id() == id1.clone() {
+                            // println!("Id: {:?}", self.id());
+                            println!();
+                            println!("Icrd: {:?}", in_icrd.data.clone());
+                            println!("Ocrd: {:?}", in_ocrd.data.clone());
+                            println!(
+                                "Out Val: {:?}",
+                                Token::<ValType, StopType>::Val(value.clone())
+                            );
+                            println!(
+                                "Out crd: {:?}",
+                                Token::<CrdType, StopType>::Val(key.clone())
+                            );
+                        }
                     }
                     let val_stkn_chan_elem =
                         ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
@@ -273,24 +396,92 @@ where
                         out_crd: Token::<CrdType, StopType>::Stop(stkn.clone()).into(),
                     });
                     accum_storage.clear();
+                    if self.id() == id.clone() || self.id() == id1.clone() {
+                        // println!("Id: {:?}", self.id());
+                        println!();
+                        println!("Icrd: {:?}", in_icrd.data.clone());
+                        println!("Ocrd: {:?}", in_ocrd.data.clone());
+                        println!(
+                            "Out Val: {:?}",
+                            Token::<ValType, StopType>::Stop(stkn.clone())
+                        );
+                        println!(
+                            "Out Crd: {:?}",
+                            Token::<ValType, StopType>::Stop(stkn.clone())
+                        );
+                    }
                     self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
+                    // Handle the case with back to back stop tokens
+
+                    if let Token::Stop(inner_stkn) = in_icrd.data.clone() {
+                        let next_ocrd =
+                            self.spacc1_data.in_crd_outer.peek_next(&self.time).unwrap();
+                        if let Token::Stop(ocrd_stkn) = next_ocrd.data.clone() {
+                            if inner_stkn == ocrd_stkn.clone() + 1 {
+                                self.spacc1_data.in_crd_inner.dequeue(&self.time).unwrap();
+                                self.spacc1_data.in_val.dequeue(&self.time).unwrap();
+                            } else {
+                                println!(
+                                    "Outer: {:?}, Inner: {:?}",
+                                    ocrd_stkn.clone(),
+                                    inner_stkn.clone()
+                                );
+                                panic!("Inner and outer stop token types don't match");
+                            }
+                        } else {
+                            assert_eq!(
+                                inner_stkn,
+                                StopType::default(),
+                                "Inner stkn lvl should be 0"
+                            );
+                        }
+                    }
                 }
                 Token::Done => {
-                    let icrd_chan_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
-                    self.spacc1_data
-                        .out_crd_inner
-                        .enqueue(&self.time, icrd_chan_elem)
-                        .unwrap();
-                    let val_chan_elem = ChannelElement::new(self.time.tick() + 1, Token::Done);
-                    self.spacc1_data
-                        .out_val
-                        .enqueue(&self.time, val_chan_elem)
-                        .unwrap();
-                    let _ = dam::logging::log_event(&SpaccLog {
-                        out_val: Token::<ValType, StopType>::Done.into(),
-                        out_crd: Token::<CrdType, StopType>::Done.into(),
-                    });
-                    return;
+                    match in_icrd.data.clone() {
+                        Token::Done => {
+                            let icrd_chan_elem =
+                                ChannelElement::new(self.time.tick() + 1, Token::Done);
+                            self.spacc1_data
+                                .out_crd_inner
+                                .enqueue(&self.time, icrd_chan_elem)
+                                .unwrap();
+                            let val_chan_elem =
+                                ChannelElement::new(self.time.tick() + 1, Token::Done);
+                            self.spacc1_data
+                                .out_val
+                                .enqueue(&self.time, val_chan_elem)
+                                .unwrap();
+                            let _ = dam::logging::log_event(&SpaccLog {
+                                out_val: Token::<ValType, StopType>::Done.into(),
+                                out_crd: Token::<CrdType, StopType>::Done.into(),
+                            });
+                            return;
+                        }
+                        _ => {
+                            // if self.id() == id.clone() {
+                            println!("Icrd: {:?}", in_icrd.data.clone());
+                            println!("Ival: {:?}", in_val.data.clone());
+                            // }
+                            match in_icrd.data.clone() {
+                                Token::Stop(_) => {
+                                    icrd_stkn_pop_cnt += 1;
+                                }
+                                _ => {}
+                            }
+                            self.spacc1_data.in_crd_inner.dequeue(&self.time).unwrap();
+                            self.spacc1_data.in_val.dequeue(&self.time).unwrap();
+                        }
+                    }
+
+                    // if self.id() == id.clone() || self.id() == id1.clone() {
+                    //     // println!("Id: {:?}", self.id());
+                    //     println!();
+                    //     println!("Icrd: {:?}", in_icrd.data.clone());
+                    //     println!("Ocrd: {:?}", in_ocrd.data.clone());
+                    //     println!("Out Val: {:?}", Token::<ValType, StopType>::Done);
+                    //     println!("Out Crd: {:?}", Token::<ValType, StopType>::Done);
+                    // }
                 }
                 _ => {
                     println!("Unexpected empty token found in spacc");
@@ -298,6 +489,7 @@ where
                     // std::process::exit(1);
                 }
             }
+            // println!("icrd cnt: {}, ocrd cnt: {}", icrd_stkn_pop_cnt, ocrd_val_pop_cnt);
             self.time.incr_cycles(1);
         }
     }
