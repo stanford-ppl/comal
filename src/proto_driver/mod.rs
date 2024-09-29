@@ -23,8 +23,10 @@ use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 use crate::templates::accumulator::MaxReduce;
 use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
+use crate::templates::new_alu::{ALUAdd, ALUMul};
 use crate::templates::primitive::ALUMaxOp;
 use crate::templates::scatter_gather::{Gather, Scatter};
+use crate::templates::unary::Unary;
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::channel::adapters::{RecvAdapter, SendAdapter};
@@ -359,17 +361,87 @@ pub fn build_from_proto<'a>(
                     ));
                 } else if in_val_ids.len() == 1 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
-                    builder.add_child(make_unary_alu(
-                        val_receiver1,
-                        out_val_sender,
-                        match op.stages[0].op() {
-                            alu::AluOp::Exp => ALUExpOp(),
-                            alu::AluOp::Max => ALUMaxOp(),
-                            _ => {
-                                panic!("Invalid op found");
-                            }
-                        },
-                    ))
+                    match op.stages[0].op() {
+                        alu::AluOp::Exp => {
+                            let unary_func = |val: f32| -> f32 { val.exp() };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        alu::AluOp::Sin => {
+                            let unary_func = |val: f32| -> f32 { val.sin() };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        alu::AluOp::Cos => {
+                            let unary_func = |val: f32| -> f32 { val.cos() };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        alu::AluOp::Max => {
+                            let scalar: f32 = op.scalar as f32;
+                            let unary_func = move |val: f32| -> f32 { val.max(scalar) };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        alu::AluOp::Scalaradd => {
+                            let scalar: f32 = op.scalar as f32;
+                            let unary_func = move |val: f32| -> f32 { val + scalar };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        alu::AluOp::Scalarmul => {
+                            let scalar: f32 = op.scalar as f32;
+                            let unary_func = move |val: f32| -> f32 { val * scalar };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        alu::AluOp::Scalardiv => {
+                            let scalar: f32 = op.scalar as f32;
+                            let unary_func = move |val: f32| -> f32 { val / scalar };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        alu::AluOp::Rsqrt => {
+                            let unary_func = |val: f32| -> f32 { 1.0 / val.sqrt() };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        alu::AluOp::Sigmoid => {
+                            let unary_func = |val: f32| -> f32 { 1.0 / (1.0 + f32::exp(-val)) };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                            ));
+                        }
+                        _ => {
+                            panic!("Should not reach binary op cases")
+                        }
+                    }
                 }
             }
             Op::Reduce(op) => {
