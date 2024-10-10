@@ -23,7 +23,8 @@ fn run_graph(proto: String, data: String) -> PyResult<(bool, u64)> {
         ComalGraph::decode(file_contents.as_slice()).unwrap()
     };
     let program_builder = parse_proto(comal_graph, data.into(), Default::default());
-    let initialized = program_builder.initialize(Default::default()).unwrap();
+    let options = InitializationOptionsBuilder::default().run_flavor_inference(true).build().unwrap();
+    let initialized = program_builder.initialize(options).unwrap();
     println!("{}", initialized.to_dot_string());
     let executed = initialized.run(Default::default());
     let cycles = executed.elapsed_cycles().unwrap();

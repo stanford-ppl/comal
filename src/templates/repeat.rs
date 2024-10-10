@@ -60,7 +60,7 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        let id = Identifier { id: 33 };
+        let id = Identifier { id: 0 };
         let curr_id = self.id();
         loop {
             let in_ref = self.repeat_data.in_ref.peek_next(&self.time);
