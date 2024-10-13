@@ -118,7 +118,7 @@ where
         + std::ops::Sub<u32, Output = StopType>
         + std::cmp::PartialEq
         + std::convert::From<u32>,
-    Token<f32, u32>: From<Token<ValType, StopType>>,
+    // Token<f32, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
@@ -174,9 +174,9 @@ where
                         }
                         let out_val = Token::<ValType, StopType>::Val(sum.clone());
                         prev_tkn = out_val.clone();
-                        let _ = dam::logging::log_event(&ReduceLog {
-                            out_val: out_val.clone().into(),
-                        });
+                        // let _ = dam::logging::log_event(&ReduceLog {
+                        //     out_val: out_val.clone().into(),
+                        // });
                         sum = ValType::default();
                         if stkn != StopType::default() {
                             self.reduce_data
@@ -191,9 +191,9 @@ where
                                 .unwrap();
                             let stk = Token::<ValType, StopType>::Stop(stkn.clone() - 1);
                             prev_tkn = stk.clone();
-                            let _ = dam::logging::log_event(&ReduceLog {
-                                out_val: stk.clone().into(),
-                            });
+                            // let _ = dam::logging::log_event(&ReduceLog {
+                            //     out_val: stk.clone().into(),
+                            // });
                             if id == curr_id {
                                 println!(
                                     "In val: {:?}, Out val: {:?}",
@@ -276,8 +276,8 @@ where
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
         + std::cmp::PartialEq,
-    Token<f32, u32>: From<Token<ValType, StopType>>,
-    Token<u32, u32>: From<Token<CrdType, StopType>>,
+    // Token<f32, u32>: From<Token<ValType, StopType>>,
+    // Token<u32, u32>: From<Token<CrdType, StopType>>,
 {
     fn init(&mut self) {}
 
@@ -360,10 +360,10 @@ where
                             .out_val
                             .enqueue(&self.time, val_chan_elem)
                             .unwrap();
-                        let _ = dam::logging::log_event(&SpaccLog {
-                            out_val: Token::Val(value.clone()).into(),
-                            out_crd: Token::Val(key.clone()).into(),
-                        });
+                        // let _ = dam::logging::log_event(&SpaccLog {
+                        //     out_val: Token::Val(value.clone()).into(),
+                        //     out_crd: Token::Val(key.clone()).into(),
+                        // });
                         if self.id() == id.clone() || self.id() == id1.clone() {
                             // println!("Id: {:?}", self.id());
                             println!();
@@ -391,10 +391,10 @@ where
                         .out_crd_inner
                         .enqueue(&self.time, crd_stkn_chan_elem)
                         .unwrap();
-                    let _ = dam::logging::log_event(&SpaccLog {
-                        out_val: Token::<ValType, StopType>::Stop(stkn.clone()).into(),
-                        out_crd: Token::<CrdType, StopType>::Stop(stkn.clone()).into(),
-                    });
+                    // let _ = dam::logging::log_event(&SpaccLog {
+                    //     out_val: Token::<ValType, StopType>::Stop(stkn.clone()).into(),
+                    //     out_crd: Token::<CrdType, StopType>::Stop(stkn.clone()).into(),
+                    // });
                     accum_storage.clear();
                     if self.id() == id.clone() || self.id() == id1.clone() {
                         // println!("Id: {:?}", self.id());
@@ -452,10 +452,10 @@ where
                                 .out_val
                                 .enqueue(&self.time, val_chan_elem)
                                 .unwrap();
-                            let _ = dam::logging::log_event(&SpaccLog {
-                                out_val: Token::<ValType, StopType>::Done.into(),
-                                out_crd: Token::<CrdType, StopType>::Done.into(),
-                            });
+                            // let _ = dam::logging::log_event(&SpaccLog {
+                            //     out_val: Token::<ValType, StopType>::Done.into(),
+                            //     out_crd: Token::<CrdType, StopType>::Done.into(),
+                            // });
                             return;
                         }
                         _ => {

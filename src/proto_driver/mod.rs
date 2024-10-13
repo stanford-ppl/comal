@@ -26,7 +26,9 @@ use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
 use crate::templates::new_alu::{ALUAdd, ALUMul};
 use crate::templates::primitive::ALUMaxOp;
 use crate::templates::scatter_gather::{Gather, Scatter};
+use crate::templates::tensor::{PrimitiveType, Tensor};
 use crate::templates::unary::Unary;
+use crate::templates::utils::read_inputs_vectorized;
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::channel::adapters::{RecvAdapter, SendAdapter};
@@ -35,10 +37,12 @@ use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
 use dam::utility_contexts::{BroadcastContext, GeneratorContext};
 
+use ndarray::Ix2;
 // use joiner::Payload;
 use proto_headers::tortilla::*;
 
-type VT = f32;
+// type VT = f32;
+type VT = Tensor<'static, f32, Ix2, 64>;
 type CT = u32;
 type ST = u32;
 
@@ -47,7 +51,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 102400;
+const DEFAULT_CHAN_SIZE: usize = 102400000;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
@@ -255,7 +259,7 @@ pub fn build_from_proto<'a>(
                                 out_repsig,
                             };
                             builder.add_child(RepeatSigGen::new(repsig_data));
-                        }
+                        }, 
                         repeat::InputRepSig::RepVal(rep_val) => {
                             let in_rep_val = get_val_id(&Some(rep_val));
                             let repsig_data = RepSigGenData {
@@ -353,9 +357,9 @@ pub fn build_from_proto<'a>(
                         out_val_sender,
                         match op.stages[0].op() {
                             alu::AluOp::Add => ALUAddOp(),
-                            alu::AluOp::Sub => ALUSubOp(),
+                            alu::AluOp::Sub => ALUAddOp(),
                             alu::AluOp::Mul => ALUMulOp(),
-                            alu::AluOp::Div => ALUDivOp(),
+                            alu::AluOp::Div => ALUMulOp(),
                             _ => todo!(),
                         },
                     ));
@@ -363,50 +367,50 @@ pub fn build_from_proto<'a>(
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     match op.stages[0].op() {
                         alu::AluOp::Exp => {
-                            let unary_func = |val: f32| -> f32 { val.exp() };
+                            let unary_func = |val: VT| -> VT { val };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
                             ));
                         }
-                        alu::AluOp::Sin => {
-                            let unary_func = |val: f32| -> f32 { val.sin() };
-                            builder.add_child(Unary::new(
-                                val_receiver1,
-                                out_val_sender,
-                                unary_func,
-                            ));
-                        }
-                        alu::AluOp::Cos => {
-                            let unary_func = |val: f32| -> f32 { val.cos() };
-                            builder.add_child(Unary::new(
-                                val_receiver1,
-                                out_val_sender,
-                                unary_func,
-                            ));
-                        }
+                        // alu::AluOp::Sin => {
+                        //     let unary_func = |val: f32| -> f32 { val.sin() };
+                        //     builder.add_child(Unary::new(
+                        //         val_receiver1,
+                        //         out_val_sender,
+                        //         unary_func,
+                        //     ));
+                        // }
+                        // alu::AluOp::Cos => {
+                        //     let unary_func = |val: f32| -> f32 { val.cos() };
+                        //     builder.add_child(Unary::new(
+                        //         val_receiver1,
+                        //         out_val_sender,
+                        //         unary_func,
+                        //     ));
+                        // }
                         alu::AluOp::Max => {
                             let scalar: f32 = op.scalar as f32;
-                            let unary_func = move |val: f32| -> f32 { val.max(scalar) };
+                            let unary_func = move |val: VT| -> VT { val};
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
                             ));
                         }
-                        alu::AluOp::Scalaradd => {
-                            let scalar: f32 = op.scalar as f32;
-                            let unary_func = move |val: f32| -> f32 { val + scalar };
-                            builder.add_child(Unary::new(
-                                val_receiver1,
-                                out_val_sender,
-                                unary_func,
-                            ));
-                        }
+                        // alu::AluOp::Scalaradd => {
+                        //     let scalar: f32 = op.scalar as f32;
+                        //     let unary_func = move |val: f32| -> f32 { val + scalar };
+                        //     builder.add_child(Unary::new(
+                        //         val_receiver1,
+                        //         out_val_sender,
+                        //         unary_func,
+                        //     ));
+                        // }
                         alu::AluOp::Scalarmul => {
                             let scalar: f32 = op.scalar as f32;
-                            let unary_func = move |val: f32| -> f32 { val * scalar };
+                            let unary_func = move |val: VT| -> VT { val };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
@@ -415,23 +419,24 @@ pub fn build_from_proto<'a>(
                         }
                         alu::AluOp::Scalardiv => {
                             let scalar: f32 = op.scalar as f32;
-                            let unary_func = move |val: f32| -> f32 { val / scalar };
+                            let unary_func = move |val: VT| -> VT { val };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
                             ));
                         }
-                        alu::AluOp::Rsqrt => {
-                            let unary_func = |val: f32| -> f32 { 1.0 / val.sqrt() };
-                            builder.add_child(Unary::new(
-                                val_receiver1,
-                                out_val_sender,
-                                unary_func,
-                            ));
-                        }
+                        // alu::AluOp::Rsqrt => {
+                        //     let unary_func = |val: f32| -> f32 { 1.0 / val.sqrt() };
+                        //     builder.add_child(Unary::new(
+                        //         val_receiver1,
+                        //         out_val_sender,
+                        //         unary_func,
+                        //     ));
+                        // }
                         alu::AluOp::Sigmoid => {
-                            let unary_func = |val: f32| -> f32 { 1.0 / (1.0 + f32::exp(-val)) };
+                            // let unary_func = |val: VT| -> VT { 1.0 / (1.0 + f32::exp(-val)) };
+                            let unary_func = |val: VT| -> VT { val };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
@@ -452,7 +457,8 @@ pub fn build_from_proto<'a>(
                 };
                 match op.reduce_type() {
                     reduce::Type::Add => builder.add_child(Reduce::new(reduce_data)),
-                    reduce::Type::Max => builder.add_child(MaxReduce::new(reduce_data, f32::MIN)),
+                    // reduce::Type::Max => builder.add_child(MaxReduce::new(reduce_data, f32::MIN)),
+                    reduce::Type::Max => builder.add_child(Reduce::new(reduce_data)),
                 }
             }
             Op::CoordHold(op) => {
@@ -480,16 +486,32 @@ pub fn build_from_proto<'a>(
                 builder.add_child(CrdDrop::new(crd_drop_data));
             }
             Op::Array(op) => {
-                let _blocked = op.blocked;
-                let _stream_shape = op.stream_shape as usize;
+                let blocked = op.blocked;
+                let stream_shape = op.stream_shape as usize;
+                const N: usize = 64;
                 let in_ref_id = get_ref_id(&op.input_ref);
-                let array_data = ArrayData {
-                    in_ref: refmap.get_receiver(in_ref_id, builder),
-                    out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
-                };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
-                let vals = read_inputs(&val_filename);
-                builder.add_child(Array::new(array_data, vals));
+                if blocked {
+                    let array_data = ArrayData {
+                        in_ref: refmap.get_receiver(in_ref_id, builder),
+                        out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    };
+                    let vals = read_inputs_vectorized(
+                        &val_filename,
+                        PrimitiveType::<VT>::new(),
+                    );
+                    builder.add_child(Array::new(array_data, vals));
+                } else {
+                    let array_data = ArrayData {
+                        in_ref: refmap.get_receiver(in_ref_id, builder),
+                        out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    };
+                    let vals = read_inputs_vectorized(
+                        &val_filename,
+                        PrimitiveType::<VT>::new(),
+                    );
+                    builder.add_child(Array::new(array_data, vals));
+                }
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
@@ -523,76 +545,77 @@ pub fn build_from_proto<'a>(
                 ));
                 // root_receiver
             }
-            Op::Fork(op) => match op.conn.as_ref().unwrap() {
-                fork::Conn::Crd(in_crd) => {
-                    let in_crd_id = in_crd.input.try_conv();
-                    let out_crd_ids = in_crd.outputs.iter().map(|id| id.try_conv());
-                    let receiver = crdmap.get_receiver(in_crd_id, builder);
-                    let mut broadcast = Scatter::new(receiver);
-                    out_crd_ids
-                        .into_iter()
-                        .for_each(|id| broadcast.add_target(crdmap.get_sender(id, builder)));
-                    builder.add_child(broadcast);
-                }
-                fork::Conn::Ref(in_ref) => {
-                    let in_ref_id = in_ref.input.try_conv();
-                    let out_ref_ids = in_ref.outputs.iter().map(|id| id.try_conv());
-                    let receiver = refmap.get_receiver(in_ref_id, builder);
-                    let mut scatter = Scatter::new(receiver);
-                    out_ref_ids
-                        .into_iter()
-                        .for_each(|id| scatter.add_target(refmap.get_sender(id, builder)));
-                    builder.add_child(scatter);
-                }
-                fork::Conn::Val(in_val) => {
-                    let in_val_id = in_val.input.try_conv();
-                    let out_val_ids = in_val.outputs.iter().map(|id| id.try_conv());
-                    let receiver = valmap.get_receiver(in_val_id, builder);
-                    let mut broadcast = Scatter::new(receiver);
-                    out_val_ids
-                        .into_iter()
-                        .for_each(|id| broadcast.add_target(valmap.get_sender(id, builder)));
-                    builder.add_child(broadcast);
-                }
-                fork::Conn::Repsig(_) => {
-                    panic!("Attempting to fork a repsig");
-                }
-            },
-            Op::Join(op) => match op.conn.as_ref().unwrap() {
-                join::Conn::Crd(in_crd) => {
-                    let in_crd_id = in_crd.output.try_conv();
-                    let sender = crdmap.get_sender(in_crd_id, builder);
-                    let out_crd_ids = in_crd.inputs.iter().map(|id| id.try_conv());
-                    let mut gather = Gather::new(sender);
-                    out_crd_ids
-                        .into_iter()
-                        .for_each(|id| gather.add_target(crdmap.get_receiver(id, builder)));
-                    builder.add_child(gather);
-                }
-                join::Conn::Ref(in_ref) => {
-                    let in_ref_id = in_ref.output.try_conv();
-                    let out_ref_ids = in_ref.inputs.iter().map(|id| id.try_conv());
-                    let sender = refmap.get_sender(in_ref_id, builder);
-                    let mut gather = Gather::new(sender);
-                    out_ref_ids
-                        .into_iter()
-                        .for_each(|id| gather.add_target(refmap.get_receiver(id, builder)));
-                    builder.add_child(gather);
-                }
-                join::Conn::Val(in_val) => {
-                    let in_val_id = in_val.output.try_conv();
-                    let out_val_ids = in_val.inputs.iter().map(|id| id.try_conv());
-                    let sender = valmap.get_sender(in_val_id, builder);
-                    let mut gather = Gather::new(sender);
-                    out_val_ids
-                        .into_iter()
-                        .for_each(|id| gather.add_target(valmap.get_receiver(id, builder)));
-                    builder.add_child(gather);
-                }
-                join::Conn::Repsig(_) => {
-                    panic!("Attempting to join repsig");
-                }
-            },
+            // Op::Fork(op) => match op.conn.as_ref().unwrap() {
+            //     // panic!("not supported");
+            //     // fork::Conn::Crd(in_crd) => {
+            //     //     let in_crd_id = in_crd.input.try_conv();
+            //     //     let out_crd_ids = in_crd.outputs.iter().map(|id| id.try_conv());
+            //     //     let receiver = crdmap.get_receiver(in_crd_id, builder);
+            //     //     let mut broadcast = Scatter::new(receiver);
+            //     //     out_crd_ids
+            //     //         .into_iter()
+            //     //         .for_each(|id| broadcast.add_target(crdmap.get_sender(id, builder)));
+            //     //     builder.add_child(broadcast);
+            //     // }
+            //     // fork::Conn::Ref(in_ref) => {
+            //     //     let in_ref_id = in_ref.input.try_conv();
+            //     //     let out_ref_ids = in_ref.outputs.iter().map(|id| id.try_conv());
+            //     //     let receiver = refmap.get_receiver(in_ref_id, builder);
+            //     //     let mut scatter = Scatter::new(receiver);
+            //     //     out_ref_ids
+            //     //         .into_iter()
+            //     //         .for_each(|id| scatter.add_target(refmap.get_sender(id, builder)));
+            //     //     builder.add_child(scatter);
+            //     // }
+            //     // fork::Conn::Val(in_val) => {
+            //     //     let in_val_id = in_val.input.try_conv();
+            //     //     let out_val_ids = in_val.outputs.iter().map(|id| id.try_conv());
+            //     //     let receiver = valmap.get_receiver(in_val_id, builder);
+            //     //     let mut broadcast = Scatter::new(receiver);
+            //     //     out_val_ids
+            //     //         .into_iter()
+            //     //         .for_each(|id| broadcast.add_target(valmap.get_sender(id, builder)));
+            //     //     builder.add_child(broadcast);
+            //     // }
+            //     // fork::Conn::Repsig(_) => {
+            //     //     panic!("Attempting to fork a repsig");
+            //     // }
+            // },
+            // Op::Join(op) => match op.conn.as_ref().unwrap() {
+            //     join::Conn::Crd(in_crd) => {
+            //         let in_crd_id = in_crd.output.try_conv();
+            //         let sender = crdmap.get_sender(in_crd_id, builder);
+            //         let out_crd_ids = in_crd.inputs.iter().map(|id| id.try_conv());
+            //         let mut gather = Gather::new(sender);
+            //         out_crd_ids
+            //             .into_iter()
+            //             .for_each(|id| gather.add_target(crdmap.get_receiver(id, builder)));
+            //         builder.add_child(gather);
+            //     }
+            //     join::Conn::Ref(in_ref) => {
+            //         let in_ref_id = in_ref.output.try_conv();
+            //         let out_ref_ids = in_ref.inputs.iter().map(|id| id.try_conv());
+            //         let sender = refmap.get_sender(in_ref_id, builder);
+            //         let mut gather = Gather::new(sender);
+            //         out_ref_ids
+            //             .into_iter()
+            //             .for_each(|id| gather.add_target(refmap.get_receiver(id, builder)));
+            //         builder.add_child(gather);
+            //     }
+            //     join::Conn::Val(in_val) => {
+            //         let in_val_id = in_val.output.try_conv();
+            //         let out_val_ids = in_val.inputs.iter().map(|id| id.try_conv());
+            //         let sender = valmap.get_sender(in_val_id, builder);
+            //         let mut gather = Gather::new(sender);
+            //         out_val_ids
+            //             .into_iter()
+            //             .for_each(|id| gather.add_target(valmap.get_receiver(id, builder)));
+            //         builder.add_child(gather);
+            //     }
+            //     join::Conn::Repsig(_) => {
+            //         panic!("Attempting to join repsig");
+            //     }
+            // },
             _ => todo!(),
         }
     }

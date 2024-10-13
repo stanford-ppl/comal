@@ -11,14 +11,14 @@ fn set_tensor_path() {
     env::set_var("FROSTT_FORMATTED_PATH", "/home/rubensl/Documents/data");
 }
 
-pub fn read_inputs_vectorized<T>(file_path: &PathBuf, _prim_type: impl Adapter<T>) -> Vec<T>
+pub fn read_inputs_vectorized<T>(file_path: &PathBuf, prim_type: impl Adapter<T>) -> Vec<T>
 where
     T: DAMType,
 {
-    let _file =
+    let file =
         File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found", file_path));
     // prim_type.parse(BufReader::new(file).lines().flatten())
-    todo!()
+    prim_type.parse(BufReader::new(file).lines().flatten())
 }
 
 pub fn read_inputs<T>(file_path: &PathBuf) -> Vec<T>

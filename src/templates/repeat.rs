@@ -16,19 +16,19 @@ pub struct Repeat<ValType: Clone, StopType: Clone> {
     repeat_data: RepeatData<ValType, StopType>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[event_type]
-pub struct RepeatLog<T: dam::types::DAMType + serde::Serialize> {
-    in_ref: Token<T, u32>,
-    in_rep_sig: Repsiggen,
-}
+// #[derive(Serialize, Deserialize, Debug)]
+// #[event_type]
+// pub struct RepeatLog<T: dam::types::DAMType + serde::Serialize> {
+//     in_ref: Token<T, u32>,
+//     in_rep_sig: Repsiggen,
+// }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[event_type]
-pub struct RepsiggenLog<T: dam::types::DAMType + serde::Serialize> {
-    in_ref: Token<T, u32>,
-    out_rep_sig: Repsiggen,
-}
+// #[derive(Serialize, Deserialize, Debug)]
+// #[event_type]
+// pub struct RepsiggenLog<T: dam::types::DAMType + serde::Serialize> {
+//     in_ref: Token<T, u32>,
+//     out_rep_sig: Repsiggen,
+// }
 
 impl<ValType: DAMType, StopType: DAMType> Repeat<ValType, StopType>
 where
@@ -52,15 +52,14 @@ where
     ValType: DAMType
         + std::ops::Mul<ValType, Output = ValType>
         + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>
-        + serde::Serialize,
+        + std::cmp::PartialOrd<ValType>,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
     Token<ValType, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        let id = Identifier { id: 33 };
+        let id = Identifier { id: 0 };
         let curr_id = self.id();
         loop {
             let in_ref = self.repeat_data.in_ref.peek_next(&self.time);
@@ -84,10 +83,10 @@ where
                                     Repsiggen::Repeat
                                 );
                             }
-                            let _ = dam::logging::log_event(&RepeatLog {
-                                in_ref: curr_ref.clone().into(),
-                                in_rep_sig: Repsiggen::Repeat,
-                            });
+                            // let _ = dam::logging::log_event(&RepeatLog {
+                            //     in_ref: curr_ref.clone().into(),
+                            //     in_rep_sig: Repsiggen::Repeat,
+                            // });
                         }
                         Repsiggen::Stop => {
                             // Always dequeue when we see a stop
@@ -127,10 +126,10 @@ where
                                     Repsiggen::Stop
                                 );
                             }
-                            let _ = dam::logging::log_event(&RepeatLog {
-                                in_ref: output.clone().into(),
-                                in_rep_sig: Repsiggen::Stop,
-                            });
+                            // let _ = dam::logging::log_event(&RepeatLog {
+                            //     in_ref: output.clone().into(),
+                            //     in_rep_sig: Repsiggen::Stop,
+                            // });
                         }
                         Repsiggen::Done => {
                             if let Token::Done = curr_ref.clone() {
@@ -147,10 +146,10 @@ where
                                         Token::<ValType, StopType>::Done
                                     );
                                 }
-                                let _ = dam::logging::log_event(&RepeatLog {
-                                    in_ref: channel_elem.clone().data.into(),
-                                    in_rep_sig: Repsiggen::Done,
-                                });
+                                // let _ = dam::logging::log_event(&RepeatLog {
+                                //     in_ref: channel_elem.clone().data.into(),
+                                //     in_rep_sig: Repsiggen::Done,
+                                // });
                             } else {
                                 if curr_id == id {
                                     println!(
@@ -160,10 +159,10 @@ where
                                         curr_ref.clone()
                                     );
                                 }
-                                let _ = dam::logging::log_event(&RepeatLog {
-                                    in_ref: curr_ref.clone().into(),
-                                    in_rep_sig: Repsiggen::Repeat,
-                                });
+                                // let _ = dam::logging::log_event(&RepeatLog {
+                                //     in_ref: curr_ref.clone().into(),
+                                //     in_rep_sig: Repsiggen::Repeat,
+                                // });
                                 panic!("Input reference and repeat signal must both be on Done");
                             }
                             return;
@@ -210,8 +209,8 @@ where
     ValType: DAMType
         + std::ops::Mul<ValType, Output = ValType>
         + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>
-        + serde::Serialize,
+        + std::cmp::PartialOrd<ValType>,
+        // + serde::Serialize,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
     Repsiggen: DAMType,
     Token<ValType, u32>: From<Token<ValType, StopType>>,
@@ -231,10 +230,10 @@ where
                             .out_repsig
                             .enqueue(&self.time, channel_elem)
                             .unwrap();
-                        let _ = dam::logging::log_event(&RepsiggenLog {
-                            in_ref: tkn.clone().into(),
-                            out_rep_sig: Repsiggen::Repeat,
-                        });
+                        // let _ = dam::logging::log_event(&RepsiggenLog {
+                        //     in_ref: tkn.clone().into(),
+                        //     out_rep_sig: Repsiggen::Repeat,
+                        // });
                         if curr_id == id {
                             println!(
                                 "ID: {:?}, Ref: {:?}, Ref_sig: {:?}",
@@ -251,10 +250,10 @@ where
                             .out_repsig
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
-                        let _ = dam::logging::log_event(&RepsiggenLog {
-                            out_rep_sig: Repsiggen::Stop,
-                            in_ref: tkn.clone().into(),
-                        });
+                        // let _ = dam::logging::log_event(&RepsiggenLog {
+                        //     out_rep_sig: Repsiggen::Stop,
+                        //     in_ref: tkn.clone().into(),
+                        // });
                         if curr_id == id {
                             println!(
                                 "ID: {:?}, Ref: {:?}, Ref_sig: {:?}",
@@ -271,10 +270,10 @@ where
                             .out_repsig
                             .enqueue(&self.time, channel_elem)
                             .unwrap();
-                        let _ = dam::logging::log_event(&RepsiggenLog {
-                            out_rep_sig: Repsiggen::Done,
-                            in_ref: Token::<ValType, StopType>::Done.into(),
-                        });
+                        // let _ = dam::logging::log_event(&RepsiggenLog {
+                        //     out_rep_sig: Repsiggen::Done,
+                        //     in_ref: Token::<ValType, StopType>::Done.into(),
+                        // });
                         if curr_id == id {
                             println!(
                                 "ID: {:?}, Ref: {:?}, Ref_sig: {:?}",

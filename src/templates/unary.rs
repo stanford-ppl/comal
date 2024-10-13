@@ -45,7 +45,7 @@ where
     ValType: DAMType,
     StopType: DAMType,
     F: Fn(ValType) -> ValType + Sync + Send,
-    f32: From<ValType>,
+    // f32: From<ValType>,
 {
     fn run(&mut self) {
         loop {
@@ -57,14 +57,14 @@ where
                         //TODO: Add logic for when we receive a value on the stream
                         //TODO: Enqueue output to output value channel
 
-                        let log_val: f32 = val.clone().into();
-                        if log_val < 0.0 {
-                            dam::logging::log_event(&UnaryLogData { val: log_val }).unwrap();
-                        }
+                        // let log_val: f32 = val.clone().into();
+                        // if log_val < 0.0 {
+                        //     dam::logging::log_event(&UnaryLogData { val: log_val }).unwrap();
+                        // }
 
                         let out_val = (self.unary_func)(val);
                         let out_val_elem = ChannelElement::new(
-                            self.time.tick() + 1,
+                            self.time.tick() + 64*64,
                             Token::<ValType, StopType>::Val(out_val),
                         );
                         self.out_val.enqueue(&self.time, out_val_elem).unwrap();

@@ -4,7 +4,10 @@ use dam::context_tools::*;
 use dam::templates::ops::*;
 use dam::types::StaticallySized;
 use dam::RegisterALUOp;
+use ndarray::Ix2;
 use serde::{Deserialize, Serialize};
+
+use super::tensor::Tensor;
 
 #[derive(Clone, Serialize, Deserialize, Copy, PartialEq, PartialOrd, Eq, Hash)]
 pub enum Token<ValType, StopType> {
@@ -53,10 +56,34 @@ impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<f32, StopType> {
     }
 }
 
+impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 64>, StopType> {
+    type Error = u32;
+
+    fn try_into(self) -> Result<Token<u32, StopType>, Self::Error> {
+        match self {
+            Token::Val(val) => Ok(Token::Val(u32::default())),
+            Token::Stop(stop) => Ok(Token::Stop(stop)),
+            Token::Empty => Ok(Token::Empty),
+            Token::Done => Ok(Token::Done),
+        }
+    }
+}
+
 impl<StopType: DAMType> From<Token<u32, StopType>> for Token<f32, StopType> {
     fn from(value: Token<u32, StopType>) -> Self {
         match value {
             Token::Val(val) => Token::Val(f32::from_bits(val)),
+            Token::Stop(stop) => Token::Stop(stop),
+            Token::Empty => Token::Empty,
+            Token::Done => Token::Done,
+        }
+    }
+}
+
+impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 64>, StopType> {
+    fn from(value: Token<u32, StopType>) -> Self {
+        match value {
+            Token::Val(val) => Token::Val(Tensor{ data: todo!() }),
             Token::Stop(stop) => Token::Stop(stop),
             Token::Empty => Token::Empty,
             Token::Done => Token::Done,

@@ -95,7 +95,7 @@ pub fn make_unary_alu<ValType: DAMType, StopType: DAMType>(
 
     let mut pcu = PCU::new(
         PCUConfig {
-            pipeline_depth: 1,
+            pipeline_depth: 128,
             num_registers: 1,
         },
         ingress_op,
