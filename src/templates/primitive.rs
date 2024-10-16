@@ -91,6 +91,54 @@ impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32
     }
 }
 
+impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 16>, StopType> {
+    type Error = u32;
+
+    fn try_into(self) -> Result<Token<u32, StopType>, Self::Error> {
+        match self {
+            Token::Val(val) => Ok(Token::Val(u32::default())),
+            Token::Stop(stop) => Ok(Token::Stop(stop)),
+            Token::Empty => Ok(Token::Empty),
+            Token::Done => Ok(Token::Done),
+        }
+    }
+}
+
+impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 16>, StopType> {
+    fn from(value: Token<u32, StopType>) -> Self {
+        match value {
+            Token::Val(val) => Token::Val(Tensor{ data: todo!() }),
+            Token::Stop(stop) => Token::Stop(stop),
+            Token::Empty => Token::Empty,
+            Token::Done => Token::Done,
+        }
+    }
+}
+
+impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 32>, StopType> {
+    type Error = u32;
+
+    fn try_into(self) -> Result<Token<u32, StopType>, Self::Error> {
+        match self {
+            Token::Val(val) => Ok(Token::Val(u32::default())),
+            Token::Stop(stop) => Ok(Token::Stop(stop)),
+            Token::Empty => Ok(Token::Empty),
+            Token::Done => Ok(Token::Done),
+        }
+    }
+}
+
+impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 32>, StopType> {
+    fn from(value: Token<u32, StopType>) -> Self {
+        match value {
+            Token::Val(val) => Token::Val(Tensor{ data: todo!() }),
+            Token::Stop(stop) => Token::Stop(stop),
+            Token::Empty => Token::Empty,
+            Token::Done => Token::Done,
+        }
+    }
+}
+
 impl<T: num::Float> Exp for T {
     fn exp(self) -> Self {
         num::Float::exp(self)

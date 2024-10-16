@@ -1,4 +1,4 @@
-use dam::structures::Identifiable;
+use dam::structures::{Identifiable, Time};
 use dam::{
     context_tools::*,
     dam_macros::{context_macro, event_type},
@@ -11,6 +11,7 @@ use super::primitive::Token;
 pub struct ArrayData<RefType: Clone, ValType: Clone, StopType: Clone> {
     pub in_ref: Receiver<Token<RefType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
+    pub block_size: usize,
 }
 
 #[context_macro]
@@ -67,8 +68,9 @@ where
                     match data.clone() {
                         Token::Val(val) => {
                             let idx: usize = val.try_into().unwrap();
+                            let block_size = self.array_data.block_size;
                             let channel_elem = ChannelElement::new(
-                                self.time.tick() + 64*64,
+                                self.time.tick() + Time::new((block_size * block_size).try_into().unwrap()),
                                 Token::Val(self.val_arr[idx].clone()),
                             );
                             self.array_data
@@ -147,7 +149,7 @@ where
             }
             // let num = 64 x 64;
             // self.time.incr_cycles(64*64);
-            self.time.incr_cycles(4096);
+            self.time.incr_cycles(1);
         }
     }
 }

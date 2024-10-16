@@ -1,7 +1,7 @@
 use core::hash::Hash;
 use std::{collections::BTreeMap, u32};
 
-use dam::structures::{Identifiable, Identifier};
+use dam::structures::{Identifiable, Identifier, Time};
 use dam::{
     context_tools::*,
     dam_macros::{context_macro, event_type},
@@ -13,6 +13,7 @@ use super::primitive::Token;
 pub struct ReduceData<ValType: Clone, StopType: Clone> {
     pub in_val: Receiver<Token<ValType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
+    pub block_size: usize,
 }
 
 #[context_macro]
@@ -162,7 +163,7 @@ where
                             .out_val
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
+                                ChannelElement::new(curr_time + Time::new((self.reduce_data.block_size * self.reduce_data.block_size).try_into().unwrap()), Token::Val(sum.clone())),
                             )
                             .unwrap();
                         if id == curr_id {
@@ -238,6 +239,7 @@ pub struct Spacc1Data<CrdType: Clone, ValType: Clone, StopType: Clone> {
     pub in_crd_inner: Receiver<Token<CrdType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
     pub out_crd_inner: Sender<Token<CrdType, StopType>>,
+    pub block_size: usize,
 }
 
 #[context_macro]
@@ -310,6 +312,8 @@ where
                         Token::Val(val) => match in_icrd.data.clone() {
                             Token::Val(crd) => {
                                 *accum_storage.entry(crd).or_default() += val.clone();
+                                let latency = self.spacc1_data.block_size * 6;
+                                self.time.incr_cycles(latency.try_into().unwrap());
                             }
                             _ => {
                                 // self.spacc1_data.in_val.dequeue(&self.time).unwrap();
@@ -353,7 +357,7 @@ where
                             .enqueue(&self.time, icrd_chan_elem)
                             .unwrap();
                         let val_chan_elem = ChannelElement::new(
-                            self.time.tick() + 1,
+                            self.time.tick() + Time::new(1),
                             Token::<ValType, StopType>::Val(value.clone()),
                         );
                         self.spacc1_data

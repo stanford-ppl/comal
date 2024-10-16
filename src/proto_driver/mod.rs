@@ -4,6 +4,7 @@ pub mod util;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
+// use ndarray::Array;
 
 use self::proto_headers::tortilla::operation::*;
 use self::util::{get_repsig_id, AsStreamID};
@@ -22,6 +23,7 @@ use super::token_vec;
 use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 use crate::templates::accumulator::MaxReduce;
+use crate::templates::binary::Binary;
 use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
 use crate::templates::new_alu::{ALUAdd, ALUMul};
 use crate::templates::primitive::ALUMaxOp;
@@ -37,7 +39,7 @@ use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
 use dam::utility_contexts::{BroadcastContext, GeneratorContext};
 
-use ndarray::Ix2;
+use ndarray::{CowArray, Ix1, Ix2};
 // use joiner::Payload;
 use proto_headers::tortilla::*;
 
@@ -123,6 +125,7 @@ pub fn build_from_proto<'a>(
     valmap: &mut Channels<'a, Token<VT, ST>>,
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
+    let mut block_size = None;
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
             Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
@@ -259,7 +262,7 @@ pub fn build_from_proto<'a>(
                                 out_repsig,
                             };
                             builder.add_child(RepeatSigGen::new(repsig_data));
-                        }, 
+                        }
                         repeat::InputRepSig::RepVal(rep_val) => {
                             let in_rep_val = get_val_id(&Some(rep_val));
                             let repsig_data = RepSigGenData {
@@ -351,17 +354,31 @@ pub fn build_from_proto<'a>(
                 if in_val_ids.len() == 2 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
-                    builder.add_child(make_alu(
+                    // builder.add_child(make_alu(
+                    //     val_receiver1,
+                    //     val_receiver2,
+                    //     out_val_sender,
+                    //     match op.stages[0].op() {
+                    //         alu::AluOp::Add => ALUAddOp(),
+                    //         alu::AluOp::Sub => ALUAddOp(),
+                    //         alu::AluOp::Mul => ALUMulOp(),
+                    //         alu::AluOp::Div => ALUMulOp(),
+                    //         _ => todo!(),
+                    //     },
+                    // ));
+                    let binary_func = match op.stages[0].op() {
+                        alu::AluOp::Add => |val1: VT, val2: VT| -> VT { val1 + val2 },
+                        alu::AluOp::Sub => |val1: VT, val2: VT| -> VT { val1 - val2 },
+                        alu::AluOp::Mul => |val1: VT, val2: VT| -> VT { val1 * val2 },
+                        alu::AluOp::Div => |val1: VT, val2: VT| -> VT { val1 / val2 },
+                        _ => todo!(),
+                    };
+                    builder.add_child(Binary::new(
                         val_receiver1,
                         val_receiver2,
                         out_val_sender,
-                        match op.stages[0].op() {
-                            alu::AluOp::Add => ALUAddOp(),
-                            alu::AluOp::Sub => ALUAddOp(),
-                            alu::AluOp::Mul => ALUMulOp(),
-                            alu::AluOp::Div => ALUMulOp(),
-                            _ => todo!(),
-                        },
+                        binary_func,
+                        block_size.unwrap(),
                     ));
                 } else if in_val_ids.len() == 1 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
@@ -372,6 +389,7 @@ pub fn build_from_proto<'a>(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
+                                block_size.unwrap(),
                             ));
                         }
                         // alu::AluOp::Sin => {
@@ -392,11 +410,12 @@ pub fn build_from_proto<'a>(
                         // }
                         alu::AluOp::Max => {
                             let scalar: f32 = op.scalar as f32;
-                            let unary_func = move |val: VT| -> VT { val};
+                            let unary_func = move |val: VT| -> VT { val };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
+                                block_size.unwrap(),
                             ));
                         }
                         // alu::AluOp::Scalaradd => {
@@ -415,6 +434,7 @@ pub fn build_from_proto<'a>(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
+                                block_size.unwrap(),
                             ));
                         }
                         alu::AluOp::Scalardiv => {
@@ -424,6 +444,7 @@ pub fn build_from_proto<'a>(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
+                                block_size.unwrap(),
                             ));
                         }
                         // alu::AluOp::Rsqrt => {
@@ -441,6 +462,7 @@ pub fn build_from_proto<'a>(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
+                                block_size.unwrap(),
                             ));
                         }
                         _ => {
@@ -454,10 +476,14 @@ pub fn build_from_proto<'a>(
                 let reduce_data = ReduceData {
                     in_val: valmap.get_receiver(in_val_id, builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    block_size: block_size.unwrap(),
+                };
+                let min_val = Tensor::<'static, f32, Ix1, 16> {
+                    data: CowArray::from(ndarray::Array::from_vec(vec![f32::MIN; block_size.unwrap()])),
                 };
                 match op.reduce_type() {
                     reduce::Type::Add => builder.add_child(Reduce::new(reduce_data)),
-                    // reduce::Type::Max => builder.add_child(MaxReduce::new(reduce_data, f32::MIN)),
+                    // reduce::Type::Max => builder.add_child(MaxReduce::new(reduce_data, min_val)),
                     reduce::Type::Max => builder.add_child(Reduce::new(reduce_data)),
                 }
             }
@@ -495,21 +521,18 @@ pub fn build_from_proto<'a>(
                     let array_data = ArrayData {
                         in_ref: refmap.get_receiver(in_ref_id, builder),
                         out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                        block_size: stream_shape,
                     };
-                    let vals = read_inputs_vectorized(
-                        &val_filename,
-                        PrimitiveType::<VT>::new(),
-                    );
+                    let vals = read_inputs_vectorized(&val_filename, PrimitiveType::<VT>::new());
+                    block_size = Some(stream_shape);
                     builder.add_child(Array::new(array_data, vals));
                 } else {
                     let array_data = ArrayData {
                         in_ref: refmap.get_receiver(in_ref_id, builder),
                         out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                        block_size: stream_shape,
                     };
-                    let vals = read_inputs_vectorized(
-                        &val_filename,
-                        PrimitiveType::<VT>::new(),
-                    );
+                    let vals = read_inputs_vectorized(&val_filename, PrimitiveType::<VT>::new());
                     builder.add_child(Array::new(array_data, vals));
                 }
             }
@@ -525,6 +548,7 @@ pub fn build_from_proto<'a>(
                     in_val: valmap.get_receiver(in_val_id, builder),
                     out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    block_size: block_size.unwrap(),
                 };
                 builder.add_child(Spacc1::new(spacc_data));
             }

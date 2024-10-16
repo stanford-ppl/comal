@@ -1,11 +1,12 @@
 use std::{
     marker::PhantomData,
-    ops::{Add, AddAssign, Mul, Sub},
+    ops::{Add, AddAssign, Div, Mul, Sub},
     str::FromStr,
 };
 
 use dam::types::{DAMType, StaticallySized};
 use itertools::Itertools;
+use std::ops::Neg;
 
 use ndarray::{
     Array, Array2, ArrayBase, CowArray, CowRepr, Dim, Dimension, IntoDimension, Ix1, Ix2,
@@ -109,6 +110,23 @@ where
     }
 }
 
+impl<'a, A, D, const N: usize> Div for Tensor<'a, A, D, N>
+where
+    A: DAMType,
+    D: Dimension,
+    ArrayBase<CowRepr<'a, A>, D>: From<<ArrayBase<OwnedRepr<A>, D> as Div>::Output>,
+    Array<A, D>: std::ops::Div,
+{
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        let data = self.data.to_owned().div(rhs.data.to_owned());
+        Self {
+            data: CowArray::from(data),
+        }
+    }
+}
+
 impl<'a, A: DAMType + std::cmp::PartialEq + PartialOrd, D: ndarray::Dimension, const N: usize>
     PartialOrd for Tensor<'a, A, D, N>
 {
@@ -120,18 +138,51 @@ impl<'a, A: DAMType + std::cmp::PartialEq + PartialOrd, D: ndarray::Dimension, c
     }
 }
 
+// impl<'a, A, D, const N: usize> Sub for Tensor<'a, A, D, N>
+// where
+//     // A: DAMType,
+//     A: DAMType + StaticallySized + num::Zero + num::One,
+//     D: Dimension + 'a,
+//     CowArray<'a, A, D>: Sub<Output = CowArray<'a, A, D>>,
+// {
+//     type Output = Self;
+
+//     fn sub(self, rhs: Self) -> Self::Output {
+//         let data = self.data.to_owned() - rhs.data.to_owned();
+//         Tensor::<'a, A, D, N> {
+//             data: self.data.sub(rhs.data),
+//         }
+//     }
+// }
+
 impl<'a, A, D, const N: usize> Sub for Tensor<'a, A, D, N>
 where
-    A: DAMType ,
-    // A: DAMType + StaticallySized + num::Zero + num::One,
-    D: Dimension,
-    CowArray<'a, A, D>: Sub<Output = CowArray<'a, A, D>>,
+    A: DAMType + StaticallySized + num::Zero + num::One + std::ops::Neg<Output = A>,
+    D: Dimension + 'a,
+    &'a ArrayBase<OwnedRepr<A>, D>:
+        Add<&'a ArrayBase<OwnedRepr<A>, D>, Output = ArrayBase<OwnedRepr<A>, D>>,
 {
     type Output = Self;
-
     fn sub(self, rhs: Self) -> Self::Output {
+        let scalar = -A::one();
+        let data = rhs.data.map(|x| x.clone() * scalar.clone()).to_owned() + self.data.to_owned();
+        Tensor::<'a, A, D, N> { data: data.into() }
+    }
+}
+
+impl<'a, A, D, const N: usize> Neg for Tensor<'a, A, D, N>
+where
+    A: DAMType + std::ops::Mul + num::One + Neg<Output = A>,
+    // A: DAMType + StaticallySized + num::Zero + num::One,
+    D: Dimension,
+    CowArray<'a, A, D>: Sub<Output = CowArray<'a, A, D>>, ArrayBase<CowRepr<'a, A>, D>: From<ArrayBase<OwnedRepr<f32>, D>>, ArrayBase<CowRepr<'a, A>, D>: From<ArrayBase<OwnedRepr<<A as Mul>::Output>, D>>
+{
+    type Output = Tensor<'a, A, D, N>;
+
+    fn neg(self) -> Self::Output {
+        let scalar = -A::one();
         Tensor::<'a, A, D, N> {
-            data: self.data.sub(rhs.data),
+            data: self.data.map(|x| x.clone() * scalar.clone()).into(),
         }
     }
 }
