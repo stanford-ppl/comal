@@ -283,7 +283,7 @@ where
 
     fn run(&mut self) {
         let mut accum_storage: BTreeMap<CrdType, ValType> = BTreeMap::new();
-        let id = Identifier { id: 42 };
+        let id = Identifier { id: 0 };
         let id1 = Identifier { id: 0 };
         let mut icrd_stkn_pop_cnt = 0;
         let mut ocrd_val_pop_cnt = 0;
@@ -426,7 +426,7 @@ where
                                     ocrd_stkn.clone(),
                                     inner_stkn.clone()
                                 );
-                                panic!("Inner and outer stop token types don't match");
+                                println!("Inner and outer stop token types don't match");
                             }
                         } else {
                             assert_eq!(
@@ -459,10 +459,10 @@ where
                             return;
                         }
                         _ => {
-                            // if self.id() == id.clone() {
-                            println!("Icrd: {:?}", in_icrd.data.clone());
-                            println!("Ival: {:?}", in_val.data.clone());
-                            // }
+                            if self.id() == id.clone() {
+                                println!("Icrd: {:?}", in_icrd.data.clone());
+                                println!("Ival: {:?}", in_val.data.clone());
+                            }
                             match in_icrd.data.clone() {
                                 Token::Stop(_) => {
                                     icrd_stkn_pop_cnt += 1;
@@ -472,6 +472,308 @@ where
                             self.spacc1_data.in_crd_inner.dequeue(&self.time).unwrap();
                             self.spacc1_data.in_val.dequeue(&self.time).unwrap();
                         }
+                    }
+
+                    // if self.id() == id.clone() || self.id() == id1.clone() {
+                    //     // println!("Id: {:?}", self.id());
+                    //     println!();
+                    //     println!("Icrd: {:?}", in_icrd.data.clone());
+                    //     println!("Ocrd: {:?}", in_ocrd.data.clone());
+                    //     println!("Out Val: {:?}", Token::<ValType, StopType>::Done);
+                    //     println!("Out Crd: {:?}", Token::<ValType, StopType>::Done);
+                    // }
+                }
+                _ => {
+                    println!("Unexpected empty token found in spacc");
+                    panic!();
+                    // std::process::exit(1);
+                }
+            }
+            // println!("icrd cnt: {}, ocrd cnt: {}", icrd_stkn_pop_cnt, ocrd_val_pop_cnt);
+            self.time.incr_cycles(1);
+        }
+    }
+}
+
+pub struct Spacc2Data<CrdType: Clone, ValType: Clone, StopType: Clone> {
+    pub in_val: Receiver<Token<ValType, StopType>>,
+    pub in_crd0: Receiver<Token<CrdType, StopType>>,
+    pub in_crd1: Receiver<Token<CrdType, StopType>>,
+    pub in_crd2: Receiver<Token<CrdType, StopType>>,
+    pub out_val: Sender<Token<ValType, StopType>>,
+    pub out_crd0: Sender<Token<CrdType, StopType>>,
+    pub out_crd1: Sender<Token<CrdType, StopType>>,
+}
+
+#[context_macro]
+pub struct Spacc2<CrdType: Clone, ValType: Clone, StopType: Clone> {
+    spacc2_data: Spacc2Data<CrdType, ValType, StopType>,
+}
+
+impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType> Spacc2<CrdType, ValType, StopType>
+where
+    Spacc2<CrdType, ValType, StopType>: Context,
+{
+    pub fn new(spacc2_data: Spacc2Data<CrdType, ValType, StopType>) -> Self {
+        let red = Spacc2 {
+            spacc2_data,
+            context_info: Default::default(),
+        };
+        (red.spacc2_data.in_crd0).attach_receiver(&red);
+        (red.spacc2_data.in_crd1).attach_receiver(&red);
+        (red.spacc2_data.in_crd2).attach_receiver(&red);
+        (red.spacc2_data.in_val).attach_receiver(&red);
+        (red.spacc2_data.out_crd0).attach_sender(&red);
+        (red.spacc2_data.out_crd1).attach_sender(&red);
+        (red.spacc2_data.out_val).attach_sender(&red);
+
+        red
+    }
+}
+
+impl<CrdType, ValType, StopType> Context for Spacc2<CrdType, ValType, StopType>
+where
+    CrdType: DAMType + Hash + std::cmp::Eq + std::cmp::PartialEq + std::cmp::Ord,
+    ValType: DAMType
+        + std::ops::AddAssign<ValType>
+        + std::ops::Mul<ValType, Output = ValType>
+        + std::ops::Add<ValType, Output = ValType>
+        + std::cmp::PartialOrd<ValType>,
+    StopType: DAMType
+        + std::ops::Add<u32, Output = StopType>
+        + std::ops::Sub<u32, Output = StopType>
+        + std::cmp::PartialEq,
+    Token<f32, u32>: From<Token<ValType, StopType>>,
+    Token<u32, u32>: From<Token<CrdType, StopType>>,
+    CrdType: PartialEq<CrdType>,
+{
+    fn init(&mut self) {}
+
+    fn run(&mut self) {
+        let mut accum_storage: BTreeMap<CrdType, BTreeMap<CrdType, ValType>> = BTreeMap::new();
+        let id = Identifier { id: 0 };
+        let id1 = Identifier { id: 0 };
+        let mut icrd_stkn_pop_cnt = 0;
+        let mut ocrd_val_pop_cnt = 0;
+        loop {
+            let in_crd2 = self.spacc2_data.in_crd2.peek_next(&self.time).unwrap();
+            let in_crd1 = self.spacc2_data.in_crd1.peek_next(&self.time).unwrap();
+            let in_crd0 = self.spacc2_data.in_crd0.peek_next(&self.time).unwrap();
+            let in_val = self.spacc2_data.in_val.peek_next(&self.time).unwrap();
+
+            let matches = match (in_crd0.data.clone(), in_val.data.clone()) {
+                (Token::Val(_), Token::Val(_)) => true,
+                (Token::Stop(_), Token::Stop(_)) => true,
+                (Token::Empty, Token::Empty) => true,
+                (Token::Done, Token::Done) => true,
+                (_, _) => false,
+            };
+
+            if !matches {
+                panic!("in_icrd and in_val don't match types");
+            }
+
+            // match self.spacc2_data.in_crd2.dequeue(&self.time).unwrap().data {
+            match in_crd2.data.clone() {
+                // Acc1 body
+                Token::Val(_) => {
+                    // let curr_in_crd1 = self.spacc2_data.in_crd1.dequeue(&self.time).unwrap().data;
+                    match in_crd1.data.clone() {
+                        Token::Val(crd1) => {
+                            let in_crd0_deq =
+                                self.spacc2_data.in_crd0.dequeue(&self.time).unwrap().data;
+                            let in_val_deq =
+                                self.spacc2_data.in_val.dequeue(&self.time).unwrap().data;
+                            match in_val_deq.clone() {
+                                Token::Val(val) => {
+                                    // Needs assert to make sure crd0 is also a nc token
+                                    if let Token::Val(crd0) = in_crd0_deq {
+                                        // accum_storage.entry(crd1).entry(crd0).or_default() += val.clone();
+                                        match accum_storage.entry(crd1) {
+                                            std::collections::btree_map::Entry::Vacant(
+                                                vacant_entry,
+                                            ) => {
+                                                let mut inner_map = BTreeMap::new();
+                                                *inner_map.entry(crd0).or_default() += val;
+                                                vacant_entry.insert(inner_map);
+                                            }
+                                            std::collections::btree_map::Entry::Occupied(
+                                                mut occupied_entry,
+                                            ) => {
+                                                *occupied_entry
+                                                    .get_mut()
+                                                    .entry(crd0)
+                                                    .or_default() += val;
+                                            }
+                                        }
+                                    } else {
+                                        panic!("Inner crd needs to match value stream type")
+                                    }
+                                }
+                                Token::Stop(_) => {
+                                    self.spacc2_data.in_crd1.dequeue(&self.time).unwrap();
+                                }
+                                Token::Done => panic!("Shouldn't have done for coords yet"),
+                                _ => panic!("Should not reach any other case"),
+                            }
+                        }
+                        Token::Stop(_) => {
+                            self.spacc2_data.in_crd1.dequeue(&self.time).unwrap();
+                            self.spacc2_data.in_crd2.dequeue(&self.time).unwrap();
+                        }
+                        Token::Empty => panic!("empty"),
+                        Token::Done => panic!("Done on crd 1 match"),
+                    }
+                }
+                Token::Stop(stkn) => {
+                    for (key, crd0_map) in &accum_storage {
+                        // Flush out crd1 in order
+                        let icrd_chan_elem =
+                            ChannelElement::new(self.time.tick() + 1, Token::Val(key.clone()));
+                        self.spacc2_data
+                            .out_crd1
+                            .enqueue(&self.time, icrd_chan_elem)
+                            .unwrap();
+                        for (crd0, val) in crd0_map {
+                            // For each crd1, flush out crd0 and value
+                            let val_chan_elem = ChannelElement::new(
+                                self.time.tick() + 1,
+                                Token::<ValType, StopType>::Val(val.clone()),
+                            );
+                            self.spacc2_data
+                                .out_val
+                                .enqueue(&self.time, val_chan_elem)
+                                .unwrap();
+                            let crd0_chan_elem = ChannelElement::new(
+                                self.time.tick() + 1,
+                                Token::<CrdType, StopType>::Val(crd0.clone()),
+                            );
+                            self.spacc2_data
+                                .out_crd0
+                                .enqueue(&self.time, crd0_chan_elem)
+                                .unwrap();
+                        }
+
+                        let mut emitted_stop_crd = Token::Stop(StopType::default());
+                        let mut emitted_stop_val = Token::Stop(StopType::default());
+                        let (last_key, _) = accum_storage.iter().next_back().unwrap();
+                        if last_key == key {
+                            emitted_stop_crd = Token::<CrdType, StopType>::Stop(stkn.clone() + 1);
+                            emitted_stop_val = Token::<ValType, StopType>::Stop(stkn.clone() + 1);
+                        } 
+
+                        let val_stkn_chan_elem =
+                            ChannelElement::new(self.time.tick() + 1, emitted_stop_val.clone());
+                        self.spacc2_data
+                            .out_val
+                            .enqueue(&self.time, val_stkn_chan_elem.clone())
+                            .unwrap();
+                        let crd0_stkn_chan_elem =
+                            ChannelElement::new(self.time.tick() + 1, emitted_stop_crd.clone());
+                        self.spacc2_data
+                            .out_crd0
+                            .enqueue(&self.time, crd0_stkn_chan_elem)
+                            .unwrap();
+                    }
+
+                    let crd1_stkn_chan_elem =
+                        ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
+                    self.spacc2_data
+                        .out_crd1
+                        .enqueue(&self.time, crd1_stkn_chan_elem)
+                        .unwrap();
+
+                    accum_storage.clear();
+                    self.spacc2_data.in_crd2.dequeue(&self.time).unwrap();
+                    // if self.id() == id.clone() || self.id() == id1.clone() {
+                    //     // println!("Id: {:?}", self.id());
+                    //     println!();
+                    //     println!("Icrd: {:?}", in_icrd.data.clone());
+                    //     println!("Ocrd: {:?}", in_ocrd.data.clone());
+                    //     println!(
+                    //         "Out Val: {:?}",
+                    //         Token::<ValType, StopType>::Stop(stkn.clone())
+                    //     );
+                    //     println!(
+                    //         "Out Crd: {:?}",
+                    //         Token::<ValType, StopType>::Stop(stkn.clone())
+                    //     );
+                    // }
+                    // self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
+
+                    // Handle the case with back to back stop tokens
+                    if let Token::Stop(inner_stkn) = in_crd0.data.clone() {
+                        let next_ocrd = self.spacc2_data.in_crd1.peek_next(&self.time).unwrap();
+                        if let Token::Stop(ocrd_stkn) = next_ocrd.data.clone() {
+                            if inner_stkn == ocrd_stkn.clone() + 1 {
+                                self.spacc2_data.in_crd0.dequeue(&self.time).unwrap();
+                                self.spacc2_data.in_val.dequeue(&self.time).unwrap();
+                            } else {
+                                println!(
+                                    "Outer: {:?}, Inner: {:?}",
+                                    ocrd_stkn.clone(),
+                                    inner_stkn.clone()
+                                );
+                                println!("Inner and outer stop token types don't match");
+                            }
+                        } else {
+                            assert_eq!(
+                                inner_stkn,
+                                StopType::default(),
+                                "Inner stkn lvl should be 0"
+                            );
+                        }
+                    }
+                }
+                Token::Done => {
+                    match in_crd1.data.clone() {
+                        Token::Val(_) => panic!("Val crd1 in done"),
+                        Token::Stop(_) => {
+                            self.spacc2_data.in_crd1.dequeue(&self.time).unwrap();
+                            println!("Reached stop crd1");
+                        }
+                        Token::Empty => panic!("Empty crd1 in done"),
+                        Token::Done => match in_crd0.data.clone() {
+                            Token::Done => {
+                                let icrd_chan_elem =
+                                    ChannelElement::new(self.time.tick() + 1, Token::Done);
+                                self.spacc2_data
+                                    .out_crd0
+                                    .enqueue(&self.time, icrd_chan_elem)
+                                    .unwrap();
+                                let crd1_chan_elem =
+                                    ChannelElement::new(self.time.tick() + 1, Token::Done);
+                                self.spacc2_data
+                                    .out_crd1
+                                    .enqueue(&self.time, crd1_chan_elem)
+                                    .unwrap();
+                                let val_chan_elem =
+                                    ChannelElement::new(self.time.tick() + 1, Token::Done);
+                                self.spacc2_data
+                                    .out_val
+                                    .enqueue(&self.time, val_chan_elem)
+                                    .unwrap();
+                                let _ = dam::logging::log_event(&SpaccLog {
+                                    out_val: Token::<ValType, StopType>::Done.into(),
+                                    out_crd: Token::<CrdType, StopType>::Done.into(),
+                                });
+                                return;
+                            }
+                            _ => {
+                                if self.id() == id.clone() {
+                                    println!("Icrd: {:?}", in_crd0.data.clone());
+                                    println!("Ival: {:?}", in_val.data.clone());
+                                }
+                                match in_crd0.data.clone() {
+                                    Token::Stop(_) => {
+                                        icrd_stkn_pop_cnt += 1;
+                                    }
+                                    _ => {}
+                                }
+                                self.spacc2_data.in_crd0.dequeue(&self.time).unwrap();
+                                self.spacc2_data.in_val.dequeue(&self.time).unwrap();
+                            }
+                        },
                     }
 
                     // if self.id() == id.clone() || self.id() == id1.clone() {
@@ -588,6 +890,8 @@ mod tests {
     use dam::simulation::*;
     use dam::utility_contexts::*;
 
+    use crate::templates::accumulator::Spacc2;
+    use crate::templates::accumulator::Spacc2Data;
     use crate::templates::primitive::Token;
     use crate::token_vec;
 
@@ -675,6 +979,112 @@ mod tests {
         let val_checker = PrinterContext::new(out_val_receiver);
         // let val_checker = CheckerContext::new(out_val, out_val_receiver);
         parent.add_child(gen1);
+        parent.add_child(val_checker);
+        parent.add_child(red);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        dbg!(executed.elapsed_cycles());
+    }
+
+    #[test]
+    fn spacc2_2d_test() {
+        let in_crd2 = || token_vec!(u32; u32; 0, 1, "S0", "D").into_iter();
+        let in_crd1 = || token_vec!(u32; u32; 0, 2, "S0", 2, "S1", "D").into_iter();
+        let in_crd0 =
+            || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", 0, 2, 3, "S2", "D").into_iter();
+        let in_val = || {
+            token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 40.0, 4.0, 8.0, "S1", -40.0, 33.0, 36.0, "S2", "D")
+                .into_iter()
+        };
+        let out_crd0 = || token_vec!(u32; u32; "S0", "D").into_iter();
+        let out_crd1 = || token_vec!(u32; u32; "S0", "D").into_iter();
+        let out_val = || token_vec!(f32; u32; 5.0, 5.0, 8.0, 4.0, 4.0, "S0", "D").into_iter();
+        spacc2_test(
+            in_crd2, in_crd1, in_crd0, in_val, out_crd0, out_crd1, out_val,
+        );
+    }
+
+    #[test]
+    fn spacc2_2d_test2() {
+        let in_crd2 = || token_vec!(u32; u32; 0, "S0", "D").into_iter();
+        let in_crd1 = || token_vec!(u32; u32; 0, 2, "S1", "D").into_iter();
+        let in_crd0 = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S2", "D").into_iter();
+        let in_val =
+            || token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 40.0, 4.0, 8.0, "S2", "D").into_iter();
+        let out_crd0 = || token_vec!(u32; u32; "S0", "D").into_iter();
+        let out_crd1 = || token_vec!(u32; u32; "S0", "D").into_iter();
+        let out_val =
+            || token_vec!(f32; u32; 50.0, 10.0, "S0", 40.0, 4.0, 8.0, "S1", "D").into_iter();
+        spacc2_test(
+            in_crd2, in_crd1, in_crd0, in_val, out_crd0, out_crd1, out_val,
+        );
+    }
+
+    #[test]
+    fn spacc2_2d_test3() {
+        let in_crd2 = || token_vec!(u32; u32; 0, "S0", "D").into_iter();
+        let in_crd1 = || token_vec!(u32; u32; 0, 2, "S1", "D").into_iter();
+        let in_crd0 = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S2", "D").into_iter();
+        let in_val =
+            || token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 40.0, 4.0, 8.0, "S2", "D").into_iter();
+        let out_crd0 = || token_vec!(u32; u32; "S0", "D").into_iter();
+        let out_crd1 = || token_vec!(u32; u32; "S0", "D").into_iter();
+        let out_val =
+            || token_vec!(f32; u32; 50.0, 10.0, "S0", 40.0, 4.0, 8.0, "S1", "D").into_iter();
+        spacc2_test(
+            in_crd2, in_crd1, in_crd0, in_val, out_crd0, out_crd1, out_val,
+        );
+    }
+
+    fn spacc2_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2>(
+        in_crd2: fn() -> IRT1,
+        in_crd1: fn() -> IRT2,
+        in_crd0: fn() -> IRT3,
+        in_val: fn() -> IRT4,
+        out_crd0: fn() -> ORT1,
+        out_crd1: fn() -> ORT1,
+        out_val: fn() -> ORT2,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT3: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT4: Iterator<Item = Token<f32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT2: Iterator<Item = Token<f32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_crd0_sender, in_crd0_receiver) = parent.unbounded();
+        let (in_crd1_sender, in_crd1_receiver) = parent.unbounded();
+        let (in_crd2_sender, in_crd2_receiver) = parent.unbounded();
+        let (in_val_sender, in_val_receiver) = parent.unbounded();
+        let (out_val_sender, out_val_receiver) = parent.unbounded();
+        let (out_crd0_sender, out_crd0_receiver) = parent.unbounded();
+        let (out_crd1_sender, out_crd1_receiver) = parent.unbounded();
+        let data = Spacc2Data::<u32, f32, u32> {
+            in_val: in_val_receiver,
+            in_crd0: in_crd0_receiver,
+            in_crd1: in_crd1_receiver,
+            in_crd2: in_crd2_receiver,
+            out_val: out_val_sender,
+            out_crd0: out_crd0_sender,
+            out_crd1: out_crd1_sender,
+        };
+        let red = Spacc2::new(data);
+        let gen1 = GeneratorContext::new(in_crd2, in_crd2_sender);
+        let gen2 = GeneratorContext::new(in_crd1, in_crd1_sender);
+        let gen3 = GeneratorContext::new(in_crd0, in_crd0_sender);
+        let gen4 = GeneratorContext::new(in_val, in_val_sender);
+        let crd0_checker = ConsumerContext::new(out_crd0_receiver);
+        let crd1_checker = ConsumerContext::new(out_crd1_receiver);
+        let val_checker = PrinterContext::new(out_val_receiver);
+        parent.add_child(gen1);
+        parent.add_child(gen2);
+        parent.add_child(gen3);
+        parent.add_child(gen4);
+        parent.add_child(crd0_checker);
+        parent.add_child(crd1_checker);
         parent.add_child(val_checker);
         parent.add_child(red);
         let executed = parent
