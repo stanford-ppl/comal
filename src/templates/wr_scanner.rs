@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::{path::PathBuf, sync::{Arc, Mutex}};
 
 use dam::{context_tools::*, dam_macros::context_macro};
 
-use super::primitive::Token;
+use super::{primitive::Token, utils::write_outputs};
 
 #[context_macro]
 pub struct CompressedWrScan<ValType: Clone, StopType: Clone> {
@@ -54,9 +54,10 @@ where
             match self.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
-                        crd_arr.push(val);
+                        crd_arr.push(val.clone());
                         curr_crd_cnt += 1;
                         end_fiber = false;
+                        // println!("{:?}", val.clone());
                     }
                     Token::Stop(_) if !end_fiber => {
                         seg_arr.push(curr_crd_cnt.clone());
@@ -104,7 +105,7 @@ where
 
 impl<ValType, StopType> Context for ValsWrScan<ValType, StopType>
 where
-    ValType: DAMType,
+    ValType: DAMType + std::fmt::Display,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
 {
     fn init(&mut self) {}
@@ -118,12 +119,18 @@ where
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         // println!("Value: {:?}", Token::<ValType, StopType>::Val(val.clone()));
-                        locked.push(val);
+                        locked.push(val.clone());
+                        // println!("{:?}", val.clone());
                     }
                     Token::Empty | Token::Stop(_) => {
                         continue;
                     }
-                    Token::Done => break,
+                    Token::Done => {
+                        let filename : String = "/tmp/tmp_result.txt".to_string();
+                        write_outputs(filename.into(), locked.to_vec());
+                        // println!("res: {:?}", locked);
+                        break;
+                    },
                 },
                 Err(_) => {
                     panic!("Unexpected end of stream");
