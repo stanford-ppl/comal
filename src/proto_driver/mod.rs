@@ -503,7 +503,7 @@ pub fn build_from_proto<'a>(
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
                 let order = op.order;
 
-                if order == 0 {
+                if order == 1 {
                     let in_outer_crd = op.input_outer_crds[0].try_conv();
                     let in_val_id = get_val_id(&op.input_val);
 
@@ -515,7 +515,7 @@ pub fn build_from_proto<'a>(
                         out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                     };
                     builder.add_child(Spacc1::new(spacc_data));
-                } else if order == 1 {
+                } else if order == 2 {
                     let in_crd1 = op.input_outer_crds[0].clone().try_conv();
                     let in_crd2 = op.input_outer_crds[1].clone().try_conv();
                     let in_val_id = get_val_id(&op.input_val);
