@@ -21,7 +21,7 @@ use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
-use crate::templates::accumulator::MaxReduce;
+use crate::templates::accumulator::{MaxReduce, Spacc2, Spacc2Data};
 use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
 use crate::templates::new_alu::{ALUAdd, ALUMul};
 use crate::templates::primitive::ALUMaxOp;
@@ -347,18 +347,26 @@ pub fn build_from_proto<'a>(
                 if in_val_ids.len() == 2 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
-                    builder.add_child(make_alu(
-                        val_receiver1,
-                        val_receiver2,
-                        out_val_sender,
-                        match op.stages[0].op() {
-                            alu::AluOp::Add => ALUAddOp(),
-                            alu::AluOp::Sub => ALUSubOp(),
-                            alu::AluOp::Mul => ALUMulOp(),
-                            alu::AluOp::Div => ALUDivOp(),
-                            _ => todo!(),
-                        },
-                    ));
+                    if op.stages[0].op() == alu::AluOp::Add {
+                        builder.add_child(ALUAdd::new(
+                            val_receiver1,
+                            val_receiver2,
+                            out_val_sender,
+                        ));
+                    } else {
+                        builder.add_child(make_alu(
+                            val_receiver1,
+                            val_receiver2,
+                            out_val_sender,
+                            match op.stages[0].op() {
+                                alu::AluOp::Add => ALUAddOp(),
+                                alu::AluOp::Sub => ALUSubOp(),
+                                alu::AluOp::Mul => ALUMulOp(),
+                                alu::AluOp::Div => ALUDivOp(),
+                                _ => todo!(),
+                            },
+                        ));
+                    }
                 } else if in_val_ids.len() == 1 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     match op.stages[0].op() {
@@ -493,18 +501,36 @@ pub fn build_from_proto<'a>(
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
+                let order = op.order;
 
-                let in_outer_crd = op.input_outer_crds[0].try_conv();
-                let in_val_id = get_val_id(&op.input_val);
+                if order == 0 {
+                    let in_outer_crd = op.input_outer_crds[0].try_conv();
+                    let in_val_id = get_val_id(&op.input_val);
 
-                let spacc_data = Spacc1Data {
-                    in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
-                    in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
-                    in_val: valmap.get_receiver(in_val_id, builder),
-                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
-                    out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
-                };
-                builder.add_child(Spacc1::new(spacc_data));
+                    let spacc_data = Spacc1Data {
+                        in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
+                        in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
+                        in_val: valmap.get_receiver(in_val_id, builder),
+                        out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                        out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    };
+                    builder.add_child(Spacc1::new(spacc_data));
+                } else if order == 1 {
+                    let in_crd1 = op.input_outer_crds[0].clone().try_conv();
+                    let in_crd2 = op.input_outer_crds[1].clone().try_conv();
+                    let in_val_id = get_val_id(&op.input_val);
+
+                    let spacc2_data = Spacc2Data {
+                        in_val: valmap.get_receiver(in_val_id, builder),
+                        in_crd0: crdmap.get_receiver(in_inner_crd, builder),
+                        in_crd1: crdmap.get_receiver(in_crd1, builder),
+                        in_crd2: crdmap.get_receiver(in_crd2, builder),
+                        out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                        out_crd0: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                        out_crd1: crdmap.get_sender(get_crd_id(&Some(op.output_outer_crds[0].clone())), builder),
+                    };
+                    builder.add_child(Spacc2::new(spacc2_data));
+                }
             }
             Op::ValWrite(op) => {
                 let in_val_id = get_val_id(&op.input_val);
