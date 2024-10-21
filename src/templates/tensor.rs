@@ -9,8 +9,7 @@ use itertools::Itertools;
 use std::ops::Neg;
 
 use ndarray::{
-    Array, Array2, ArrayBase, CowArray, CowRepr, Dim, Dimension, IntoDimension, Ix1, Ix2,
-    OwnedRepr, RawData, ShapeBuilder,
+    Array, Array2, ArrayBase, Axis, CowArray, CowRepr, Dim, Dimension, IntoDimension, Ix1, Ix2, OwnedRepr, RawData, ShapeBuilder
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -166,6 +165,9 @@ where
     fn sub(self, rhs: Self) -> Self::Output {
         let scalar = -A::one();
         let data = rhs.data.map(|x| x.clone() * scalar.clone()).to_owned() + self.data.to_owned();
+        // println!("SUB: {:?}", self.clone());
+        // println!("SUB: {:?}", rhs.clone());
+        // println!("SUB: {:?}", data.clone());
         Tensor::<'a, A, D, N> { data: data.into() }
     }
 }
@@ -175,7 +177,9 @@ where
     A: DAMType + std::ops::Mul + num::One + Neg<Output = A>,
     // A: DAMType + StaticallySized + num::Zero + num::One,
     D: Dimension,
-    CowArray<'a, A, D>: Sub<Output = CowArray<'a, A, D>>, ArrayBase<CowRepr<'a, A>, D>: From<ArrayBase<OwnedRepr<f32>, D>>, ArrayBase<CowRepr<'a, A>, D>: From<ArrayBase<OwnedRepr<<A as Mul>::Output>, D>>
+    CowArray<'a, A, D>: Sub<Output = CowArray<'a, A, D>>,
+    ArrayBase<CowRepr<'a, A>, D>: From<ArrayBase<OwnedRepr<f32>, D>>,
+    ArrayBase<CowRepr<'a, A>, D>: From<ArrayBase<OwnedRepr<<A as Mul>::Output>, D>>,
 {
     type Output = Tensor<'a, A, D, N>;
 
@@ -280,6 +284,26 @@ where
     fn is_zero(&self) -> bool {
         todo!()
     }
+}
+
+impl<'a, A: DAMType, const N: usize> std::fmt::Display for Tensor<'a, A, Ix2, N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for elem in self.data.iter() {
+        //     // println!("{:?}", elem.clone());
+            writeln!(f, "{:?}", elem).unwrap();
+        }
+        // for row in self.data.axis_iter(Axis(0)) {
+        // for (j, value) in row.iter().enumerate() {
+        //     if j > 0 {
+        //         write!(f, ", ").unwrap();
+        //     }
+        //     write!(f, "{:?}", value).unwrap();
+        // }
+        // writeln!(f).unwrap();
+    // }
+        Ok(())
+    }
+
 }
 
 impl<'a, A, const N: usize> num::One for Tensor<'a, A, Ix2, N>

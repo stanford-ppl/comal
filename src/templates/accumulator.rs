@@ -113,7 +113,7 @@ pub struct SpaccLog {
 
 impl<ValType, StopType> Context for Reduce<ValType, StopType>
 where
-    ValType: DAMType + std::ops::AddAssign<ValType> + std::cmp::PartialEq,
+    ValType: DAMType + std::ops::AddAssign<ValType> + std::cmp::PartialEq + std::ops::Add<Output = ValType>,
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
@@ -133,11 +133,16 @@ where
         let curr_id = Identifier { id: 0 };
         let mut prev_tkn = Token::default();
         loop {
+            let mut accum = false;
             match self.reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data.clone() {
                     Token::Val(val) => {
-                        sum += val.clone();
+                        // sum += val.clone();
+                        sum = sum + val.clone();
+                        // println!("REDUCE: {:?}", val.clone());
+                        // println!("REDUCE: {:?}", sum.clone());
                         prev_tkn = Token::Val(val.clone());
+                        accum = true;
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
@@ -164,6 +169,7 @@ where
                             .enqueue(
                                 &self.time,
                                 ChannelElement::new(curr_time + Time::new((self.reduce_data.block_size * self.reduce_data.block_size).try_into().unwrap()), Token::Val(sum.clone())),
+                                // ChannelElement::new(curr_time + Time::new((self.reduce_data.block_size * self.reduce_data.block_size).try_into().unwrap()), Token::Val(sum.clone())),
                             )
                             .unwrap();
                         if id == curr_id {
@@ -228,7 +234,12 @@ where
                     panic!("Unexpected end of stream");
                 }
             }
-            self.time.incr_cycles(1);
+            if accum {
+                let block_size: u64 = self.reduce_data.block_size.try_into().unwrap();
+                self.time.incr_cycles(block_size * block_size);
+            } else {
+                self.time.incr_cycles(1);
+            }
         }
     }
 }
@@ -290,6 +301,7 @@ where
         let mut icrd_stkn_pop_cnt = 0;
         let mut ocrd_val_pop_cnt = 0;
         loop {
+            let mut accum = false;
             let in_ocrd = self.spacc1_data.in_crd_outer.peek_next(&self.time).unwrap();
             let in_icrd = self.spacc1_data.in_crd_inner.peek_next(&self.time).unwrap();
             let in_val = self.spacc1_data.in_val.peek_next(&self.time).unwrap();
@@ -305,15 +317,16 @@ where
             if !matches {
                 panic!("in_icrd and in_val don't match types");
             }
-
+            // let latency = self.spacc1_data.block_size * 6;
             match in_ocrd.data.clone() {
                 Token::Val(_) => {
                     match in_val.data.clone() {
                         Token::Val(val) => match in_icrd.data.clone() {
                             Token::Val(crd) => {
-                                *accum_storage.entry(crd).or_default() += val.clone();
-                                let latency = self.spacc1_data.block_size * 6;
-                                self.time.incr_cycles(latency.try_into().unwrap());
+                                let curr_sum = accum_storage.entry(crd.clone()).or_default().clone();
+                                let curr_sum = curr_sum + val.clone();
+                                *accum_storage.entry(crd).or_default() = curr_sum.clone();
+                                accum = true;
                             }
                             _ => {
                                 // self.spacc1_data.in_val.dequeue(&self.time).unwrap();
@@ -357,7 +370,8 @@ where
                             .enqueue(&self.time, icrd_chan_elem)
                             .unwrap();
                         let val_chan_elem = ChannelElement::new(
-                            self.time.tick() + Time::new(1),
+                            self.time.tick() + 1,
+                            // self.time.tick() + Time::new(latency.try_into().unwrap()),
                             Token::<ValType, StopType>::Val(value.clone()),
                         );
                         self.spacc1_data
@@ -494,25 +508,34 @@ where
                 }
             }
             // println!("icrd cnt: {}, ocrd cnt: {}", icrd_stkn_pop_cnt, ocrd_val_pop_cnt);
-            self.time.incr_cycles(1);
+            if accum {
+                let block_size: u64 = self.spacc1_data.block_size.try_into().unwrap();
+                self.time.incr_cycles(block_size * block_size);
+            } else {
+                self.time.incr_cycles(1);
+            }
         }
     }
 }
 
 #[context_macro]
-pub struct MaxReduce<ValType: Clone, StopType: Clone> {
+pub struct MaxReduce<ValType: Clone, StopType: Clone, F> {
     max_reduce_data: ReduceData<ValType, StopType>,
+    compare_fn: F,
     min_val: ValType,
+    block_size: usize,
 }
 
-impl<ValType: DAMType, StopType: DAMType> MaxReduce<ValType, StopType>
+impl<ValType: DAMType, StopType: DAMType, F> MaxReduce<ValType, StopType, F>
 where
-    MaxReduce<ValType, StopType>: Context,
+    MaxReduce<ValType, StopType, F>: Context,
 {
-    pub fn new(max_reduce_data: ReduceData<ValType, StopType>, min_val: ValType) -> Self {
+    pub fn new(max_reduce_data: ReduceData<ValType, StopType>, compare_fn: F, min_val: ValType, block_size: usize) -> Self {
         let red = MaxReduce {
             max_reduce_data,
+            compare_fn,
             min_val,
+            block_size,
             context_info: Default::default(),
         };
         (red.max_reduce_data.in_val).attach_receiver(&red);
@@ -522,7 +545,7 @@ where
     }
 }
 
-impl<ValType, StopType> Context for MaxReduce<ValType, StopType>
+impl<ValType, StopType, F> Context for MaxReduce<ValType, StopType, F>
 where
     ValType: DAMType
         + std::ops::AddAssign<ValType>
@@ -532,18 +555,22 @@ where
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
-        + std::cmp::PartialEq,
+        + std::cmp::PartialEq, 
+    F: Fn(ValType, ValType) -> ValType + Sync + Send,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
         let mut max_elem = self.min_val.clone();
+        // let mut max_elem = ;
         loop {
+            let mut accum = false;
             match self.max_reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
-                    Token::Val(val) => match val.lt(&max_elem) {
-                        true => (),
-                        false => max_elem = val,
+                    Token::Val(val) => {
+                        accum = true;
+                        max_elem = (self.compare_fn)(val.clone(), max_elem.clone());
+
                     },
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
@@ -581,7 +608,12 @@ where
                     panic!("Unexpected end of stream");
                 }
             }
-            self.time.incr_cycles(1);
+            if accum {
+                let block_size: u64 = self.max_reduce_data.block_size.try_into().unwrap();
+                self.time.incr_cycles(block_size * block_size);
+            } else {
+                self.time.incr_cycles(1);
+            }
         }
     }
 }

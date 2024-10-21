@@ -13,6 +13,8 @@ pub struct Binary<ValType: Clone, StopType: Clone, F> {
     pub out_val: Sender<Token<ValType, StopType>>,
     pub binary_func: F,
     pub block_size: u64,
+    pub latency: u64,
+    pub ii: u64,
 }
 
 impl<ValType: DAMType, StopType: DAMType, F> Binary<ValType, StopType, F>
@@ -24,14 +26,18 @@ where
         in_val2: Receiver<Token<ValType, StopType>>,
         out_val: Sender<Token<ValType, StopType>>,
         binary_func: F,
-        block_size: usize,
+        block_size: u64,
+        latency: u64,
+        ii: u64,
     ) -> Self {
         let unary = Binary {
             in_val1,
             in_val2,
             out_val,
             binary_func,
-            block_size: block_size.try_into().unwrap(),
+            block_size,
+            latency,
+            ii,
             context_info: Default::default(),
         };
         (unary).in_val1.attach_receiver(&unary);
@@ -68,9 +74,10 @@ where
                         (Token::Val(val1), Token::Val(val2)) => {
                             let out_val = (self.binary_func)(val1, val2);
                             let out_val_elem = ChannelElement::new(
-                                self.time.tick() + Time::new(2 * self.block_size - 1),
-                                Token::<ValType, StopType>::Val(out_val),
+                                self.time.tick() + self.latency,
+                                Token::<ValType, StopType>::Val(out_val.clone()),
                             );
+                            // println!("Value: {:?}", Token::<ValType, StopType>::Val(out_val.clone()));
                             self.out_val.enqueue(&self.time, out_val_elem).unwrap();
                         }
                         (Token::Stop(stkn1), Token::Stop(stkn2)) => {
@@ -100,7 +107,7 @@ where
                 },
             }
             //TODO: Add initiation interval
-            self.time.incr_cycles(self.block_size);
+            self.time.incr_cycles(self.ii);
         }
     }
 }

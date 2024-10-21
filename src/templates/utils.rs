@@ -1,7 +1,8 @@
 use std::env;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter};
 use std::path::PathBuf;
+use std::io::Write;
 
 use dam::types::DAMType;
 
@@ -35,3 +36,17 @@ where
         .flat_map(|line| line.parse::<T>()) // ignores Err variant from Result of str.parse
         .collect()
 }
+
+pub fn write_outputs<T>(file_path: PathBuf, vec: Vec<T>)
+where
+    T: DAMType + ToString + std::fmt::Display,
+{
+    // let out: Vec<String> = vec.iter().map(|n| n.to_string()).collect();   
+    let mut file = BufWriter::new(File::create(file_path).unwrap());
+
+    vec.iter().try_for_each(|x| writeln!(file, "{}", x)).unwrap();
+    // writeln!(file, "{:?}", out.join("\n")).unwrap();
+
+    // let reader = BufWriter::new(file);
+}
+

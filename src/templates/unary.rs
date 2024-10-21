@@ -64,10 +64,11 @@ where
                         // if log_val < 0.0 {
                         //     dam::logging::log_event(&UnaryLogData { val: log_val }).unwrap();
                         // }
+                        let latency: u64 = 1;
 
                         let out_val = (self.unary_func)(val);
                         let out_val_elem = ChannelElement::new(
-                            self.time.tick() + Time::new((self.block_size*self.block_size).try_into().unwrap()),
+                            self.time.tick() + latency,
                             Token::<ValType, StopType>::Val(out_val),
                         );
                         self.out_val.enqueue(&self.time, out_val_elem).unwrap();

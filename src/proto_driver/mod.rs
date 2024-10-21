@@ -39,12 +39,13 @@ use dam::simulation::ProgramBuilder;
 use dam::templates::ops::*;
 use dam::utility_contexts::{BroadcastContext, GeneratorContext};
 
-use ndarray::{CowArray, Ix1, Ix2};
+use ndarray::{Array2, ArrayBase, Axis, CowArray, Ix1, Ix2, ShapeBuilder};
 // use joiner::Payload;
 use proto_headers::tortilla::*;
 
 // type VT = f32;
-type VT = Tensor<'static, f32, Ix2, 64>;
+const N: usize = 64;
+type VT = Tensor<'static, f32, Ix2, N>;
 type CT = u32;
 type ST = u32;
 
@@ -173,21 +174,21 @@ pub fn build_from_proto<'a>(
             Op::Joiner(op) => {
                 // assert!(op.input_pairs.len() == 2);
                 let mut in_crds = Vec::new();
-                let mut in_refs: Vec<Box<dyn RecvAdapter<Token<_, ST>> + Send + Sync>> = Vec::new();
-                let mut out_refs: Vec<Box<dyn SendAdapter<Token<_, ST>> + Send + Sync>> =
-                    Vec::new();
+                let mut in_refs = Vec::new();
+                let mut out_refs = Vec::new();
                 op.input_pairs.iter().for_each(|pair| {
                     let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
                     match pair.in_ref.clone().unwrap().stream.as_ref().unwrap() {
                         joiner::payload::Stream::RefStream(ref_stream) => {
-                            in_refs.push(Box::new(
+                            in_refs.push(
                                 refmap.get_receiver(get_ref_id(&Some(ref_stream.clone())), builder),
-                            ));
+                            );
                         }
                         joiner::payload::Stream::ValStream(val_stream) => {
-                            in_refs.push(Box::new(
-                                valmap.get_receiver(get_val_id(&Some(val_stream.clone())), builder),
-                            ));
+                            todo!();
+                            // in_refs.push(
+                            // valmap.get_receiver(get_val_id(&Some(val_stream.clone())), builder),
+                            // );
                         }
                     }
 
@@ -195,12 +196,14 @@ pub fn build_from_proto<'a>(
                 });
                 op.output_refs.iter().for_each(|output_ref| {
                     match output_ref.stream.as_ref().unwrap() {
-                        joiner::payload::Stream::RefStream(ref_stream) => out_refs.push(Box::new(
+                        joiner::payload::Stream::RefStream(ref_stream) => out_refs.push(
                             refmap.get_sender(get_ref_id(&Some(ref_stream.clone())), builder),
-                        )),
-                        joiner::payload::Stream::ValStream(val_stream) => out_refs.push(Box::new(
-                            valmap.get_sender(get_val_id(&Some(val_stream.clone())), builder),
-                        )),
+                        ),
+                        joiner::payload::Stream::ValStream(val_stream) => {
+                            todo!();
+                            // out_refs.push(
+                            // valmap.get_sender(get_val_id(&Some(val_stream.clone())), builder),)
+                        }
                     }
                 });
                 let joiner_data = NJoinerData {
@@ -366,11 +369,44 @@ pub fn build_from_proto<'a>(
                     //         _ => todo!(),
                     //     },
                     // ));
+                    let mut latency = 1;
+                    let mut ii = 1;
                     let binary_func = match op.stages[0].op() {
-                        alu::AluOp::Add => |val1: VT, val2: VT| -> VT { val1 + val2 },
-                        alu::AluOp::Sub => |val1: VT, val2: VT| -> VT { val1 - val2 },
-                        alu::AluOp::Mul => |val1: VT, val2: VT| -> VT { val1 * val2 },
-                        alu::AluOp::Div => |val1: VT, val2: VT| -> VT { val1 / val2 },
+                        alu::AluOp::Add => {
+                            latency = 1;
+                            
+                            |val1: VT, val2: VT| -> VT {
+                            // println!("ADD: {:}", val1);
+                            // println!("ADD: {:}", val2);
+                            // println!("ADD: {:}", val1.clone() + val2.clone());
+                            val1 + val2
+                        }},
+                        alu::AluOp::Sub => {
+                            latency = 1;
+                            |val1: VT, val2: VT| -> VT {
+                            // println!("SUB: {:}", val1);
+                            // println!("SUB: {:}", val2);
+                            // println!("SUB: {:}", val1.clone() - val2.clone());
+                            val1 - val2}
+                        },
+                        alu::AluOp::Mul => {
+                            latency = 3 * N - 2;  
+                            ii = 1;
+                            |val1: VT, val2: VT| -> VT {
+                            // println!("MUL: {:}", val1);
+                            // println!("MUL: {:}", val2);
+                            // println!("MUL: {:}", val1.clone() * val2.clone());
+                            val1 * val2
+                        }},
+                        alu::AluOp::Div => {
+                            latency = 1;
+
+                            |val1: VT, val2: VT| -> VT {
+                            // println!("DIV: {:}", val1);
+                            // println!("DIV: {:}", val2);
+                            // println!("DIV: {:}", val1.clone() / val2.clone());
+                            val1 / val2
+                        }},
                         _ => todo!(),
                     };
                     builder.add_child(Binary::new(
@@ -378,18 +414,27 @@ pub fn build_from_proto<'a>(
                         val_receiver2,
                         out_val_sender,
                         binary_func,
-                        block_size.unwrap(),
+                        N.try_into().unwrap(),
+                        latency.try_into().unwrap(),
+                        ii.try_into().unwrap(),
                     ));
                 } else if in_val_ids.len() == 1 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     match op.stages[0].op() {
                         alu::AluOp::Exp => {
-                            let unary_func = |val: VT| -> VT { val };
+                            let unary_func = move |val: VT| -> VT {
+                                let val_copy = val.data.mapv(|x| x.exp());
+                                // println!("EXP: {:}", val.data.clone());
+                                // println!("EXP: {:}", val_copy.clone());
+                                return Tensor::<'static, f32, Ix2, N> {
+                                    data: val_copy.into(),
+                                };
+                            };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
-                                block_size.unwrap(),
+                                N,
                             ));
                         }
                         // alu::AluOp::Sin => {
@@ -410,12 +455,18 @@ pub fn build_from_proto<'a>(
                         // }
                         alu::AluOp::Max => {
                             let scalar: f32 = op.scalar as f32;
-                            let unary_func = move |val: VT| -> VT { val };
+                            let unary_func = move |val: VT| -> VT {
+                                let val_copy = val.data.mapv(|x| x.max(scalar));
+
+                                return Tensor::<'static, f32, Ix2, N> {
+                                    data: val_copy.into(),
+                                };
+                            };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
-                                block_size.unwrap(),
+                                N,
                             ));
                         }
                         // alu::AluOp::Scalaradd => {
@@ -429,22 +480,38 @@ pub fn build_from_proto<'a>(
                         // }
                         alu::AluOp::Scalarmul => {
                             let scalar: f32 = op.scalar as f32;
-                            let unary_func = move |val: VT| -> VT { val };
+                            let unary_func = move |val: VT| -> VT {
+                                let val_copy = val.data.mapv(|x| x * scalar);
+                                // println!("SCALARMUL: {:}", val.data.clone());
+                                // println!("SCALARMUL: {:}", val_copy.clone());
+
+                                return Tensor::<'static, f32, Ix2, N> {
+                                    data: val_copy.into(),
+                                };
+                            };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
-                                block_size.unwrap(),
+                                N,
                             ));
                         }
                         alu::AluOp::Scalardiv => {
                             let scalar: f32 = op.scalar as f32;
-                            let unary_func = move |val: VT| -> VT { val };
+                            let unary_func = move |val: VT| -> VT {
+                                let val_copy = val.data.mapv(|x| x / scalar);
+                                // println!("SCALARDIV: {:}", val.data.clone());
+                                // println!("SCALARDIV: {:}", val_copy.clone());
+
+                                return Tensor::<'static, f32, Ix2, N> {
+                                    data: val_copy.into(),
+                                };
+                            };
                             builder.add_child(Unary::new(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
-                                block_size.unwrap(),
+                                N,
                             ));
                         }
                         // alu::AluOp::Rsqrt => {
@@ -462,7 +529,7 @@ pub fn build_from_proto<'a>(
                                 val_receiver1,
                                 out_val_sender,
                                 unary_func,
-                                block_size.unwrap(),
+                                N,
                             ));
                         }
                         _ => {
@@ -476,15 +543,38 @@ pub fn build_from_proto<'a>(
                 let reduce_data = ReduceData {
                     in_val: valmap.get_receiver(in_val_id, builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
-                    block_size: block_size.unwrap(),
+                    block_size: N,
                 };
-                let min_val = Tensor::<'static, f32, Ix1, 16> {
-                    data: CowArray::from(ndarray::Array::from_vec(vec![f32::MIN; block_size.unwrap()])),
+                let min_val = Tensor::<'static, f32, Ix2, N> {
+                    data: CowArray::from(
+                        Array2::from_shape_vec((N, N).f(), vec![f32::MIN; N * N]).unwrap(),
+                    ),
                 };
                 match op.reduce_type() {
                     reduce::Type::Add => builder.add_child(Reduce::new(reduce_data)),
-                    // reduce::Type::Max => builder.add_child(MaxReduce::new(reduce_data, min_val)),
-                    reduce::Type::Max => builder.add_child(Reduce::new(reduce_data)),
+                    reduce::Type::Max => {
+                        let compare_fn = |val: VT, max_elem: VT| -> VT {
+                            let mut curr_max = max_elem;
+
+                            let max_per_row: Vec<f32> = val
+                                .data
+                                .axis_iter(Axis(0))
+                                .map(|row| row.iter().cloned().fold(f32::MIN, f32::max))
+                                .collect();
+
+                            // Convert to a column vector and broadcast
+                            let max_array =
+                                ndarray::Array::from_shape_vec((N, 1), max_per_row).unwrap();
+                            let broadcasted = max_array.broadcast(val.data.raw_dim()).unwrap();
+
+                            curr_max
+                                .data
+                                .zip_mut_with(&broadcasted, |a, &b| *a = a.max(b));
+                            // println!("max: {:?}", broadcasted.clone());
+                            return curr_max;
+                        };
+                        builder.add_child(MaxReduce::new(reduce_data, compare_fn, min_val, N))
+                    } // reduce::Type::Max => builder.add_child(Reduce::new(reduce_data)),
                 }
             }
             Op::CoordHold(op) => {
@@ -514,7 +604,6 @@ pub fn build_from_proto<'a>(
             Op::Array(op) => {
                 let blocked = op.blocked;
                 let stream_shape = op.stream_shape as usize;
-                const N: usize = 64;
                 let in_ref_id = get_ref_id(&op.input_ref);
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
                 if blocked {
@@ -548,7 +637,7 @@ pub fn build_from_proto<'a>(
                     in_val: valmap.get_receiver(in_val_id, builder),
                     out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
-                    block_size: block_size.unwrap(),
+                    block_size: N,
                 };
                 builder.add_child(Spacc1::new(spacc_data));
             }

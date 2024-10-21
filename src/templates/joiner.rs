@@ -23,8 +23,11 @@ pub struct CrdJoinerData<ValType: Clone, StopType: Clone> {
 
 pub struct NJoinerData<ValType: Clone, StopType: Clone> {
     pub in_crds: Vec<Receiver<Token<ValType, StopType>>>,
-    pub in_refs: Vec<Box<dyn RecvAdapter<Token<ValType, StopType>> + Send + Sync>>,
-    pub out_refs: Vec<Box<dyn SendAdapter<Token<ValType, StopType>> + Send + Sync>>,
+    // pub in_refs: Vec<Box<dyn RecvAdapter<Token<ValType, StopType>> + Send + Sync>>,
+    // pub out_refs: Vec<Box<dyn SendAdapter<Token<ValType, StopType>> + Send + Sync>>,
+    pub in_refs: Vec<Receiver<Token<ValType, StopType>>>,
+    pub out_refs: Vec<Sender<Token<ValType, StopType>>>,
+    // pub out_refs: Vec<Box<dyn SendAdapter<Token<ValType, StopType>> + Send + Sync>>,
     pub out_crd: Sender<Token<ValType, StopType>>,
 }
 

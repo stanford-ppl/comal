@@ -83,6 +83,7 @@ where
                             //     in_ref: data.clone().into(),
                             //     val: out_val.clone().into(),
                             // });
+                            // println!("{:?}", out_val.clone());
                             if id == curr_id {
                                 println!("ID: {:?}, Val: {:?}", id, out_val.clone());
                             }
