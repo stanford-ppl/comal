@@ -6,9 +6,10 @@ use dam::{
     context_tools::*,
     dam_macros::{context_macro, event_type},
 };
+use ndarray::Axis;
 use serde::{Deserialize, Serialize};
 
-use super::primitive::Token;
+use super::primitive::{FinalReduce, Token};
 
 pub struct ReduceData<ValType: Clone, StopType: Clone> {
     pub in_val: Receiver<Token<ValType, StopType>>,
@@ -138,9 +139,11 @@ where
                 Ok(curr_in) => match curr_in.data.clone() {
                     Token::Val(val) => {
                         // sum += val.clone();
+//                         println!("Sum: {:?}", sum.clone());
                         sum = sum + val.clone();
-                        // println!("REDUCE: {:?}", val.clone());
-                        // println!("REDUCE: {:?}", sum.clone());
+//                         println!("Val: {:?}", val.clone());
+//                         println!("Sum after: {:?}", sum.clone());
+
                         prev_tkn = Token::Val(val.clone());
                         accum = true;
                     }
@@ -234,17 +237,17 @@ where
                     panic!("Unexpected end of stream");
                 }
             }
-            if accum {
-                let block_size: u64 = self.reduce_data.block_size.try_into().unwrap();
-                self.time.incr_cycles(block_size * block_size);
-            } else {
+//             if accum {
+//                 let block_size: u64 = self.reduce_data.block_size.try_into().unwrap();
+//                 self.time.incr_cycles(block_size * block_size);
+//             } else {
                 self.time.incr_cycles(1);
-            }
+//             }
         }
     }
 }
 
-pub struct Spacc1Data<CrdType: Clone, ValType: Clone, StopType: Clone> {
+pub struct Spacc1Data<CrdType: Clone, ValType: Clone, StopType: Clone, const N: usize> {
     pub in_val: Receiver<Token<ValType, StopType>>,
     pub in_crd_outer: Receiver<Token<CrdType, StopType>>,
     pub in_crd_inner: Receiver<Token<CrdType, StopType>>,
@@ -254,15 +257,15 @@ pub struct Spacc1Data<CrdType: Clone, ValType: Clone, StopType: Clone> {
 }
 
 #[context_macro]
-pub struct Spacc1<CrdType: Clone, ValType: Clone, StopType: Clone> {
-    spacc1_data: Spacc1Data<CrdType, ValType, StopType>,
+pub struct Spacc1<CrdType: Clone, ValType: Clone, StopType: Clone, const N: usize> {
+    spacc1_data: Spacc1Data<CrdType, ValType, StopType, N>,
 }
 
-impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType> Spacc1<CrdType, ValType, StopType>
+impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType, const N: usize> Spacc1<CrdType, ValType, StopType, N>
 where
-    Spacc1<CrdType, ValType, StopType>: Context,
+    Spacc1<CrdType, ValType, StopType, N>: Context,
 {
-    pub fn new(spacc1_data: Spacc1Data<CrdType, ValType, StopType>) -> Self {
+    pub fn new(spacc1_data: Spacc1Data<CrdType, ValType, StopType, N>) -> Self {
         let red = Spacc1 {
             spacc1_data,
             context_info: Default::default(),
@@ -277,7 +280,7 @@ where
     }
 }
 
-impl<CrdType, ValType, StopType> Context for Spacc1<CrdType, ValType, StopType>
+impl<CrdType, ValType, StopType, const N: usize> Context for Spacc1<CrdType, ValType, StopType, N>
 where
     CrdType: DAMType + Hash + std::cmp::Eq + std::cmp::PartialEq + std::cmp::Ord,
     ValType: DAMType
@@ -285,6 +288,7 @@ where
         + std::ops::Mul<ValType, Output = ValType>
         + std::ops::Add<ValType, Output = ValType>
         + std::cmp::PartialOrd<ValType>,
+    Token<ValType, StopType>: FinalReduce<StopType, N>,
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
@@ -369,10 +373,14 @@ where
                             .out_crd_inner
                             .enqueue(&self.time, icrd_chan_elem)
                             .unwrap();
+                    
+                        // Sum along columns if a 2d tensor valtype for blocked computation
+                        let final_reduced = Token::<ValType, StopType>::Val(value.clone()).sum_axis();
+
                         let val_chan_elem = ChannelElement::new(
                             self.time.tick() + 1,
                             // self.time.tick() + Time::new(latency.try_into().unwrap()),
-                            Token::<ValType, StopType>::Val(value.clone()),
+                            final_reduced,
                         );
                         self.spacc1_data
                             .out_val
@@ -581,7 +589,7 @@ where
                                 ChannelElement::new(curr_time + 1, Token::Val(max_elem)),
                             )
                             .unwrap();
-                        max_elem = ValType::default();
+                        max_elem = self.min_val.clone();
                         if stkn != StopType::default() {
                             self.max_reduce_data
                                 .out_val

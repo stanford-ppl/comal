@@ -1,3 +1,6 @@
+use std::io;
+use std::io::prelude::*;
+
 use dam::structures::{Identifiable, Time};
 use dam::{
     context_tools::*,
@@ -61,6 +64,7 @@ where
     fn run(&mut self) {
         let id = Identifier { id: 0 };
         let curr_id = self.id();
+        let mut count = 0;
         loop {
             match self.array_data.in_ref.dequeue(&self.time) {
                 Ok(curr_in) => {
@@ -69,8 +73,23 @@ where
                         Token::Val(val) => {
                             let idx: usize = val.try_into().unwrap();
                             let block_size = self.array_data.block_size;
+
+                            // println!("Val: {:?}", self.val_arr.clone());
+                            // println!("Len: {:?}", self.val_arr.clone().len());
+
+                            // let mut stdin = io::stdin();
+                            // let mut stdout = io::stdout();
+
+                            // // We want the cursor to stay at the end of the line, so we print without a newline and flush manually.
+                            // write!(stdout, "Press any key to continue...").unwrap();
+                            // stdout.flush().unwrap();
+
+                            // Read a single byte and discard
+                            let _ = stdin.read(&mut [0u8]).unwrap();
+
                             let channel_elem = ChannelElement::new(
-                                self.time.tick() + Time::new((block_size * block_size).try_into().unwrap()),
+                                self.time.tick()
+                                    + Time::new((block_size * block_size).try_into().unwrap()),
                                 Token::Val(self.val_arr[idx].clone()),
                             );
                             self.array_data
@@ -79,6 +98,7 @@ where
                                 .unwrap();
                             let out_val =
                                 Token::Val::<ValType, StopType>(self.val_arr[idx].clone());
+                            count += 1;
                             // let _ = dam::logging::log_event(&ArrayLog {
                             //     in_ref: data.clone().into(),
                             //     val: out_val.clone().into(),
@@ -140,6 +160,7 @@ where
                             if id == curr_id {
                                 println!("ID: {:?}, Val: {:?}", id, out_val.clone());
                             }
+                            println!("Count {:?}: {:?}", curr_id, count);
                             return;
                         }
                     }

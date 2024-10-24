@@ -44,7 +44,7 @@ where
     // let out: Vec<String> = vec.iter().map(|n| n.to_string()).collect();   
     let mut file = BufWriter::new(File::create(file_path).unwrap());
 
-    vec.iter().try_for_each(|x| writeln!(file, "{}", x)).unwrap();
+    vec.iter().try_for_each(|x| write!(file, "{}", x)).unwrap();
     // writeln!(file, "{:?}", out.join("\n")).unwrap();
 
     // let reader = BufWriter::new(file);

@@ -4,7 +4,8 @@ use dam::context_tools::*;
 use dam::templates::ops::*;
 use dam::types::StaticallySized;
 use dam::RegisterALUOp;
-use ndarray::Ix2;
+use ndarray::{Axis, Dimension, Ix2};
+use num::Zero;
 use serde::{Deserialize, Serialize};
 
 use super::tensor::Tensor;
@@ -43,6 +44,36 @@ where
     }
 }
 
+pub trait FinalReduce<StopType: DAMType, const N: usize> {
+    fn sum_axis(self) -> Self;
+}
+
+impl<StopType: DAMType, A: DAMType, const N: usize> FinalReduce<StopType, N> for Token<Tensor<'static, A, Ix2, N>, StopType>
+where 
+    A: dam::types::StaticallySized + Zero + std::ops::Add<Output = A>,
+    Ix2: Dimension,
+{
+    fn sum_axis(self) -> Self {
+        let out = if let Token::Val(val) = self {
+            let final_reduced = val.clone().data.sum_axis(Axis(1));
+            let vector_reduced = final_reduced.insert_axis(Axis(1));
+            Token::<Tensor<'static, A, Ix2, N>, StopType>::Val(Tensor::new(vector_reduced))
+        } else {
+            panic!("Should not reach this case in sum_axis");
+        };
+        out
+    }
+}
+
+impl<StopType: DAMType> FinalReduce<StopType, 1> for Token<f32, StopType>
+where 
+    Ix2: Dimension,
+{
+    fn sum_axis(self) -> Self {
+        self
+    }
+}
+
 impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<f32, StopType> {
     type Error = u32;
 
@@ -56,7 +87,9 @@ impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<f32, StopType> {
     }
 }
 
-impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 64>, StopType> {
+impl<StopType: DAMType> TryInto<Token<u32, StopType>>
+    for Token<Tensor<'static, f32, Ix2, 64>, StopType>
+{
     type Error = u32;
 
     fn try_into(self) -> Result<Token<u32, StopType>, Self::Error> {
@@ -80,10 +113,12 @@ impl<StopType: DAMType> From<Token<u32, StopType>> for Token<f32, StopType> {
     }
 }
 
-impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 64>, StopType> {
+impl<StopType: DAMType> From<Token<u32, StopType>>
+    for Token<Tensor<'static, f32, Ix2, 64>, StopType>
+{
     fn from(value: Token<u32, StopType>) -> Self {
         match value {
-            Token::Val(val) => Token::Val(Tensor{ data: todo!() }),
+            Token::Val(val) => Token::Val(Tensor { data: todo!() }),
             Token::Stop(stop) => Token::Stop(stop),
             Token::Empty => Token::Empty,
             Token::Done => Token::Done,
@@ -91,7 +126,9 @@ impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32
     }
 }
 
-impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 16>, StopType> {
+impl<StopType: DAMType> TryInto<Token<u32, StopType>>
+    for Token<Tensor<'static, f32, Ix2, 16>, StopType>
+{
     type Error = u32;
 
     fn try_into(self) -> Result<Token<u32, StopType>, Self::Error> {
@@ -104,10 +141,12 @@ impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<Tensor<'static, 
     }
 }
 
-impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 16>, StopType> {
+impl<StopType: DAMType> From<Token<u32, StopType>>
+    for Token<Tensor<'static, f32, Ix2, 16>, StopType>
+{
     fn from(value: Token<u32, StopType>) -> Self {
         match value {
-            Token::Val(val) => Token::Val(Tensor{ data: todo!() }),
+            Token::Val(val) => Token::Val(Tensor { data: todo!() }),
             Token::Stop(stop) => Token::Stop(stop),
             Token::Empty => Token::Empty,
             Token::Done => Token::Done,
@@ -115,7 +154,9 @@ impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32
     }
 }
 
-impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 32>, StopType> {
+impl<StopType: DAMType> TryInto<Token<u32, StopType>>
+    for Token<Tensor<'static, f32, Ix2, 32>, StopType>
+{
     type Error = u32;
 
     fn try_into(self) -> Result<Token<u32, StopType>, Self::Error> {
@@ -128,10 +169,12 @@ impl<StopType: DAMType> TryInto<Token<u32, StopType>> for Token<Tensor<'static, 
     }
 }
 
-impl<StopType: DAMType> From<Token<u32, StopType>> for Token<Tensor<'static, f32, Ix2, 32>, StopType> {
+impl<StopType: DAMType> From<Token<u32, StopType>>
+    for Token<Tensor<'static, f32, Ix2, 32>, StopType>
+{
     fn from(value: Token<u32, StopType>) -> Self {
         match value {
-            Token::Val(val) => Token::Val(Tensor{ data: todo!() }),
+            Token::Val(val) => Token::Val(Tensor { data: todo!() }),
             Token::Stop(stop) => Token::Stop(stop),
             Token::Empty => Token::Empty,
             Token::Done => Token::Done,

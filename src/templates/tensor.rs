@@ -9,7 +9,8 @@ use itertools::Itertools;
 use std::ops::Neg;
 
 use ndarray::{
-    Array, Array2, ArrayBase, Axis, CowArray, CowRepr, Dim, Dimension, IntoDimension, Ix1, Ix2, OwnedRepr, RawData, ShapeBuilder
+    Array, Array2, ArrayBase, Axis, CowArray, CowRepr, Dim, Dimension, IntoDimension, Ix1, Ix2,
+    OwnedRepr, RawData, ShapeBuilder,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -119,9 +120,9 @@ where
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self::Output {
-        let data = self.data.to_owned().div(rhs.data.to_owned());
+        let res = self.data.to_owned().div(rhs.data.to_owned());
         Self {
-            data: CowArray::from(data),
+            data: CowArray::from(res),
         }
     }
 }
@@ -288,22 +289,16 @@ where
 
 impl<'a, A: DAMType, const N: usize> std::fmt::Display for Tensor<'a, A, Ix2, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for elem in self.data.iter() {
-        //     // println!("{:?}", elem.clone());
-            writeln!(f, "{:?}", elem).unwrap();
+        //         for elem in self.data.iter() {
+        //             writeln!(f, "{:?}", elem).unwrap();
+        //         }
+        for row in self.data.axis_iter(Axis(0)) {
+            for (j, value) in row.iter().enumerate() {
+                writeln!(f, "{:?}", value).unwrap();
+            }
         }
-        // for row in self.data.axis_iter(Axis(0)) {
-        // for (j, value) in row.iter().enumerate() {
-        //     if j > 0 {
-        //         write!(f, ", ").unwrap();
-        //     }
-        //     write!(f, "{:?}", value).unwrap();
-        // }
-        // writeln!(f).unwrap();
-    // }
         Ok(())
     }
-
 }
 
 impl<'a, A, const N: usize> num::One for Tensor<'a, A, Ix2, N>
@@ -316,6 +311,17 @@ where
             data: CowArray::from(
                 Array2::from_shape_vec((N, N).f(), vec![A::default(); N * N]).unwrap(),
             ),
+        }
+    }
+}
+
+impl<'a, A, const N: usize> Tensor<'a, A, Ix2, N>
+where
+    A: DAMType + dam::types::StaticallySized,
+{
+    pub fn new(raw_data: Array2<A>) -> Tensor<'a, A, Ix2, N> {
+        Tensor::<'a, A, Ix2, N> {
+            data: CowArray::from(raw_data),
         }
     }
 }

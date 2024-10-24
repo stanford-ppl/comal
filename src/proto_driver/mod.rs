@@ -44,7 +44,7 @@ use ndarray::{Array2, ArrayBase, Axis, CowArray, Ix1, Ix2, ShapeBuilder};
 use proto_headers::tortilla::*;
 
 // type VT = f32;
-const N: usize = 64;
+const N: usize = 2;
 type VT = Tensor<'static, f32, Ix2, N>;
 type CT = u32;
 type ST = u32;
@@ -54,7 +54,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 102400000;
+const DEFAULT_CHAN_SIZE: usize = 102400;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
@@ -357,18 +357,7 @@ pub fn build_from_proto<'a>(
                 if in_val_ids.len() == 2 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
-                    // builder.add_child(make_alu(
-                    //     val_receiver1,
-                    //     val_receiver2,
-                    //     out_val_sender,
-                    //     match op.stages[0].op() {
-                    //         alu::AluOp::Add => ALUAddOp(),
-                    //         alu::AluOp::Sub => ALUAddOp(),
-                    //         alu::AluOp::Mul => ALUMulOp(),
-                    //         alu::AluOp::Div => ALUMulOp(),
-                    //         _ => todo!(),
-                    //     },
-                    // ));
+
                     let mut latency = 1;
                     let mut ii = 1;
                     let binary_func = match op.stages[0].op() {
@@ -384,9 +373,9 @@ pub fn build_from_proto<'a>(
                         alu::AluOp::Sub => {
                             latency = 1;
                             |val1: VT, val2: VT| -> VT {
-                            // println!("SUB: {:}", val1);
-                            // println!("SUB: {:}", val2);
-                            // println!("SUB: {:}", val1.clone() - val2.clone());
+//                             println!("SUB Val1: {:}", val1);
+//                             println!("SUB Val2: {:}", val2);
+//                             println!("SUB Res: {:}", val1.clone() - val2.clone());
                             val1 - val2}
                         },
                         alu::AluOp::Mul => {
@@ -402,9 +391,9 @@ pub fn build_from_proto<'a>(
                             latency = 1;
 
                             |val1: VT, val2: VT| -> VT {
-                            // println!("DIV: {:}", val1);
-                            // println!("DIV: {:}", val2);
-                            // println!("DIV: {:}", val1.clone() / val2.clone());
+//                             println!("DIV Val1: {:?}", val1);
+//                             println!("DIV Val2: {:?}", val2);
+//                             println!("DIV Res: {:?}", val1.clone() / val2.clone());
                             val1 / val2
                         }},
                         _ => todo!(),
@@ -498,10 +487,11 @@ pub fn build_from_proto<'a>(
                         }
                         alu::AluOp::Scalardiv => {
                             let scalar: f32 = op.scalar as f32;
+                            println!("SCALAR {:?}", scalar);
                             let unary_func = move |val: VT| -> VT {
                                 let val_copy = val.data.mapv(|x| x / scalar);
-                                // println!("SCALARDIV: {:}", val.data.clone());
-                                // println!("SCALARDIV: {:}", val_copy.clone());
+//                                 println!("SCALARDIV: {:}", val.data.clone());
+//                                 println!("SCALARDIV: {:}", val_copy.clone());
 
                                 return Tensor::<'static, f32, Ix2, N> {
                                     data: val_copy.into(),
@@ -555,12 +545,14 @@ pub fn build_from_proto<'a>(
                     reduce::Type::Max => {
                         let compare_fn = |val: VT, max_elem: VT| -> VT {
                             let mut curr_max = max_elem;
+//                             println!("Curr max: {:?}", curr_max.clone());
 
                             let max_per_row: Vec<f32> = val
                                 .data
                                 .axis_iter(Axis(0))
                                 .map(|row| row.iter().cloned().fold(f32::MIN, f32::max))
                                 .collect();
+//                             println!("Curr VAL: {:?}", val.data.clone());
 
                             // Convert to a column vector and broadcast
                             let max_array =
@@ -570,7 +562,7 @@ pub fn build_from_proto<'a>(
                             curr_max
                                 .data
                                 .zip_mut_with(&broadcasted, |a, &b| *a = a.max(b));
-                            // println!("max: {:?}", broadcasted.clone());
+//                             println!("max: {:?}", curr_max.clone());
                             return curr_max;
                         };
                         builder.add_child(MaxReduce::new(reduce_data, compare_fn, min_val, N))
