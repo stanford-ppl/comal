@@ -72,7 +72,7 @@ where
 
 impl<'a, A, const N: usize> Adapter<Tensor<'a, A, Ix2, N>> for PrimitiveType<Tensor<'a, A, Ix2, N>>
 where
-    A: DAMType + FromStr,
+    A: DAMType + FromStr + std::fmt::Display + std::fmt::Debug,
     Tensor<'a, A, Dim<[usize; 2]>, N>: DAMType,
 {
     fn parse(
@@ -82,12 +82,12 @@ where
         let mut out_vec = vec![];
         let float_iter = iter.flat_map(|line| line.parse::<A>());
         for chunk in &float_iter.chunks(N * N) {
-            out_vec.push(Tensor::<'a, A, Ix2, N> {
-                data: CowArray::from(
-                    Array2::from_shape_vec((N, N).f(), chunk.into_iter().collect::<Vec<_>>())
-                        .unwrap(),
-                ),
-            });
+            // Reversing axes as created arrays are in column major order
+            let arr = CowArray::from(
+                Array2::from_shape_vec((N, N).f(), chunk.into_iter().collect::<Vec<_>>()).unwrap(),
+            )
+            .reversed_axes();
+            out_vec.push(Tensor::<'a, A, Ix2, N> { data: arr.into() });
         }
         out_vec
     }
@@ -293,7 +293,7 @@ impl<'a, A: DAMType, const N: usize> std::fmt::Display for Tensor<'a, A, Ix2, N>
         //             writeln!(f, "{:?}", elem).unwrap();
         //         }
         for row in self.data.axis_iter(Axis(0)) {
-            for (j, value) in row.iter().enumerate() {
+            for (_, value) in row.iter().enumerate() {
                 writeln!(f, "{:?}", value).unwrap();
             }
         }

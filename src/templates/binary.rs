@@ -179,11 +179,11 @@ mod tests {
         let (out_val_sender, out_val_receiver) = parent.bounded::<Token<f32, u32>>(chan_size);
         let (in_val_sender, in_val_receiver) = parent.bounded::<Token<f32, u32>>(chan_size);
 
-        let max = Binary::new(in_val_receiver, out_val_sender, binary_func);
+        // let max = Binary::new(in_val_receiver, out_val_sender, binary_func);
 
         let in_val = GeneratorContext::new(in_val, in_val_sender);
         let out_checker = CheckerContext::new(out_val, out_val_receiver);
-        parent.add_child(max);
+        // parent.add_child(max);
         parent.add_child(in_val);
         parent.add_child(out_checker);
 

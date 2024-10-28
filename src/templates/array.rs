@@ -74,19 +74,6 @@ where
                             let idx: usize = val.try_into().unwrap();
                             let block_size = self.array_data.block_size;
 
-                            // println!("Val: {:?}", self.val_arr.clone());
-                            // println!("Len: {:?}", self.val_arr.clone().len());
-
-                            // let mut stdin = io::stdin();
-                            // let mut stdout = io::stdout();
-
-                            // // We want the cursor to stay at the end of the line, so we print without a newline and flush manually.
-                            // write!(stdout, "Press any key to continue...").unwrap();
-                            // stdout.flush().unwrap();
-
-                            // Read a single byte and discard
-                            let _ = stdin.read(&mut [0u8]).unwrap();
-
                             let channel_elem = ChannelElement::new(
                                 self.time.tick()
                                     + Time::new((block_size * block_size).try_into().unwrap()),
@@ -98,7 +85,6 @@ where
                                 .unwrap();
                             let out_val =
                                 Token::Val::<ValType, StopType>(self.val_arr[idx].clone());
-                            count += 1;
                             // let _ = dam::logging::log_event(&ArrayLog {
                             //     in_ref: data.clone().into(),
                             //     val: out_val.clone().into(),
@@ -118,10 +104,6 @@ where
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
                             let out_val = Token::<ValType, StopType>::Stop(stkn.clone());
-                            // let _ = dam::logging::log_event(&ArrayLog {
-                            //     in_ref: data.clone().into(),
-                            //     val: out_val.clone().into(),
-                            // });
                             if id == curr_id {
                                 println!("ID: {:?}, Val: {:?}", id, out_val.clone());
                             }
@@ -160,7 +142,6 @@ where
                             if id == curr_id {
                                 println!("ID: {:?}, Val: {:?}", id, out_val.clone());
                             }
-                            println!("Count {:?}: {:?}", curr_id, count);
                             return;
                         }
                     }
@@ -211,6 +192,7 @@ mod tests {
         let data = ArrayData::<u32, u32, u32> {
             in_ref: in_ref_receiver,
             out_val: out_val_sender,
+            block_size: 1,
         };
         let arr = Array::new(data, val_arr);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);

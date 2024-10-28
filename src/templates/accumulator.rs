@@ -11,22 +11,22 @@ use serde::{Deserialize, Serialize};
 
 use super::primitive::{FinalReduce, Token};
 
-pub struct ReduceData<ValType: Clone, StopType: Clone> {
+pub struct ReduceData<ValType: Clone, StopType: Clone, const N: usize> {
     pub in_val: Receiver<Token<ValType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
-    pub block_size: usize,
+    pub sum: bool,
 }
 
 #[context_macro]
-pub struct Reduce<ValType: Clone, StopType: Clone> {
-    reduce_data: ReduceData<ValType, StopType>,
+pub struct Reduce<ValType: Clone, StopType: Clone, const N: usize> {
+    reduce_data: ReduceData<ValType, StopType, N>,
 }
 
-impl<ValType: DAMType, StopType: DAMType> Reduce<ValType, StopType>
+impl<ValType: DAMType, StopType: DAMType, const N: usize> Reduce<ValType, StopType, N>
 where
-    Reduce<ValType, StopType>: Context,
+    Reduce<ValType, StopType, N>: Context,
 {
-    pub fn new(reduce_data: ReduceData<ValType, StopType>) -> Self {
+    pub fn new(reduce_data: ReduceData<ValType, StopType, N>) -> Self {
         let red = Reduce {
             reduce_data,
             context_info: Default::default(),
@@ -112,15 +112,18 @@ pub struct SpaccLog {
 //     }
 // }
 
-impl<ValType, StopType> Context for Reduce<ValType, StopType>
+impl<ValType, StopType, const N: usize> Context for Reduce<ValType, StopType, N>
 where
-    ValType: DAMType + std::ops::AddAssign<ValType> + std::cmp::PartialEq + std::ops::Add<Output = ValType>,
+    ValType: DAMType
+        + std::ops::AddAssign<ValType>
+        + std::cmp::PartialEq
+        + std::ops::Add<Output = ValType>,
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
         + std::cmp::PartialEq
         + std::convert::From<u32>,
-    // Token<f32, u32>: From<Token<ValType, StopType>>,
+    Token<ValType, StopType>: FinalReduce<StopType, N>,
 {
     fn init(&mut self) {}
 
@@ -138,40 +141,27 @@ where
             match self.reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data.clone() {
                     Token::Val(val) => {
-                        // sum += val.clone();
-//                         println!("Sum: {:?}", sum.clone());
                         sum = sum + val.clone();
-//                         println!("Val: {:?}", val.clone());
-//                         println!("Sum after: {:?}", sum.clone());
 
                         prev_tkn = Token::Val(val.clone());
                         accum = true;
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
-                        // if prev_tkn != Token::Stop(StopType::default())
-                        //     || stkn == StopType::default()
-                        // {
-                        //     self.reduce_data
-                        //         .out_val
-                        //         .enqueue(
-                        //             &self.time,
-                        //             ChannelElement::new(curr_time + 1, Token::Val(sum.clone())),
-                        //         )
-                        //         .unwrap();
-                        //     if id == curr_id {
-                        //         println!(
-                        //             "Out val: {:?}",
-                        //             // Token::<ValType, StopType>::Val(sum.clone())
-                        //             curr_in.data.clone()
-                        //         );
-                        //     }
-                        // }
+
+                        let final_reduce = if self.reduce_data.sum {
+                            Token::Val(sum.clone()).sum_axis()
+                        } else {
+                            Token::Val(sum.clone())
+                        };
                         self.reduce_data
                             .out_val
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + Time::new((self.reduce_data.block_size * self.reduce_data.block_size).try_into().unwrap()), Token::Val(sum.clone())),
+                                ChannelElement::new(
+                                    curr_time + Time::new((N * N).try_into().unwrap()),
+                                    final_reduce,
+                                ),
                                 // ChannelElement::new(curr_time + Time::new((self.reduce_data.block_size * self.reduce_data.block_size).try_into().unwrap()), Token::Val(sum.clone())),
                             )
                             .unwrap();
@@ -182,8 +172,8 @@ where
                                 Token::<ValType, StopType>::Val(sum.clone())
                             );
                         }
-                        let out_val = Token::<ValType, StopType>::Val(sum.clone());
-                        prev_tkn = out_val.clone();
+                        // let out_val = Token::<ValType, StopType>::Val(sum.clone());
+                        // prev_tkn = out_val.clone();
                         // let _ = dam::logging::log_event(&ReduceLog {
                         //     out_val: out_val.clone().into(),
                         // });
@@ -237,12 +227,13 @@ where
                     panic!("Unexpected end of stream");
                 }
             }
-//             if accum {
-//                 let block_size: u64 = self.reduce_data.block_size.try_into().unwrap();
-//                 self.time.incr_cycles(block_size * block_size);
-//             } else {
+            if accum {
+                //                 let block_size: u64 = self.reduce_data.block_size.try_into().unwrap();
+                // self.time.incr_cycles(N.try_into().unwrap());
                 self.time.incr_cycles(1);
-//             }
+            } else {
+                self.time.incr_cycles(1);
+            }
         }
     }
 }
@@ -261,7 +252,8 @@ pub struct Spacc1<CrdType: Clone, ValType: Clone, StopType: Clone, const N: usiz
     spacc1_data: Spacc1Data<CrdType, ValType, StopType, N>,
 }
 
-impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType, const N: usize> Spacc1<CrdType, ValType, StopType, N>
+impl<CrdType: DAMType, ValType: DAMType, StopType: DAMType, const N: usize>
+    Spacc1<CrdType, ValType, StopType, N>
 where
     Spacc1<CrdType, ValType, StopType, N>: Context,
 {
@@ -327,7 +319,8 @@ where
                     match in_val.data.clone() {
                         Token::Val(val) => match in_icrd.data.clone() {
                             Token::Val(crd) => {
-                                let curr_sum = accum_storage.entry(crd.clone()).or_default().clone();
+                                let curr_sum =
+                                    accum_storage.entry(crd.clone()).or_default().clone();
                                 let curr_sum = curr_sum + val.clone();
                                 *accum_storage.entry(crd).or_default() = curr_sum.clone();
                                 accum = true;
@@ -373,9 +366,10 @@ where
                             .out_crd_inner
                             .enqueue(&self.time, icrd_chan_elem)
                             .unwrap();
-                    
+
                         // Sum along columns if a 2d tensor valtype for blocked computation
-                        let final_reduced = Token::<ValType, StopType>::Val(value.clone()).sum_axis();
+                        // let final_reduced = Token::<ValType, StopType>::Val(value.clone()).sum_axis();
+                        let final_reduced = Token::<ValType, StopType>::Val(value.clone());
 
                         let val_chan_elem = ChannelElement::new(
                             self.time.tick() + 1,
@@ -517,8 +511,9 @@ where
             }
             // println!("icrd cnt: {}, ocrd cnt: {}", icrd_stkn_pop_cnt, ocrd_val_pop_cnt);
             if accum {
-                let block_size: u64 = self.spacc1_data.block_size.try_into().unwrap();
-                self.time.incr_cycles(block_size * block_size);
+                // let block_size: u64 = self.spacc1_data.block_size.try_into().unwrap();
+                // self.time.incr_cycles((N).try_into().unwrap());
+                self.time.incr_cycles(1);
             } else {
                 self.time.incr_cycles(1);
             }
@@ -527,23 +522,25 @@ where
 }
 
 #[context_macro]
-pub struct MaxReduce<ValType: Clone, StopType: Clone, F> {
-    max_reduce_data: ReduceData<ValType, StopType>,
+pub struct MaxReduce<ValType: Clone, StopType: Clone, F, const N: usize> {
+    max_reduce_data: ReduceData<ValType, StopType, N>,
     compare_fn: F,
     min_val: ValType,
-    block_size: usize,
 }
 
-impl<ValType: DAMType, StopType: DAMType, F> MaxReduce<ValType, StopType, F>
+impl<ValType: DAMType, StopType: DAMType, F, const N: usize> MaxReduce<ValType, StopType, F, N>
 where
-    MaxReduce<ValType, StopType, F>: Context,
+    MaxReduce<ValType, StopType, F, N>: Context,
 {
-    pub fn new(max_reduce_data: ReduceData<ValType, StopType>, compare_fn: F, min_val: ValType, block_size: usize) -> Self {
+    pub fn new(
+        max_reduce_data: ReduceData<ValType, StopType, N>,
+        compare_fn: F,
+        min_val: ValType,
+    ) -> Self {
         let red = MaxReduce {
             max_reduce_data,
             compare_fn,
             min_val,
-            block_size,
             context_info: Default::default(),
         };
         (red.max_reduce_data.in_val).attach_receiver(&red);
@@ -553,7 +550,7 @@ where
     }
 }
 
-impl<ValType, StopType, F> Context for MaxReduce<ValType, StopType, F>
+impl<ValType, StopType, F, const N: usize> Context for MaxReduce<ValType, StopType, F, N>
 where
     ValType: DAMType
         + std::ops::AddAssign<ValType>
@@ -563,7 +560,7 @@ where
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
-        + std::cmp::PartialEq, 
+        + std::cmp::PartialEq,
     F: Fn(ValType, ValType) -> ValType + Sync + Send,
 {
     fn init(&mut self) {}
@@ -578,15 +575,14 @@ where
                     Token::Val(val) => {
                         accum = true;
                         max_elem = (self.compare_fn)(val.clone(), max_elem.clone());
-
-                    },
+                    }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
                         self.max_reduce_data
                             .out_val
                             .enqueue(
                                 &self.time,
-                                ChannelElement::new(curr_time + 1, Token::Val(max_elem)),
+                                ChannelElement::new(curr_time + Time::new(N.try_into().unwrap()), Token::Val(max_elem)),
                             )
                             .unwrap();
                         max_elem = self.min_val.clone();
@@ -595,7 +591,10 @@ where
                                 .out_val
                                 .enqueue(
                                     &self.time,
-                                    ChannelElement::new(curr_time + 1, Token::Stop(stkn - 1)),
+                                    ChannelElement::new(
+                                        curr_time + Time::new(N.try_into().unwrap()),
+                                        Token::Stop(stkn - 1),
+                                    ),
                                 )
                                 .unwrap();
                         }
@@ -616,12 +615,11 @@ where
                     panic!("Unexpected end of stream");
                 }
             }
-            if accum {
-                let block_size: u64 = self.max_reduce_data.block_size.try_into().unwrap();
-                self.time.incr_cycles(block_size * block_size);
-            } else {
-                self.time.incr_cycles(1);
-            }
+            // if accum {
+            // self.time.incr_cycles((N * N).into());
+            // } else {
+            self.time.incr_cycles(1);
+            // }
         }
     }
 }
@@ -710,9 +708,10 @@ mod tests {
         let mut parent = ProgramBuilder::default();
         let (in_val_sender, in_val_receiver) = parent.unbounded();
         let (out_val_sender, out_val_receiver) = parent.unbounded();
-        let data = ReduceData::<u32, u32> {
+        let data = ReduceData::<u32, u32, 1> {
             in_val: in_val_receiver,
             out_val: out_val_sender,
+            sum: false,
         };
         let red = Reduce::new(data);
         let gen1 = GeneratorContext::new(in_val, in_val_sender);
@@ -753,6 +752,7 @@ mod tests {
             in_val: in_val_receiver,
             out_val: out_val_sender,
             out_crd_inner: out_icrd_sender,
+            block_size: 1,
         };
         let red = Spacc1::new(data);
         let gen1 = GeneratorContext::new(in_ocrd, in_ocrd_sender);
@@ -781,17 +781,18 @@ mod tests {
         let mut parent = ProgramBuilder::default();
         let (in_val_sender, in_val_receiver) = parent.unbounded::<Token<f32, u32>>();
         let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<f32, u32>>();
-        let data = ReduceData::<f32, u32> {
+        let data = ReduceData::<f32, u32, 1> {
             in_val: in_val_receiver,
             out_val: out_val_sender,
+            sum: false,
         };
-        let red = MaxReduce::new(data, f32::MIN);
+        // let red = MaxReduce::new(data, f32::MIN);
         let gen1 = GeneratorContext::new(in_val, in_val_sender);
         let val_checker = CheckerContext::new(out_val, out_val_receiver);
 
         parent.add_child(gen1);
         parent.add_child(val_checker);
-        parent.add_child(red);
+        // parent.add_child(red);
         let executed = parent
             .initialize(InitializationOptions::default())
             .unwrap()

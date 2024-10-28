@@ -64,11 +64,9 @@ where
                         // if log_val < 0.0 {
                         //     dam::logging::log_event(&UnaryLogData { val: log_val }).unwrap();
                         // }
-                        let latency: u64 = 1;
-
                         let out_val = (self.unary_func)(val);
                         let out_val_elem = ChannelElement::new(
-                            self.time.tick() + latency,
+                            self.time.tick() + Time::new(self.block_size.try_into().unwrap()),
                             Token::<ValType, StopType>::Val(out_val),
                         );
                         self.out_val.enqueue(&self.time, out_val_elem).unwrap();
@@ -173,7 +171,7 @@ mod tests {
         let (out_val_sender, out_val_receiver) = parent.bounded::<Token<f32, u32>>(chan_size);
         let (in_val_sender, in_val_receiver) = parent.bounded::<Token<f32, u32>>(chan_size);
 
-        let max = Unary::new(in_val_receiver, out_val_sender, unary_func);
+        let max = Unary::new(in_val_receiver, out_val_sender, unary_func, 1);
 
         let in_val = GeneratorContext::new(in_val, in_val_sender);
         let out_checker = CheckerContext::new(out_val, out_val_receiver);

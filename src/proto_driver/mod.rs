@@ -44,7 +44,7 @@ use ndarray::{Array2, ArrayBase, Axis, CowArray, Ix1, Ix2, ShapeBuilder};
 use proto_headers::tortilla::*;
 
 // type VT = f32;
-const N: usize = 2;
+const N: usize = 32;
 type VT = Tensor<'static, f32, Ix2, N>;
 type CT = u32;
 type ST = u32;
@@ -362,40 +362,46 @@ pub fn build_from_proto<'a>(
                     let mut ii = 1;
                     let binary_func = match op.stages[0].op() {
                         alu::AluOp::Add => {
-                            latency = 1;
-                            
-                            |val1: VT, val2: VT| -> VT {
-                            // println!("ADD: {:}", val1);
-                            // println!("ADD: {:}", val2);
-                            // println!("ADD: {:}", val1.clone() + val2.clone());
-                            val1 + val2
-                        }},
-                        alu::AluOp::Sub => {
-                            latency = 1;
-                            |val1: VT, val2: VT| -> VT {
-//                             println!("SUB Val1: {:}", val1);
-//                             println!("SUB Val2: {:}", val2);
-//                             println!("SUB Res: {:}", val1.clone() - val2.clone());
-                            val1 - val2}
-                        },
-                        alu::AluOp::Mul => {
-                            latency = 3 * N - 2;  
-                            ii = 1;
-                            |val1: VT, val2: VT| -> VT {
-                            // println!("MUL: {:}", val1);
-                            // println!("MUL: {:}", val2);
-                            // println!("MUL: {:}", val1.clone() * val2.clone());
-                            val1 * val2
-                        }},
-                        alu::AluOp::Div => {
-                            latency = 1;
+                            latency = N * N;
 
                             |val1: VT, val2: VT| -> VT {
-//                             println!("DIV Val1: {:?}", val1);
-//                             println!("DIV Val2: {:?}", val2);
-//                             println!("DIV Res: {:?}", val1.clone() / val2.clone());
-                            val1 / val2
-                        }},
+                                // println!("ADD: {:}", val1);
+                                // println!("ADD: {:}", val2);
+                                // println!("ADD: {:}", val1.clone() + val2.clone());
+                                val1 + val2
+                            }
+                        }
+                        alu::AluOp::Sub => {
+                            latency = N * N;
+                            |val1: VT, val2: VT| -> VT {
+                                //                             println!("SUB Val1: {:}", val1);
+                                //                             println!("SUB Val2: {:}", val2);
+                                //                             println!("SUB Res: {:}", val1.clone() - val2.clone());
+                                val1 - val2
+                            }
+                        }
+                        alu::AluOp::Mul => {
+                            latency = 2 * N - 1;
+                            ii = N;
+                            |val1: VT, val2: VT| -> VT { Tensor::new(val1.data.dot(&val2.data)) }
+                        }
+                        alu::AluOp::Div => {
+                            latency = N * N;
+
+                            |val1: VT, val2: VT| -> VT {
+                                //                             println!("DIV Val1: {:?}", val1);
+                                //                             println!("DIV Val2: {:?}", val2);
+                                //                             println!("DIV Res: {:?}", val1.clone() / val2.clone());
+                                val1 / val2
+                            }
+                        }
+                        alu::AluOp::Elemmul => {
+                            latency = N * N;
+                            ii = 1;
+                            |val1: VT, val2: VT| -> VT {
+                                val1 * val2
+                            }
+                        },
                         _ => todo!(),
                     };
                     builder.add_child(Binary::new(
@@ -490,8 +496,8 @@ pub fn build_from_proto<'a>(
                             println!("SCALAR {:?}", scalar);
                             let unary_func = move |val: VT| -> VT {
                                 let val_copy = val.data.mapv(|x| x / scalar);
-//                                 println!("SCALARDIV: {:}", val.data.clone());
-//                                 println!("SCALARDIV: {:}", val_copy.clone());
+                                //                                 println!("SCALARDIV: {:}", val.data.clone());
+                                //                                 println!("SCALARDIV: {:}", val_copy.clone());
 
                                 return Tensor::<'static, f32, Ix2, N> {
                                     data: val_copy.into(),
@@ -530,29 +536,35 @@ pub fn build_from_proto<'a>(
             }
             Op::Reduce(op) => {
                 let in_val_id = get_val_id(&op.input_val);
-                let reduce_data = ReduceData {
-                    in_val: valmap.get_receiver(in_val_id, builder),
-                    out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
-                    block_size: N,
-                };
-                let min_val = Tensor::<'static, f32, Ix2, N> {
-                    data: CowArray::from(
-                        Array2::from_shape_vec((N, N).f(), vec![f32::MIN; N * N]).unwrap(),
-                    ),
-                };
+
                 match op.reduce_type() {
-                    reduce::Type::Add => builder.add_child(Reduce::new(reduce_data)),
+                    reduce::Type::Add => {
+                        let reduce_data = ReduceData {
+                            in_val: valmap.get_receiver(in_val_id, builder),
+                            out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                            sum: false,
+                        };
+
+                        builder.add_child(Reduce::new(reduce_data))
+                    }
                     reduce::Type::Max => {
+                        let reduce_data: ReduceData<Tensor<'static, f32, Ix2, N>, u32, N> = ReduceData {
+                            in_val: valmap.get_receiver(in_val_id, builder),
+                            out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                            sum: false,
+                        };
+                        let min_val = Tensor::<'static, f32, Ix2, N> {
+                            data: CowArray::from(
+                                Array2::from_shape_vec((N, N).f(), vec![f32::MIN; N * N]).unwrap(),
+                            ),
+                        };
                         let compare_fn = |val: VT, max_elem: VT| -> VT {
                             let mut curr_max = max_elem;
-//                             println!("Curr max: {:?}", curr_max.clone());
-
                             let max_per_row: Vec<f32> = val
                                 .data
                                 .axis_iter(Axis(0))
                                 .map(|row| row.iter().cloned().fold(f32::MIN, f32::max))
                                 .collect();
-//                             println!("Curr VAL: {:?}", val.data.clone());
 
                             // Convert to a column vector and broadcast
                             let max_array =
@@ -562,11 +574,20 @@ pub fn build_from_proto<'a>(
                             curr_max
                                 .data
                                 .zip_mut_with(&broadcasted, |a, &b| *a = a.max(b));
-//                             println!("max: {:?}", curr_max.clone());
+                            //                             println!("max: {:?}", curr_max.clone());
                             return curr_max;
                         };
-                        builder.add_child(MaxReduce::new(reduce_data, compare_fn, min_val, N))
-                    } // reduce::Type::Max => builder.add_child(Reduce::new(reduce_data)),
+                        builder.add_child(MaxReduce::new(reduce_data, compare_fn, min_val))
+                    }
+                    reduce::Type::Addsum => {
+                        let reduce_data = ReduceData {
+                            in_val: valmap.get_receiver(in_val_id, builder),
+                            out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                            sum: true,
+                        };
+
+                        builder.add_child(Reduce::new(reduce_data))
+                    }
                 }
             }
             Op::CoordHold(op) => {
@@ -605,7 +626,6 @@ pub fn build_from_proto<'a>(
                         block_size: stream_shape,
                     };
                     let vals = read_inputs_vectorized(&val_filename, PrimitiveType::<VT>::new());
-                    block_size = Some(stream_shape);
                     builder.add_child(Array::new(array_data, vals));
                 } else {
                     let array_data = ArrayData {

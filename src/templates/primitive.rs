@@ -57,7 +57,8 @@ where
         let out = if let Token::Val(val) = self {
             let final_reduced = val.clone().data.sum_axis(Axis(1));
             let vector_reduced = final_reduced.insert_axis(Axis(1));
-            Token::<Tensor<'static, A, Ix2, N>, StopType>::Val(Tensor::new(vector_reduced))
+            let broadcast_reduced = vector_reduced.broadcast(val.data.raw_dim()).unwrap();
+            Token::<Tensor<'static, A, Ix2, N>, StopType>::Val(Tensor::new(broadcast_reduced.to_owned()))
         } else {
             panic!("Should not reach this case in sum_axis");
         };
