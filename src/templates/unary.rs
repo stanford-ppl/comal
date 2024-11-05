@@ -48,6 +48,7 @@ where
     f32: From<ValType>,
 {
     fn run(&mut self) {
+        let mut op_count = 0;
         loop {
             //TODO: Dequeue from input channel
             let val_deq = self.in_val.dequeue(&self.time);
@@ -68,6 +69,7 @@ where
                             Token::<ValType, StopType>::Val(out_val),
                         );
                         self.out_val.enqueue(&self.time, out_val_elem).unwrap();
+                        op_count += 1;
                     }
                     Token::Stop(stkn) => {
                         //TODO: Add logic for when we receive a stop token on the stream
@@ -86,6 +88,7 @@ where
                             Token::<ValType, StopType>::Done,
                         );
                         self.out_val.enqueue(&self.time, out_val_elem).unwrap();
+                        println!("Op count: {}", op_count);
                         return;
                     }
                     _ => {

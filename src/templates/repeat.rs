@@ -133,7 +133,8 @@ where
                             });
                         }
                         Repsiggen::Done => {
-                            if let Token::Done = curr_ref.clone() {
+                            // if let Token::Done = curr_ref.clone() {
+                            if true {
                                 let channel_elem =
                                     ChannelElement::new(self.time.tick() + 1, Token::Done);
                                 self.repeat_data

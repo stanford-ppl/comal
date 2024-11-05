@@ -130,13 +130,15 @@ where
         // let mut prev_tkn: StopType = StopType::default();
         let id = self.id();
         let curr_id = Identifier { id: 0 };
-        let mut prev_tkn = Token::default();
+        // let mut prev_tkn = Token::default();
+        let mut reduce_count = 0;
         loop {
             match self.reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data.clone() {
                     Token::Val(val) => {
                         sum += val.clone();
-                        prev_tkn = Token::Val(val.clone());
+                        // prev_tkn = Token::Val(val.clone());
+                        reduce_count += 1;
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
@@ -173,10 +175,10 @@ where
                             );
                         }
                         let out_val = Token::<ValType, StopType>::Val(sum.clone());
-                        prev_tkn = out_val.clone();
-                        let _ = dam::logging::log_event(&ReduceLog {
-                            out_val: out_val.clone().into(),
-                        });
+                        // prev_tkn = out_val.clone();
+                        // let _ = dam::logging::log_event(&ReduceLog {
+                        // out_val: out_val.clone().into(),
+                        // });
                         sum = ValType::default();
                         if stkn != StopType::default() {
                             self.reduce_data
@@ -190,10 +192,10 @@ where
                                 )
                                 .unwrap();
                             let stk = Token::<ValType, StopType>::Stop(stkn.clone() - 1);
-                            prev_tkn = stk.clone();
-                            let _ = dam::logging::log_event(&ReduceLog {
-                                out_val: stk.clone().into(),
-                            });
+                            // prev_tkn = stk.clone();
+                            // let _ = dam::logging::log_event(&ReduceLog {
+                            // out_val: stk.clone().into(),
+                            // });
                             if id == curr_id {
                                 println!(
                                     "In val: {:?}, Out val: {:?}",
@@ -218,7 +220,7 @@ where
                                 curr_in.data.clone(),
                                 Token::<ValType, StopType>::Done
                             );
-                            // println!("Out val: {:?}", curr_in.data.clone());
+                            println!("Reduce: {}", reduce_count);
                         }
                         return;
                     }
@@ -287,6 +289,7 @@ where
         let id1 = Identifier { id: 0 };
         let mut icrd_stkn_pop_cnt = 0;
         let mut ocrd_val_pop_cnt = 0;
+        let mut reduce_count = 0;
         loop {
             let in_ocrd = self.spacc1_data.in_crd_outer.peek_next(&self.time).unwrap();
             let in_icrd = self.spacc1_data.in_crd_inner.peek_next(&self.time).unwrap();
@@ -310,6 +313,7 @@ where
                         Token::Val(val) => match in_icrd.data.clone() {
                             Token::Val(crd) => {
                                 *accum_storage.entry(crd).or_default() += val.clone();
+                                reduce_count += 1;
                             }
                             _ => {
                                 // self.spacc1_data.in_val.dequeue(&self.time).unwrap();
@@ -456,6 +460,7 @@ where
                                 out_val: Token::<ValType, StopType>::Done.into(),
                                 out_crd: Token::<CrdType, StopType>::Done.into(),
                             });
+                            println!("Reduce count: {}", reduce_count);
                             return;
                         }
                         _ => {
@@ -660,7 +665,7 @@ where
                         if last_key == key {
                             emitted_stop_crd = Token::<CrdType, StopType>::Stop(stkn.clone() + 1);
                             emitted_stop_val = Token::<ValType, StopType>::Stop(stkn.clone() + 1);
-                        } 
+                        }
 
                         let val_stkn_chan_elem =
                             ChannelElement::new(self.time.tick() + 1, emitted_stop_val.clone());
@@ -702,28 +707,28 @@ where
                     // self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
 
                     // Handle the case with back to back stop tokens
-                    if let Token::Stop(inner_stkn) = in_crd0.data.clone() {
-                        let next_ocrd = self.spacc2_data.in_crd1.peek_next(&self.time).unwrap();
-                        if let Token::Stop(ocrd_stkn) = next_ocrd.data.clone() {
-                            if inner_stkn == ocrd_stkn.clone() + 1 {
-                                self.spacc2_data.in_crd0.dequeue(&self.time).unwrap();
-                                self.spacc2_data.in_val.dequeue(&self.time).unwrap();
-                            } else {
-                                println!(
-                                    "Outer: {:?}, Inner: {:?}",
-                                    ocrd_stkn.clone(),
-                                    inner_stkn.clone()
-                                );
-                                println!("Inner and outer stop token types don't match");
-                            }
-                        } else {
-                            assert_eq!(
-                                inner_stkn,
-                                StopType::default(),
-                                "Inner stkn lvl should be 0"
-                            );
-                        }
-                    }
+                    // if let Token::Stop(inner_stkn) = in_crd0.data.clone() {
+                    //     let next_ocrd = self.spacc2_data.in_crd1.peek_next(&self.time).unwrap();
+                    //     if let Token::Stop(ocrd_stkn) = next_ocrd.data.clone() {
+                    //         if inner_stkn == ocrd_stkn.clone() + 1 {
+                    //             self.spacc2_data.in_crd0.dequeue(&self.time).unwrap();
+                    //             self.spacc2_data.in_val.dequeue(&self.time).unwrap();
+                    //         } else {
+                    //             println!(
+                    //                 "Outer: {:?}, Inner: {:?}",
+                    //                 ocrd_stkn.clone(),
+                    //                 inner_stkn.clone()
+                    //             );
+                    //             println!("Inner and outer stop token types don't match");
+                    //         }
+                    //     } else {
+                    //         assert_eq!(
+                    //             inner_stkn,
+                    //             StopType::default(),
+                    //             "Inner stkn lvl should be 0"
+                    //         );
+                    //     }
+                    // }
                 }
                 Token::Done => {
                     match in_crd1.data.clone() {
@@ -735,6 +740,12 @@ where
                         Token::Empty => panic!("Empty crd1 in done"),
                         Token::Done => match in_crd0.data.clone() {
                             Token::Done => {
+                                println!(
+                                    "{:?}, {:?}, {:?}",
+                                    in_crd0.data.clone(),
+                                    in_crd1.data.clone(),
+                                    in_val.data.clone()
+                                );
                                 let icrd_chan_elem =
                                     ChannelElement::new(self.time.tick() + 1, Token::Done);
                                 self.spacc2_data
@@ -770,6 +781,7 @@ where
                                     }
                                     _ => {}
                                 }
+                                panic!("Should not reach here");
                                 self.spacc2_data.in_crd0.dequeue(&self.time).unwrap();
                                 self.spacc2_data.in_val.dequeue(&self.time).unwrap();
                             }
@@ -836,13 +848,17 @@ where
 
     fn run(&mut self) {
         let mut max_elem = self.min_val.clone();
+        let mut reduce_count = 0;
         loop {
             match self.max_reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
-                    Token::Val(val) => match val.lt(&max_elem) {
-                        true => (),
-                        false => max_elem = val,
-                    },
+                    Token::Val(val) => {
+                        reduce_count += 1;
+                        match val.lt(&max_elem) {
+                            true => (),
+                            false => max_elem = val,
+                        }
+                    }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
                         self.max_reduce_data
@@ -872,6 +888,7 @@ where
                             .out_val
                             .enqueue(&self.time, ChannelElement::new(curr_time + 1, Token::Done))
                             .unwrap();
+                        println!("Reduce count: {}", reduce_count);
                         return;
                     }
                 },

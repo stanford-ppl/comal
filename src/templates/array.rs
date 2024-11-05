@@ -60,6 +60,7 @@ where
     fn run(&mut self) {
         let id = Identifier { id: 0 };
         let curr_id = self.id();
+        let mut num_reads = 0;
         loop {
             match self.array_data.in_ref.dequeue(&self.time) {
                 Ok(curr_in) => {
@@ -71,6 +72,7 @@ where
                                 self.time.tick() + 1,
                                 Token::Val(self.val_arr[idx].clone()),
                             );
+                            num_reads += 1;
                             self.array_data
                                 .out_val
                                 .enqueue(&self.time, channel_elem)
@@ -133,6 +135,7 @@ where
                                 in_ref: data.clone().into(),
                                 val: out_val.clone().into(),
                             });
+                            println!("Num reads: {}", num_reads);
                             if id == curr_id {
                                 println!("ID: {:?}, Val: {:?}", id, out_val.clone());
                             }

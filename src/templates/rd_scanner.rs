@@ -133,6 +133,7 @@ where
     fn run(&mut self) {
         let id = Identifier { id: 0 };
         let curr_id = self.id();
+        let mut read_count = 0;
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data {
@@ -163,6 +164,7 @@ where
                                     ),
                                 )
                                 .unwrap();
+                            read_count += 1;
                             if curr_id == id {
                                 println!(
                                     "ID: {:?}, Val: {:?}",
@@ -244,6 +246,7 @@ where
                         if curr_id == id {
                             println!("ID: {:?}, Val: {:?}", id, Token::<ValType, StopType>::Done);
                         }
+                        println!("Crd read count: {}", read_count);
                         return;
                     }
                     Token::Empty => {
@@ -440,13 +443,20 @@ where
         let id = Identifier { id: 0 };
         let curr_id = self.id();
         let mut stkn_cnt = 0;
+        let mut read_count = 0;
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data.clone() {
                     Token::Val(val) => {
                         let idx: usize = val.try_into().unwrap();
                         let mut curr_addr = self.seg_arr[idx].clone();
+
+                        read_count += 1;
+
                         let stop_addr = self.seg_arr[idx + 1].clone();
+
+                        read_count += 1;
+
                         self.time.incr_cycles(self.timing_config.initial_delay);
                         let mut initiated = true;
 
@@ -497,6 +507,7 @@ where
                                     ),
                                 )
                                 .unwrap();
+                            read_count += 1;
 
                             let _ = dam::logging::log_event(&LSLog {
                                 out_crd: Token::Val(coord.clone()).into(),
@@ -626,6 +637,7 @@ where
                         if self.id() == id.clone() {
                             println!("Done");
                         }
+                        println!("Crd read count: {}", read_count);
                         return;
                         // dbg!(Token::<ValType, StopType>::Done);
                     }

@@ -1,7 +1,8 @@
 use std::env;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter};
 use std::path::PathBuf;
+use std::io::Write;
 
 use dam::types::DAMType;
 
@@ -11,14 +12,23 @@ fn set_tensor_path() {
     env::set_var("FROSTT_FORMATTED_PATH", "/home/rubensl/Documents/data");
 }
 
-pub fn read_inputs_vectorized<T>(file_path: &PathBuf, _prim_type: impl Adapter<T>) -> Vec<T>
+pub fn read_inputs_vectorized<T>(
+    file_path: &PathBuf,
+    prim_type: impl Adapter<T>,
+    dim: usize,
+    blocked: bool,
+) -> Vec<T>
 where
     T: DAMType,
 {
-    let _file =
+    let file =
         File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found", file_path));
     // prim_type.parse(BufReader::new(file).lines().flatten())
-    todo!()
+    prim_type.parse(
+        BufReader::new(file).lines().flatten(),
+        Some(dim),
+        Some(blocked),
+    )
 }
 
 pub fn read_inputs<T>(file_path: &PathBuf) -> Vec<T>
@@ -29,9 +39,21 @@ where
         File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found.", file_path));
     let reader = BufReader::new(file);
 
-    reader
+    let vec : Vec<T> = reader
         .lines()
         .flatten() // gets rid of Err from lines
         .flat_map(|line| line.parse::<T>()) // ignores Err variant from Result of str.parse
-        .collect()
+        .collect();
+    // println!("Val: {:?}", vec.clone());
+    vec
+}
+
+pub fn write_outputs<T>(file_path: PathBuf, vec: Vec<T>)
+where
+    T: DAMType + ToString,
+{
+    let out: Vec<String> = vec.iter().map(|n| n.to_string()).collect();   
+    let mut file = File::create(file_path).unwrap();
+    writeln!(file, "{}", out.join("\n")).unwrap();
+    // let reader = BufWriter::new(file);
 }

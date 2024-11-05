@@ -22,6 +22,7 @@ use super::token_vec;
 use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 use crate::templates::accumulator::{MaxReduce, Spacc2, Spacc2Data};
+use crate::templates::binary::Binary;
 use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
 use crate::templates::new_alu::{ALUAdd, ALUMul};
 use crate::templates::primitive::ALUMaxOp;
@@ -47,7 +48,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 102400;
+const DEFAULT_CHAN_SIZE: usize = 10240000;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
@@ -347,26 +348,58 @@ pub fn build_from_proto<'a>(
                 if in_val_ids.len() == 2 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
-                    if op.stages[0].op() == alu::AluOp::Add {
-                        builder.add_child(ALUAdd::new(
-                            val_receiver1,
-                            val_receiver2,
-                            out_val_sender,
-                        ));
-                    } else {
-                        builder.add_child(make_alu(
-                            val_receiver1,
-                            val_receiver2,
-                            out_val_sender,
-                            match op.stages[0].op() {
-                                alu::AluOp::Add => ALUAddOp(),
-                                alu::AluOp::Sub => ALUSubOp(),
-                                alu::AluOp::Mul => ALUMulOp(),
-                                alu::AluOp::Div => ALUDivOp(),
-                                _ => todo!(),
-                            },
-                        ));
-                    }
+                    // if op.stages[0].op() == alu::AluOp::Add {
+                    //     builder.add_child(ALUAdd::new(
+                    //         val_receiver1,
+                    //         val_receiver2,
+                    //         out_val_sender,
+                    //     ));
+                    // } else {
+                    //     builder.add_child(make_alu(
+                    //         val_receiver1,
+                    //         val_receiver2,
+                    //         out_val_sender,
+                    //         match op.stages[0].op() {
+                    //             alu::AluOp::Add => ALUAddOp(),
+                    //             alu::AluOp::Sub => ALUSubOp(),
+                    //             alu::AluOp::Mul => ALUMulOp(),
+                    //             alu::AluOp::Div => ALUDivOp(),
+                    //             _ => todo!(),
+                    //         },
+                    //     ));
+                    // }
+                    let latency = 1;
+                    let ii = 1;
+                    let binary_func = match op.stages[0].op() {
+                        alu::AluOp::Add => {
+                            |val1: VT, val2: VT| -> VT {
+                                val1 + val2
+                            }
+                        }
+                        alu::AluOp::Sub => {
+                            |val1: VT, val2: VT| -> VT {
+                                val1 - val2
+                            }
+                        }
+                        alu::AluOp::Mul => {
+                            |val1: VT, val2: VT| -> VT { val1 * val2 }
+                        }
+                        alu::AluOp::Div => {
+                            |val1: VT, val2: VT| -> VT {
+                                val1 / val2
+                            }
+                        }
+                        _ => todo!(),
+                    };
+                    builder.add_child(Binary::new(
+                        val_receiver1,
+                        val_receiver2,
+                        out_val_sender,
+                        binary_func,
+                        1,
+                        latency.try_into().unwrap(),
+                        ii.try_into().unwrap(),
+                    ));
                 } else if in_val_ids.len() == 1 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     match op.stages[0].op() {
