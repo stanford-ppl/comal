@@ -50,10 +50,13 @@ where
 
 pub fn write_outputs<T>(file_path: PathBuf, vec: Vec<T>)
 where
-    T: DAMType + ToString,
+    T: DAMType + ToString + std::fmt::Display,
 {
-    let out: Vec<String> = vec.iter().map(|n| n.to_string()).collect();   
-    let mut file = File::create(file_path).unwrap();
-    writeln!(file, "{}", out.join("\n")).unwrap();
+    // let out: Vec<String> = vec.iter().map(|n| n.to_string()).collect();   
+    let mut file = BufWriter::new(File::create(file_path).unwrap());
+
+    vec.iter().try_for_each(|x| write!(file, "{}", x)).unwrap();
+    // writeln!(file, "{:?}", out.join("\n")).unwrap();
+
     // let reader = BufWriter::new(file);
 }

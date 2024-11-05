@@ -32,7 +32,7 @@ struct Cli {
     #[arg(
         long,
         // default_value = "/home/rubensl/Documents/repos/samml-artifact/data/misc/sparse_softmax_tmp"
-        default_value = "/home/rubensl/Documents/repos/samml-artifact/data/models/graphsage"
+        default_value = "/home/rubensl/Documents/repos/samml-artifact/data/gcn_unfused/gcn_adj_x1"
     )]
     data: String,
 
