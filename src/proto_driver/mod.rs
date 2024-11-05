@@ -4,6 +4,7 @@ pub mod util;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
+use crate::templates::locate::IterateLocate;
 
 use self::proto_headers::tortilla::operation::*;
 use self::util::{get_repsig_id, AsStreamID};
@@ -461,6 +462,8 @@ pub fn build_from_proto<'a>(
                 match op.reduce_type() {
                     reduce::Type::Add => builder.add_child(Reduce::new(reduce_data)),
                     reduce::Type::Max => builder.add_child(MaxReduce::new(reduce_data, f32::MIN)),
+                    reduce::Type::Addsum => builder.add_child(Reduce::new(reduce_data)),
+                    // reduce::Type::Addsum => todo!(),
                 }
             }
             Op::CoordHold(op) => {
@@ -487,9 +490,19 @@ pub fn build_from_proto<'a>(
                 };
                 builder.add_child(CrdDrop::new(crd_drop_data));
             }
+            Op::Locate(op) => {
+                let in_ref_id = get_ref_id(&op.input_ref);
+                let in_crd_id = get_crd_id(&op.input_crd);
+                let locate = IterateLocate::new(
+                    refmap.get_receiver(in_ref_id, builder),
+                    crdmap.get_receiver(in_crd_id, builder),
+                    refmap.get_sender(get_ref_id(&op.output_ref1), builder),
+                    refmap.get_sender(get_ref_id(&op.output_ref2), builder),
+                    crdmap.get_sender(get_crd_id(&op.output_crd), builder),
+                );
+                builder.add_child(locate);
+            }
             Op::Array(op) => {
-                let _blocked = op.blocked;
-                let _stream_shape = op.stream_shape as usize;
                 let in_ref_id = get_ref_id(&op.input_ref);
                 let array_data = ArrayData {
                     in_ref: refmap.get_receiver(in_ref_id, builder),
