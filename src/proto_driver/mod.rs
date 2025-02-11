@@ -260,7 +260,13 @@ pub fn build_from_proto<'a>(
                     let shape_filename = base_path.join(format!("tensor_{}_mode_shape", op.tensor));
                     let shapes = read_inputs(&shape_filename);
                     let index: usize = op.mode.try_into().unwrap();
-                    builder.add_child(UncompressedCrdRdScan::new(f_data, shapes[index.clone()]));
+                    let ucrs = UncompressedCrdRdScan::new(f_data, shapes[index.clone()]);
+                    let context_id = crs.id().id;
+                    
+                    mem_context.add_seg_crd_pair(context_id, vec![], crd);
+                    crs.set_base_addr(mem_context.get_base_addr(context_id));
+
+                    builder.add_child(ucrs);
                 }
             }
             Op::FiberWrite(op) => {

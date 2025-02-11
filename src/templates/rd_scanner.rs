@@ -65,6 +65,9 @@ where
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
         (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
+        (ucr.rd_scan_data.addr).attach_sender(&ucr);
+        (ucr.rd_scan_data.resp).attach_sender(&ucr);
+        (ucr.rd_scan_data.resp_addr).attach_sender(&ucr);
 
         ucr
     }
