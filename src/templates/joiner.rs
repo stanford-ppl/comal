@@ -297,7 +297,7 @@ where
                 if let Some(token) = stop_token {
                     // dbg!(stkn.clone());
                     let min = min_val.clone();
-                    let mut dequeue_stop = false;
+                    let dequeue_stop = false;
                     (crd_peeks.iter().enumerate())
                         .into_iter()
                         .for_each(|(i, peek)| match peek {

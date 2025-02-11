@@ -122,6 +122,9 @@ pub fn run_mha<'a>(
         in_ref: qi_in_ref_receiver,
         out_ref: qi_out_ref_sender,
         out_crd: qi_out_crd_sender,
+        addr: todo!(),
+        resp: todo!(),
+        resp_addr: todo!(),
     };
     let qi_rdscanner = CompressedCrdRdScan::new(qi_data, q0_seg.clone(), q0_crd.clone());
     parent.add_child(qi_rdscanner);
@@ -130,6 +133,9 @@ pub fn run_mha<'a>(
         in_ref: ki_in_ref_receiver,
         out_ref: ki_out_ref_sender,
         out_crd: ki_out_crd_sender,
+        addr: todo!(),
+        resp: todo!(),
+        resp_addr: todo!(),
     };
     let ki_rdscanner = CompressedCrdRdScan::new(ki_data, k0_seg.clone(), k0_crd.clone());
     parent.add_child(ki_rdscanner);
@@ -138,6 +144,9 @@ pub fn run_mha<'a>(
         in_ref: vi_in_ref_receiver,
         out_ref: vi_out_ref_sender,
         out_crd: vi_out_crd_sender,
+        addr: todo!(),
+        resp: todo!(),
+        resp_addr: todo!(),
     };
     let vi_rdscanner = CompressedCrdRdScan::new(vi_data, v0_seg.clone(), v0_crd.clone());
     parent.add_child(vi_rdscanner);
@@ -258,6 +267,9 @@ pub fn run_mha<'a>(
             in_ref: intersecti2_out_ref2_receiver,
             out_ref: vj_out_ref_sender,
             out_crd: vj_out_crd_sender,
+            addr: todo!(),
+            resp: todo!(),
+            resp_addr: todo!(),
         };
         let vj_rdscanner = CompressedCrdRdScan::new(vj_data, v2_seg.clone(), v2_crd.clone());
         parent.add_child(vj_rdscanner);
@@ -268,6 +280,9 @@ pub fn run_mha<'a>(
             in_ref: intersecti3_out_ref2_receiver,
             out_ref: qj_out_ref_sender,
             out_crd: qj_out_crd_sender,
+            addr: todo!(),
+            resp: todo!(),
+            resp_addr: todo!(),
         };
         let qj_rdscanner = CompressedCrdRdScan::new(qj_data, q2_seg.clone(), q2_crd.clone());
         parent.add_child(qj_rdscanner);
@@ -278,6 +293,9 @@ pub fn run_mha<'a>(
             in_ref: intersecti3_out_ref1_receiver,
             out_ref: kj_out_ref_sender,
             out_crd: kj_out_crd_sender,
+            addr: todo!(),
+            resp: todo!(),
+            resp_addr: todo!(),
         };
         let kj_rdscanner = CompressedCrdRdScan::new(kj_data, k2_seg.clone(), k2_crd.clone());
         parent.add_child(kj_rdscanner);
@@ -332,6 +350,9 @@ pub fn run_mha<'a>(
             in_ref: bc_intersectj3_out_ref2_receiver,
             out_ref: qk_out_ref_sender,
             out_crd: qk_out_crd_sender,
+            addr: todo!(),
+            resp: todo!(),
+            resp_addr: todo!(),
         };
         let qk_rdscanner = CompressedCrdRdScan::new(qk_data, q1_seg.clone(), q1_crd.clone());
         parent.add_child(qk_rdscanner);
@@ -418,6 +439,9 @@ pub fn run_mha<'a>(
                 in_ref: chunk_kk_ref_receiver,
                 out_ref: kl_out_ref_sender,
                 out_crd: kl_out_crd_sender,
+                addr: todo!(),
+                resp: todo!(),
+                resp_addr: todo!(),
             };
             let kl_rdscanner = CompressedCrdRdScan::new(kl_data, k1_seg.clone(), k1_crd.clone());
             parent.add_child(kl_rdscanner);
@@ -428,6 +452,9 @@ pub fn run_mha<'a>(
                 in_ref: chunk_vk_ref_receiver,
                 out_ref: vl_out_ref_sender,
                 out_crd: vl_out_crd_sender,
+                addr: todo!(),
+                resp: todo!(),
+                resp_addr: todo!(),
             };
             let vl_rdscanner = CompressedCrdRdScan::new(vl_data, v1_seg.clone(), v1_crd.clone());
             parent.add_child(vl_rdscanner);
@@ -465,6 +492,9 @@ pub fn run_mha<'a>(
                 in_ref: intersectl_out_ref1_receiver,
                 out_ref: vm_out_ref_sender,
                 out_crd: vm_out_crd_sender,
+                addr: todo!(),
+                resp: todo!(),
+                resp_addr: todo!(),
             };
             let vm_rdscanner = CompressedCrdRdScan::new(vm_data, v3_seg.clone(), v3_crd.clone());
             parent.add_child(vm_rdscanner);
@@ -475,6 +505,9 @@ pub fn run_mha<'a>(
                 in_ref: intersectl_out_ref2_receiver,
                 out_ref: km_out_ref_sender,
                 out_crd: km_out_crd_sender,
+                addr: todo!(),
+                resp: todo!(),
+                resp_addr: todo!(),
             };
             let km_rdscanner = CompressedCrdRdScan::new(km_data, k3_seg.clone(), k3_crd.clone());
             parent.add_child(km_rdscanner);
@@ -515,6 +548,9 @@ pub fn run_mha<'a>(
                 in_ref: out_repeat_ql_receiver,
                 out_ref: qm_out_ref_sender,
                 out_crd: qm_out_crd_sender,
+                addr: todo!(),
+                resp: todo!(),
+                resp_addr: todo!(),
             };
             let qm_rdscanner = CompressedCrdRdScan::new(qm_data, q3_seg.clone(), q3_crd.clone());
             parent.add_child(qm_rdscanner);

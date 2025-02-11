@@ -1,18 +1,28 @@
 use crate::config::rd_scanner::CompressedCrdRdScanConfig;
+use dam::channel::adapters::{RecvAdapter, SendAdapter};
 use dam::structures::Identifiable;
 use dam::{
     context_tools::*,
     dam_macros::{context_macro, event_type},
     structures::Identifier,
 };
+pub use ramulator_wrapper;
 use serde::{Deserialize, Serialize};
 
+use super::access::MemoryData;
 use super::primitive::Token;
+use super::ramulator_context::{get_crd_addr, get_seg_addr};
 
 pub struct RdScanData<ValType: Clone, StopType: Clone> {
     pub in_ref: Receiver<Token<ValType, StopType>>,
     pub out_ref: Sender<Token<ValType, StopType>>,
     pub out_crd: Sender<Token<ValType, StopType>>,
+    pub addr: Sender<u64>,
+    pub resp: Receiver<MemoryData>,
+    pub resp_addr: Receiver<u64>,
+    // pub addr: Box<dyn SendAdapter<u64> + Send + Sync>,
+    // pub resp: Box<dyn RecvAdapter<ValType> + Send + Sync>,
+    // pub resp_addr: Box<dyn RecvAdapter<u64> + Send + Sync>,
 }
 
 #[context_macro]
@@ -26,6 +36,7 @@ pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     rd_scan_data: RdScanData<ValType, StopType>,
     seg_arr: Vec<ValType>,
     crd_arr: Vec<ValType>,
+    base_addr: Option<u64>,
 
     timing_config: CompressedCrdRdScanConfig,
 }
@@ -72,14 +83,25 @@ where
             rd_scan_data,
             seg_arr,
             crd_arr,
+            // By default we start with none and then set addr later
+            // TODO: Figure out cleaner way of doing this
+            // Need context id to create storage in ram context to retrieve the base addr
+            base_addr: None,
             timing_config: Default::default(),
             context_info: Default::default(),
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
         (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
+        (ucr.rd_scan_data.addr).attach_sender(&ucr);
+        (ucr.rd_scan_data.resp).attach_receiver(&ucr);
+        (ucr.rd_scan_data.resp_addr).attach_receiver(&ucr);
 
         ucr
+    }
+
+    pub fn set_base_addr(&mut self, addr: u64) {
+        self.base_addr = Some(addr);
     }
 
     pub fn set_timings(&mut self, new_config: CompressedCrdRdScanConfig) {
@@ -423,6 +445,7 @@ where
         + std::cmp::PartialOrd<ValType>,
     // usize: From<ValType>,
     ValType: TryInto<usize>,
+    ValType: From<u32>,
     <ValType as TryInto<usize>>::Error: std::fmt::Debug,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
     Token<u32, u32>: From<Token<ValType, StopType>>,
@@ -438,15 +461,67 @@ where
         self.time.incr_cycles(self.timing_config.startup_delay);
         let mut seg_initiated = false;
         let id = Identifier { id: 0 };
-        let curr_id = self.id();
-        let mut stkn_cnt = 0;
+        let _curr_id = self.id();
+        let mut stkn_cnt: i32 = 0;
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data.clone() {
                     Token::Val(val) => {
                         let idx: usize = val.try_into().unwrap();
-                        let mut curr_addr = self.seg_arr[idx].clone();
-                        let stop_addr = self.seg_arr[idx + 1].clone();
+
+                        let seg_addr_start =
+                            get_seg_addr(self.base_addr.expect("Base addr is None"), idx);
+                        let seg_addr_end =
+                            get_seg_addr(self.base_addr.expect("Base addr is None"), idx + 1);
+
+                        self.rd_scan_data
+                            .addr
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(self.time.tick() + 1, seg_addr_start),
+                            )
+                            .unwrap();
+
+                        let curr_addr_payload =
+                            self.rd_scan_data.resp.dequeue(&self.time).unwrap().data;
+                        let curr_resp_addr_payload = self
+                            .rd_scan_data
+                            .resp_addr
+                            .dequeue(&self.time)
+                            .unwrap()
+                            .data;
+
+                        let mut curr_addr: ValType = ValType::default();
+
+                        if let MemoryData::U32(curr_addr_int) = curr_addr_payload {
+                            curr_addr = curr_addr_int.into();
+                        }
+
+                        self.rd_scan_data
+                            .addr
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(self.time.tick() + 1, seg_addr_end),
+                            )
+                            .unwrap();
+
+                        let stop_addr_payload =
+                            self.rd_scan_data.resp.dequeue(&self.time).unwrap().data;
+                        let _stop_resp_addr_payload = self
+                            .rd_scan_data
+                            .resp_addr
+                            .dequeue(&self.time)
+                            .unwrap()
+                            .data;
+
+                        let mut stop_addr: ValType = ValType::default();
+
+                        if let MemoryData::U32(stop_addr_int) = stop_addr_payload {
+                            stop_addr = stop_addr_int.into();
+                        }
+
+                        // let mut curr_addr = self.seg_arr[idx].clone();
+                        // let stop_addr = self.seg_arr[idx + 1].clone();
                         self.time.incr_cycles(self.timing_config.initial_delay);
                         let mut initiated = true;
 
@@ -464,8 +539,40 @@ where
 
                         while curr_addr < stop_addr {
                             let mut start_rd_addr = 0;
+
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
-                            let coord = self.crd_arr[read_addr].clone();
+
+                            let crd_addr =
+                                get_crd_addr(self.base_addr.expect("Base addr is None"), read_addr, self.seg_arr.len());
+
+                            // Send memory request for coord
+                            self.rd_scan_data
+                                .addr
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(self.time.tick() + 1, crd_addr),
+                                )
+                                .unwrap();
+
+                            let coord_payload =
+                                self.rd_scan_data.resp.dequeue(&self.time).unwrap().data;
+
+                            let _coord_resp_addr_payload = self
+                                .rd_scan_data
+                                .resp_addr
+                                .dequeue(&self.time)
+                                .unwrap()
+                                .data;
+
+                            let mut coord: ValType = ValType::default();
+
+                            if let MemoryData::U32(coord_int) = coord_payload {
+                                coord = coord_int.into();
+                            }
+
+                            // Replaced below with memory request from ramulator
+                            // let coord = self.crd_arr[read_addr].clone();
+
                             let curr_time = self.time.tick();
                             if initiated {
                                 start_rd_addr = read_addr;
@@ -860,6 +967,9 @@ mod tests {
             in_ref: in_ref_receiver,
             out_ref: ref_sender,
             out_crd: crd_sender,
+            addr: todo!(),
+            resp: todo!(),
+            resp_addr: todo!(),
         };
         let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
@@ -912,6 +1022,9 @@ mod tests {
             in_ref: in_ref_receiver,
             out_ref: ref_sender,
             out_crd: crd_sender,
+            addr: todo!(),
+            resp: todo!(),
+            resp_addr: todo!(),
         };
         let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);

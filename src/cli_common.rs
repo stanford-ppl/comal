@@ -1,10 +1,7 @@
 use clap::Args;
-use dam::{
-    shim::RunMode,
-    simulation::{
+use dam::simulation::{
         InitializationOptions, InitializationOptionsBuilder, RunOptions, RunOptionsBuilder,
-    },
-};
+    };
 
 use crate::config::rd_scanner::CompressedCrdRdScanConfig;
 

@@ -1,10 +1,12 @@
 pub mod proto_headers;
 pub mod util;
 
+use crate::templates::access::MemoryData;
+use crate::templates::locate::IterateLocate;
+use crate::templates::ramulator_context::{Memory, RamulatorContext, ReadBundle};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
-use crate::templates::locate::IterateLocate;
 
 use self::proto_headers::tortilla::operation::*;
 use self::util::{get_repsig_id, AsStreamID};
@@ -24,12 +26,11 @@ use crate::cli_common::SamOptions;
 use crate::proto_driver::util::{get_crd_id, get_ref_id, get_val_id};
 use crate::templates::accumulator::{MaxReduce, Spacc2, Spacc2Data};
 use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
-use crate::templates::new_alu::{ALUAdd, ALUMul};
-use crate::templates::primitive::ALUMaxOp;
+use crate::templates::new_alu::ALUAdd;
 use crate::templates::scatter_gather::{Gather, Scatter};
 use crate::templates::unary::Unary;
+use dam::structures::Identifiable;
 
-use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::channel::adapters::{RecvAdapter, SendAdapter};
 use dam::context_tools::*;
 use dam::simulation::ProgramBuilder;
@@ -38,6 +39,7 @@ use dam::utility_contexts::{BroadcastContext, GeneratorContext};
 
 // use joiner::Payload;
 use proto_headers::tortilla::*;
+use ramulator_wrapper::RamulatorWrapper;
 
 type VT = f32;
 type CT = u32;
@@ -120,6 +122,10 @@ pub fn build_from_proto<'a>(
     valmap: &mut Channels<'a, Token<VT, ST>>,
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
+    let ramulator =
+        RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::HBM, "test.txt");
+    let mut mem_context = RamulatorContext::new(ramulator, (1u32, 1u32), Memory::new());
+
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
             Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
@@ -213,10 +219,23 @@ pub fn build_from_proto<'a>(
             Op::FiberLookup(op) => {
                 let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
 
+                let (raddr_snd, raddr_rcv) = builder.unbounded();
+                let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
+                let (resp_addr_snd, resp_addr_rcv) = builder.unbounded::<u64>();
+
+                mem_context.add_reader(ReadBundle {
+                    addr: Box::new(raddr_rcv),
+                    resp: Box::new(rdata_snd),
+                    resp_addr: Box::new(resp_addr_snd),
+                });
+
                 let f_data = RdScanData {
                     in_ref,
                     out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
                     out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
+                    addr: raddr_snd,
+                    resp: rdata_rcv,
+                    resp_addr: resp_addr_rcv,
                 };
                 if op.format == "compressed" {
                     // dbg!(op.tensor.clone());
@@ -227,7 +246,14 @@ pub fn build_from_proto<'a>(
                         base_path.join(format!("tensor_{}_mode_{}_crd", op.tensor, op.mode));
                     let seg = read_inputs(&seg_filename);
                     let crd = read_inputs(&crd_filename);
-                    let mut crs = CompressedCrdRdScan::new(f_data, seg, crd);
+                    let mut crs = CompressedCrdRdScan::new(f_data, seg.clone(), crd.clone());
+                    let context_id = crs.id().id;
+
+                    // Add seg coord pair to the memory context
+                    mem_context.add_seg_crd_pair(context_id, seg, crd);
+
+                    crs.set_base_addr(mem_context.get_base_addr(context_id));
+
                     crs.set_timings(sam_options.compressed_read_config);
                     builder.add_child(crs);
                 } else {
@@ -545,7 +571,10 @@ pub fn build_from_proto<'a>(
                         in_crd2: crdmap.get_receiver(in_crd2, builder),
                         out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                         out_crd0: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
-                        out_crd1: crdmap.get_sender(get_crd_id(&Some(op.output_outer_crds[0].clone())), builder),
+                        out_crd1: crdmap.get_sender(
+                            get_crd_id(&Some(op.output_outer_crds[0].clone())),
+                            builder,
+                        ),
                     };
                     builder.add_child(Spacc2::new(spacc2_data));
                 }

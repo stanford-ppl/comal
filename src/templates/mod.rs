@@ -17,3 +17,7 @@ pub mod utils;
 pub mod val_dropper;
 pub mod wr_scanner;
 pub mod locate;
+pub mod ramulator_context;
+pub mod access;
+pub mod address;
+pub mod request_manager;

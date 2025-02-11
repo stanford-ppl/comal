@@ -1,10 +1,9 @@
 use dam::structures::Identifiable;
 use dam::{
     context_tools::*,
-    dam_macros::{context_macro, event_type},
+    dam_macros::context_macro,
     structures::Identifier,
 };
-use serde::{Deserialize, Serialize};
 
 use super::primitive::Token;
 

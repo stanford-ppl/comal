@@ -554,7 +554,7 @@ where
         let id = Identifier { id: 0 };
         let id1 = Identifier { id: 0 };
         let mut icrd_stkn_pop_cnt = 0;
-        let mut ocrd_val_pop_cnt = 0;
+        let ocrd_val_pop_cnt = 0;
         loop {
             let in_crd2 = self.spacc2_data.in_crd2.peek_next(&self.time).unwrap();
             let in_crd1 = self.spacc2_data.in_crd1.peek_next(&self.time).unwrap();
