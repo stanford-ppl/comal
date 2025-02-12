@@ -1,4 +1,6 @@
 use dam::structures::Identifiable;
+use crate::templates::ramulator_context::get_val_addr;
+use crate::templates::access::MemoryData;
 use dam::{
     context_tools::*,
     dam_macros::{context_macro, event_type},
@@ -11,12 +13,16 @@ use super::primitive::Token;
 pub struct ArrayData<RefType: Clone, ValType: Clone, StopType: Clone> {
     pub in_ref: Receiver<Token<RefType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
+    pub addr: Sender<u64>,
+    pub resp: Receiver<MemoryData>,
+    pub resp_addr: Receiver<u64>,
 }
 
 #[context_macro]
 pub struct Array<RefType: Clone, ValType: Clone, StopType: Clone> {
     array_data: ArrayData<RefType, ValType, StopType>,
     val_arr: Vec<ValType>,
+    base_addr: Option<u64>,
 }
 
 impl<RefType: DAMType, ValType: DAMType, StopType: DAMType> Array<RefType, ValType, StopType>
@@ -27,12 +33,20 @@ where
         let arr = Array {
             array_data,
             val_arr,
+            base_addr: None,
             context_info: Default::default(),
         };
         (arr.array_data.in_ref).attach_receiver(&arr);
         (arr.array_data.out_val).attach_sender(&arr);
+        (arr.array_data.addr).attach_sender(&arr);
+        (arr.array_data.resp).attach_receiver(&arr);
+        (arr.array_data.resp_addr).attach_receiver(&arr);
 
         arr
+    }
+
+    pub fn set_base_addr(&mut self, addr: u64) {
+        self.base_addr = Some(addr);
     }
 }
 
@@ -51,6 +65,7 @@ where
     RefType: TryInto<usize>,
     <RefType as TryInto<usize>>::Error: std::fmt::Debug,
     ValType: DAMType,
+    ValType: From<f32>,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
     Token<u32, u32>: From<Token<RefType, StopType>>,
     Token<f32, u32>: From<Token<ValType, StopType>>,
@@ -75,8 +90,22 @@ where
                                 .out_val
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
+
+                            let val_addr = get_val_addr(self.base_addr.expect("Base addr is None"), idx);
+                            self.array_data.addr.enqueue(&self.time, ChannelElement::new(self.time.tick() + 1, val_addr),).unwrap();
+
+                            let val_payload = self.array_data.resp.dequeue(&self.time).unwrap().data;
+
+                            let _resp_addr_payload = self.array_data.resp_addr.dequeue(&self.time).unwrap().data;
+
+                            let mut val: ValType = ValType::default();
+
+                            if let MemoryData::F32(val_float) = val_payload {
+                                val = val_float.into();
+                            }
+
                             let out_val =
-                                Token::Val::<ValType, StopType>(self.val_arr[idx].clone());
+                                Token::Val::<ValType, StopType>(val);
                             let _ = dam::logging::log_event(&ArrayLog {
                                 in_ref: data.clone().into(),
                                 val: out_val.clone().into(),

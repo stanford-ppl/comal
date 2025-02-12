@@ -123,7 +123,7 @@ pub fn build_from_proto<'a>(
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
     let ramulator =
-        RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::HBM, "test.txt");
+        RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::DDR4, "test.txt");
     let mut mem_context = RamulatorContext::new(ramulator, (1u32, 1u32), Memory::new());
 
     for operation in comal_graph.graph.unwrap().operators {
@@ -261,10 +261,11 @@ pub fn build_from_proto<'a>(
                     let shapes = read_inputs(&shape_filename);
                     let index: usize = op.mode.try_into().unwrap();
                     let ucrs = UncompressedCrdRdScan::new(f_data, shapes[index.clone()]);
-                    let context_id = crs.id().id;
+                    let context_id = ucrs.id().id;
                     
+                    let crd = (0u32..shapes[index.clone()]).collect();
                     mem_context.add_seg_crd_pair(context_id, vec![], crd);
-                    crs.set_base_addr(mem_context.get_base_addr(context_id));
+                    // ucrs.set_base_addr(mem_context.get_base_addr(context_id));
 
                     builder.add_child(ucrs);
                 }
@@ -538,14 +539,34 @@ pub fn build_from_proto<'a>(
                 builder.add_child(locate);
             }
             Op::Array(op) => {
+                let (raddr_snd, raddr_rcv) = builder.unbounded::<u64>();
+                let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
+                let (resp_addr_snd, resp_addr_rcv) = builder.unbounded::<u64>();
+
+                mem_context.add_reader(ReadBundle {
+                    addr: Box::new(raddr_rcv),
+                    resp: Box::new(rdata_snd),
+                    resp_addr: Box::new(resp_addr_snd),
+                });
+
                 let in_ref_id = get_ref_id(&op.input_ref);
                 let array_data = ArrayData {
                     in_ref: refmap.get_receiver(in_ref_id, builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    addr: raddr_snd,
+                    resp: rdata_rcv,
+                    resp_addr: resp_addr_rcv,
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
                 let vals = read_inputs(&val_filename);
-                builder.add_child(Array::new(array_data, vals));
+                let mut arr = Array::new(array_data, vals.clone());
+
+                let context_id = arr.id().id;
+
+                mem_context.add_value_array(context_id, vals);
+                arr.set_base_addr(mem_context.get_base_addr(context_id));
+
+                builder.add_child(arr);
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
@@ -675,6 +696,7 @@ pub fn build_from_proto<'a>(
             _ => todo!(),
         }
     }
+    builder.add_child(mem_context);
 }
 
 pub fn parse_proto<'a>(

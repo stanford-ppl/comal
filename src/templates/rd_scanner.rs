@@ -66,8 +66,8 @@ where
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
         (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
         (ucr.rd_scan_data.addr).attach_sender(&ucr);
-        (ucr.rd_scan_data.resp).attach_sender(&ucr);
-        (ucr.rd_scan_data.resp_addr).attach_sender(&ucr);
+        (ucr.rd_scan_data.resp).attach_receiver(&ucr);
+        (ucr.rd_scan_data.resp_addr).attach_receiver(&ucr);
 
         ucr
     }
@@ -477,6 +477,9 @@ where
                         let seg_addr_end =
                             get_seg_addr(self.base_addr.expect("Base addr is None"), idx + 1);
 
+                        // std::println!("Seg start: {:?}", seg_addr_start.clone());
+                        // std::println!("Seg End: {:?}", seg_addr_end.clone());
+
                         self.rd_scan_data
                             .addr
                             .enqueue(
@@ -572,6 +575,8 @@ where
                             if let MemoryData::U32(coord_int) = coord_payload {
                                 coord = coord_int.into();
                             }
+
+                            // std::println!("Coord: {:?}", coord.clone());
 
                             // Replaced below with memory request from ramulator
                             // let coord = self.crd_arr[read_addr].clone();

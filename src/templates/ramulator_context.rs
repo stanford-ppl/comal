@@ -85,11 +85,11 @@ impl Context for RamulatorContext<'_> {
         let mut request_manager = RequestManager::default();
 
         while self.continue_running(&request_manager) {
-            std::print!("Inside");
+            // std::print!("Inside");
             while self.ramulator.ret_available() {
                 let resp_loc = ByteAddress(self.ramulator.pop());
 
-                std::println!("{:?}", resp_loc);
+                // std::println!("{:?}", resp_loc);
 
                 let read = request_manager.register_recv(resp_loc);
 
@@ -300,7 +300,7 @@ impl<'a> RamulatorContext<'a> {
         }
 
         // check all of the writers
-        let writers_done = self
+        let mut writers_done = self
             .writers
             .iter()
             .all(
@@ -309,6 +309,10 @@ impl<'a> RamulatorContext<'a> {
                     _ => false,
                 },
             );
+        
+        if self.writers.is_empty() {
+            writers_done = true;
+        }
 
         if !writers_done {
             return true;
@@ -328,7 +332,7 @@ impl<'a> RamulatorContext<'a> {
         );
 
         if !readers_done {
-            println!("Readers Nonempty");
+            // println!("Readers Nonempty");
             return true;
         }
 
@@ -386,6 +390,10 @@ pub fn get_seg_addr(base_addr: u64, seg_idx: usize) -> u64 {
 
 pub fn get_crd_addr(base_addr: u64, crd_idx: usize, seg_offset: usize) -> u64 {
     base_addr + (seg_offset as u64) * ADDR_OFFSET + (crd_idx as u64) * ADDR_OFFSET
+}
+
+pub fn get_val_addr(base_addr: u64, val_idx: usize) -> u64 {
+    base_addr + (val_idx as u64) * ADDR_OFFSET
 }
 
 impl Memory {
