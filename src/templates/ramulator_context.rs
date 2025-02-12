@@ -223,26 +223,93 @@ impl<'a> RamulatorContext<'a> {
         }
     }
 
+    fn sort_readers_by_time(&mut self) {
+        self.readers.sort_by(|a, b| {
+            let time_a = match a.addr.peek() {
+                PeekResult::Something(ChannelElement { time, .. }) => Some(time),
+                _ => None,
+            };
+            let time_b = match b.addr.peek() {
+                PeekResult::Something(ChannelElement { time, .. }) => Some(time),
+                _ => None,
+            };
+
+            match (time_a, time_b) {
+                (Some(t1), Some(t2)) => t1.cmp(&t2), // Compare times if both are present
+                (Some(_), None) => std::cmp::Ordering::Less, // `a` comes before `b`
+                (None, Some(_)) => std::cmp::Ordering::Greater, // `b` comes before `a`
+                (None, None) => std::cmp::Ordering::Equal, // Both are empty or invalid
+            }
+        });
+    }
+
     fn update_read_requests(&mut self, request_manager: &mut RequestManager) {
+        // Sorting is really slow
+        // self.sort_readers_by_time();
+
         let cur_time = self.time.tick();
         let mut accesses: Vec<Access> = vec![];
-        for (ind, reader) in self.readers.iter().enumerate() {
-            match reader.addr.peek() {
-                PeekResult::Something(ChannelElement { time, data: addr }) => {
+
+        // Iterate over readers list and service the earliest request based on time address was sent
+        loop {
+            let mut earliest_time = None;
+            let mut earliest_index = None;
+
+            // Select the earliest arriving request
+            for (ind, reader) in self.readers.iter().enumerate() {
+                if let PeekResult::Something(ChannelElement { time, .. }) = reader.addr.peek() {
                     if time <= cur_time {
-                        {
-                            // Pop the peeked values
-                            reader.addr.dequeue(&self.time).unwrap();
-                            // reader.size.dequeue(&self.time).unwrap();
-                            let access = SimpleRead::new(ByteAddress(addr), ind).into();
-                            accesses.push(access);
-                            // self.enqueue_or_backlog(access, request_manager, backlog);
+                        match earliest_time {
+                            Some(t) if time < t => {
+                                earliest_time = Some(time);
+                                earliest_index = Some(ind);
+                            }
+                            None => {
+                                earliest_time = Some(time);
+                                earliest_index = Some(ind);
+                            }
+                            _ => {}
                         }
                     }
                 }
-                _ => {}
+            }
+
+            // If no valid request is found, break the loop
+            if earliest_index.is_none() {
+                break;
+            }
+
+            // Process the reader with the earliest request
+            let ind = earliest_index.unwrap();
+            let reader = &self.readers[ind];
+
+            if let PeekResult::Something(ChannelElement { time, data: addr }) = reader.addr.peek() {
+                if time <= cur_time {
+                    // Pop the peeked value and create a new access request
+                    reader.addr.dequeue(&self.time).unwrap();
+                    let access = SimpleRead::new(ByteAddress(addr), ind).into();
+                    accesses.push(access);
+                }
             }
         }
+
+        // for (ind, reader) in self.readers.iter().enumerate() {
+        //     match reader.addr.peek() {
+        //         PeekResult::Something(ChannelElement { time, data: addr }) => {
+        //             if time <= cur_time {
+        //                 {
+        //                     // Pop the peeked values
+        //                     reader.addr.dequeue(&self.time).unwrap();
+        //                     // reader.size.dequeue(&self.time).unwrap();
+        //                     let access = SimpleRead::new(ByteAddress(addr), ind).into();
+        //                     accesses.push(access);
+        //                     // self.enqueue_or_backlog(access, request_manager, backlog);
+        //                 }
+        //             }
+        //         }
+        //         _ => {}
+        //     }
+        // }
         for access in accesses {
             self.enqueue_payload(access, request_manager)
         }
@@ -300,16 +367,16 @@ impl<'a> RamulatorContext<'a> {
         }
 
         // check all of the writers
-        let mut writers_done = self
-            .writers
-            .iter()
-            .all(
-                |WriteBundle { data, addr, ack: _ }| match (data.peek(), addr.peek()) {
-                    (PeekResult::Closed, _) | (_, PeekResult::Closed) => true,
-                    _ => false,
-                },
-            );
-        
+        let mut writers_done =
+            self.writers
+                .iter()
+                .all(
+                    |WriteBundle { data, addr, ack: _ }| match (data.peek(), addr.peek()) {
+                        (PeekResult::Closed, _) | (_, PeekResult::Closed) => true,
+                        _ => false,
+                    },
+                );
+
         if self.writers.is_empty() {
             writers_done = true;
         }
@@ -381,6 +448,10 @@ impl<'a> RamulatorContext<'a> {
             .get(&context_id)
             .unwrap()
             .clone()
+    }
+
+    pub fn set_next_addr(&mut self) -> u64 {
+        self.datastore.current_base
     }
 }
 

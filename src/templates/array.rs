@@ -195,24 +195,27 @@ mod tests {
             token_vec![u32; u32; "N", 0, 1, 2, "S0", "N", "N", "S0", 2, 3, 4, "S0", "N", "N", "S1", "D"].into_iter()
         };
         let out_val = || {
-            token_vec!(u32; u32; 0, 1, 2, 3, "S0", 0, 0, "S0", 3, 4, 5, "S0", 0, 0, "S1", "D")
+            token_vec!(f32; u32; 0.0, 1.0, 2.0, 3.0, "S0", 0.0, 0.0, "S0", 3.0, 4.0, 5.0, "S0", 0.0, 0.0, "S1", "D")
                 .into_iter()
         };
-        let val_arr = vec![1u32, 2, 3, 4, 5];
+        let val_arr = vec![1f32, 2.0, 3.0, 4.0, 5.0];
         array_test(in_ref, out_val, val_arr);
     }
 
-    fn array_test<IRT, ORT>(in_ref: fn() -> IRT, out_val: fn() -> ORT, val_arr: Vec<u32>)
+    fn array_test<IRT, ORT>(in_ref: fn() -> IRT, out_val: fn() -> ORT, val_arr: Vec<f32>)
     where
         IRT: Iterator<Item = Token<u32, u32>> + 'static,
-        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<f32, u32>> + 'static,
     {
         let mut parent = ProgramBuilder::default();
         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
-        let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<u32, u32>>();
-        let data = ArrayData::<u32, u32, u32> {
+        let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<f32, u32>>();
+        let data = ArrayData::<u32, f32, u32> {
             in_ref: in_ref_receiver,
             out_val: out_val_sender,
+            addr: todo!(),
+            resp: todo!(),
+            resp_addr: todo!(),
         };
         let arr = Array::new(data, val_arr);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);

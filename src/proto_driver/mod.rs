@@ -3,7 +3,7 @@ pub mod util;
 
 use crate::templates::access::MemoryData;
 use crate::templates::locate::IterateLocate;
-use crate::templates::ramulator_context::{Memory, RamulatorContext, ReadBundle};
+use crate::templates::ramulator_context::{Memory, RamulatorContext, ReadBundle, WriteBundle};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -50,7 +50,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 1024000;
+const DEFAULT_CHAN_SIZE: usize = 10240000;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
@@ -262,7 +262,7 @@ pub fn build_from_proto<'a>(
                     let index: usize = op.mode.try_into().unwrap();
                     let ucrs = UncompressedCrdRdScan::new(f_data, shapes[index.clone()]);
                     let context_id = ucrs.id().id;
-                    
+
                     let crd = (0u32..shapes[index.clone()]).collect();
                     mem_context.add_seg_crd_pair(context_id, vec![], crd);
                     // ucrs.set_base_addr(mem_context.get_base_addr(context_id));
@@ -271,9 +271,25 @@ pub fn build_from_proto<'a>(
                 }
             }
             Op::FiberWrite(op) => {
+                let (raddr_snd, raddr_rcv) = builder.unbounded::<u64>();
+                let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
+                let (ack_snd, ack_rcv) = builder.unbounded::<bool>();
+
+                mem_context.add_writer(WriteBundle {
+                    data: Box::new(rdata_rcv),
+                    addr: Box::new(raddr_rcv),
+                    ack: Box::new(ack_snd),
+                });
+
                 let in_crd_id = get_crd_id(&op.input_crd);
                 let receiver = crdmap.get_receiver(in_crd_id, builder);
-                builder.add_child(CompressedWrScan::new(receiver));
+
+                let mut fw = CompressedWrScan::new(receiver, rdata_snd, raddr_snd, ack_rcv);
+                // let context_id = fw.id().id;
+
+                fw.set_base_addr(mem_context.set_next_addr());
+
+                builder.add_child(fw);
             }
             Op::Repeat(op) => {
                 // TODO: Need to check if input_rep_crd exists for backwards compatibility
@@ -607,9 +623,25 @@ pub fn build_from_proto<'a>(
                 }
             }
             Op::ValWrite(op) => {
+                let (raddr_snd, raddr_rcv) = builder.unbounded::<u64>();
+                let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
+                let (ack_snd, ack_rcv) = builder.unbounded::<bool>();
+
+                mem_context.add_writer(WriteBundle {
+                    data: Box::new(rdata_rcv),
+                    addr: Box::new(raddr_rcv),
+                    ack: Box::new(ack_snd),
+                });
                 let in_val_id = get_val_id(&op.input_val);
                 let val_receiver = valmap.get_receiver(in_val_id, builder);
-                builder.add_child(ValsWrScan::new(val_receiver));
+
+                let mut vw = ValsWrScan::new(val_receiver, rdata_snd, raddr_snd, ack_rcv);
+                // let context_id = vw.id().id;
+
+                // vw.set_base_addr(mem_context.get_base_addr(context_id));
+                vw.set_base_addr(mem_context.set_next_addr());
+
+                builder.add_child(vw);
             }
             Op::CoordMask(_) => unimplemented!("SAMML can't output coord mask op yet"),
             operation::Op::Func(_) => todo!(),
