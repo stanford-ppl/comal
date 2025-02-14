@@ -50,7 +50,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 10240000;
+const DEFAULT_CHAN_SIZE: usize = 1024000;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
@@ -123,7 +123,7 @@ pub fn build_from_proto<'a>(
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
     let ramulator =
-        RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::DDR4, "test.txt");
+        RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::HBM, "test.txt");
     let mut mem_context = RamulatorContext::new(ramulator, (1u32, 1u32), Memory::new());
 
     for operation in comal_graph.graph.unwrap().operators {

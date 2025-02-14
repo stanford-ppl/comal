@@ -82,6 +82,7 @@ pub struct RamulatorContext<'a> {
 impl Context for RamulatorContext<'_> {
     fn run(&mut self) {
         // Might need a backlog similar to dam-ramulator?
+        // let mut request_manager = RequestManager::default();
         let mut request_manager = RequestManager::default();
 
         while self.continue_running(&request_manager) {
@@ -217,36 +218,12 @@ impl<'a> RamulatorContext<'a> {
             }
         }
 
-        // TODO: Might not be needed
         for access in accesses {
             self.enqueue_payload(access, request_manager)
         }
     }
 
-    fn sort_readers_by_time(&mut self) {
-        self.readers.sort_by(|a, b| {
-            let time_a = match a.addr.peek() {
-                PeekResult::Something(ChannelElement { time, .. }) => Some(time),
-                _ => None,
-            };
-            let time_b = match b.addr.peek() {
-                PeekResult::Something(ChannelElement { time, .. }) => Some(time),
-                _ => None,
-            };
-
-            match (time_a, time_b) {
-                (Some(t1), Some(t2)) => t1.cmp(&t2), // Compare times if both are present
-                (Some(_), None) => std::cmp::Ordering::Less, // `a` comes before `b`
-                (None, Some(_)) => std::cmp::Ordering::Greater, // `b` comes before `a`
-                (None, None) => std::cmp::Ordering::Equal, // Both are empty or invalid
-            }
-        });
-    }
-
     fn update_read_requests(&mut self, request_manager: &mut RequestManager) {
-        // Sorting is really slow
-        // self.sort_readers_by_time();
-
         let cur_time = self.time.tick();
         let mut accesses: Vec<Access> = vec![];
 
