@@ -4,6 +4,7 @@ pub mod util;
 use crate::templates::access::MemoryData;
 use crate::templates::locate::IterateLocate;
 use crate::templates::ramulator_context::{Memory, RamulatorContext, ReadBundle, WriteBundle};
+use crate::templates::rd_scanner::UncompressedRdScanData;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -124,6 +125,8 @@ pub fn build_from_proto<'a>(
 ) {
     let ramulator =
         RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::HBM, "test.txt");
+    // let ramulator =
+    //     RamulatorWrapper::new(ramulator_wrapper::PresetConfigs::HBM, "test.txt");
     let mut mem_context = RamulatorContext::new(ramulator, (1u32, 1u32), Memory::new());
 
     for operation in comal_graph.graph.unwrap().operators {
@@ -219,27 +222,28 @@ pub fn build_from_proto<'a>(
             Op::FiberLookup(op) => {
                 let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
 
-                let (raddr_snd, raddr_rcv) = builder.unbounded();
-                let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
-                let (resp_addr_snd, resp_addr_rcv) = builder.unbounded::<u64>();
-
-                mem_context.add_reader(ReadBundle {
-                    addr: Box::new(raddr_rcv),
-                    resp: Box::new(rdata_snd),
-                    resp_addr: Box::new(resp_addr_snd),
-                });
-
-                let f_data = RdScanData {
-                    in_ref,
-                    out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
-                    out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
-                    addr: raddr_snd,
-                    resp: rdata_rcv,
-                    resp_addr: resp_addr_rcv,
-                };
                 if op.format == "compressed" {
                     // dbg!(op.tensor.clone());
                     // dbg!(op.mode);
+                    let (raddr_snd, raddr_rcv) = builder.unbounded();
+                    let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
+                    let (resp_addr_snd, resp_addr_rcv) = builder.unbounded::<u64>();
+
+                    let f_data = RdScanData {
+                        in_ref,
+                        out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
+                        out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
+                        addr: raddr_snd,
+                        resp: rdata_rcv,
+                        resp_addr: resp_addr_rcv,
+                    };
+
+                    mem_context.add_reader(ReadBundle {
+                        addr: Box::new(raddr_rcv),
+                        resp: Box::new(rdata_snd),
+                        resp_addr: Box::new(resp_addr_snd),
+                    });
+
                     let seg_filename =
                         base_path.join(format!("tensor_{}_mode_{}_seg", op.tensor, op.mode));
                     let crd_filename =
@@ -260,6 +264,15 @@ pub fn build_from_proto<'a>(
                     let shape_filename = base_path.join(format!("tensor_{}_mode_shape", op.tensor));
                     let shapes = read_inputs(&shape_filename);
                     let index: usize = op.mode.try_into().unwrap();
+
+                    let f_data = UncompressedRdScanData {
+                        in_ref,
+                        out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
+                        out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
+                    };
+
+                    // println!("Constructing uncompressed");
+
                     let ucrs = UncompressedCrdRdScan::new(f_data, shapes[index.clone()]);
                     let context_id = ucrs.id().id;
 
