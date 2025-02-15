@@ -122,9 +122,19 @@ pub fn build_from_proto<'a>(
     valmap: &mut Channels<'a, Token<VT, ST>>,
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
-    let ramulator =
-        RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::HBM, "test.txt");
-    let mut mem_context = RamulatorContext::new(ramulator, (1u32, 1u32), Memory::new());
+    let num_blades = 1;
+    let mut mem_contexts = vec![];
+
+    for i in 1..num_blades {
+        let ramulator =
+            RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::HBM, &format!("test{}.txt", i).to_string());
+        let mut mem_context = RamulatorContext::new(ramulator, (1u32, 1u32), Memory::new());
+        mem_contexts.push(mem_context);
+    }
+
+    let mut curr_mem_id = 0;
+
+    // let 
 
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
@@ -223,7 +233,7 @@ pub fn build_from_proto<'a>(
                 let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
                 let (resp_addr_snd, resp_addr_rcv) = builder.unbounded::<u64>();
 
-                mem_context.add_reader(ReadBundle {
+                mem_contexts[curr_mem_id].add_reader(ReadBundle {
                     addr: Box::new(raddr_rcv),
                     resp: Box::new(rdata_snd),
                     resp_addr: Box::new(resp_addr_snd),
@@ -250,12 +260,13 @@ pub fn build_from_proto<'a>(
                     let context_id = crs.id().id;
 
                     // Add seg coord pair to the memory context
-                    mem_context.add_seg_crd_pair(context_id, seg, crd);
+                    mem_contexts[curr_mem_id].add_seg_crd_pair(context_id, seg, crd);
 
-                    crs.set_base_addr(mem_context.get_base_addr(context_id));
+                    crs.set_base_addr(mem_contexts[curr_mem_id].get_base_addr(context_id));
 
                     crs.set_timings(sam_options.compressed_read_config);
                     builder.add_child(crs);
+                    curr_mem_id = (curr_mem_id + 1) % num_blades;
                 } else {
                     let shape_filename = base_path.join(format!("tensor_{}_mode_shape", op.tensor));
                     let shapes = read_inputs(&shape_filename);
@@ -264,10 +275,11 @@ pub fn build_from_proto<'a>(
                     let context_id = ucrs.id().id;
 
                     let crd = (0u32..shapes[index.clone()]).collect();
-                    mem_context.add_seg_crd_pair(context_id, vec![], crd);
+                    mem_contexts[curr_mem_id].add_seg_crd_pair(context_id, vec![], crd);
                     // ucrs.set_base_addr(mem_context.get_base_addr(context_id));
 
                     builder.add_child(ucrs);
+                    curr_mem_id = (curr_mem_id + 1) % num_blades;
                 }
             }
             Op::FiberWrite(op) => {
@@ -275,7 +287,7 @@ pub fn build_from_proto<'a>(
                 let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
                 let (ack_snd, ack_rcv) = builder.unbounded::<bool>();
 
-                mem_context.add_writer(WriteBundle {
+                mem_contexts[curr_mem_id].add_writer(WriteBundle {
                     data: Box::new(rdata_rcv),
                     addr: Box::new(raddr_rcv),
                     ack: Box::new(ack_snd),
@@ -287,7 +299,8 @@ pub fn build_from_proto<'a>(
                 let mut fw = CompressedWrScan::new(receiver, rdata_snd, raddr_snd, ack_rcv);
                 // let context_id = fw.id().id;
 
-                fw.set_base_addr(mem_context.set_next_addr());
+                fw.set_base_addr(mem_contexts[curr_mem_id].set_next_addr());
+                curr_mem_id = (curr_mem_id + 1) % num_blades;
 
                 builder.add_child(fw);
             }
@@ -559,7 +572,7 @@ pub fn build_from_proto<'a>(
                 let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
                 let (resp_addr_snd, resp_addr_rcv) = builder.unbounded::<u64>();
 
-                mem_context.add_reader(ReadBundle {
+                mem_contexts[curr_mem_id].add_reader(ReadBundle {
                     addr: Box::new(raddr_rcv),
                     resp: Box::new(rdata_snd),
                     resp_addr: Box::new(resp_addr_snd),
@@ -579,8 +592,10 @@ pub fn build_from_proto<'a>(
 
                 let context_id = arr.id().id;
 
-                mem_context.add_value_array(context_id, vals);
-                arr.set_base_addr(mem_context.get_base_addr(context_id));
+                mem_contexts[curr_mem_id].add_value_array(context_id, vals);
+                arr.set_base_addr(mem_contexts[curr_mem_id].get_base_addr(context_id));
+
+                curr_mem_id = (curr_mem_id + 1) % num_blades;
 
                 builder.add_child(arr);
             }
@@ -627,7 +642,7 @@ pub fn build_from_proto<'a>(
                 let (rdata_snd, rdata_rcv) = builder.unbounded::<MemoryData>();
                 let (ack_snd, ack_rcv) = builder.unbounded::<bool>();
 
-                mem_context.add_writer(WriteBundle {
+                mem_contexts[curr_mem_id].add_writer(WriteBundle {
                     data: Box::new(rdata_rcv),
                     addr: Box::new(raddr_rcv),
                     ack: Box::new(ack_snd),
@@ -639,7 +654,8 @@ pub fn build_from_proto<'a>(
                 // let context_id = vw.id().id;
 
                 // vw.set_base_addr(mem_context.get_base_addr(context_id));
-                vw.set_base_addr(mem_context.set_next_addr());
+                vw.set_base_addr(mem_contexts[curr_mem_id].set_next_addr());
+                curr_mem_id = (curr_mem_id + 1) % num_blades;
 
                 builder.add_child(vw);
             }
@@ -728,7 +744,8 @@ pub fn build_from_proto<'a>(
             _ => todo!(),
         }
     }
-    builder.add_child(mem_context);
+    // builder.add_child(mem_context);
+    mem_contexts.into_iter().for_each(|ram| builder.add_child(ram));
 }
 
 pub fn parse_proto<'a>(
