@@ -82,14 +82,6 @@ where
                     match data.clone() {
                         Token::Val(val) => {
                             let idx: usize = val.try_into().unwrap();
-                            let channel_elem = ChannelElement::new(
-                                self.time.tick() + 1,
-                                Token::Val(self.val_arr[idx].clone()),
-                            );
-                            self.array_data
-                                .out_val
-                                .enqueue(&self.time, channel_elem)
-                                .unwrap();
 
                             let val_addr = get_val_addr(self.base_addr.expect("Base addr is None"), idx);
                             self.array_data.addr.enqueue(&self.time, ChannelElement::new(self.time.tick() + 1, val_addr),).unwrap();
@@ -104,8 +96,20 @@ where
                                 val = val_float.into();
                             }
 
+                            // println!("{:?}", val);
+
                             let out_val =
                                 Token::Val::<ValType, StopType>(val);
+
+                            let channel_elem = ChannelElement::new(
+                                self.time.tick() + 1,
+                                out_val.clone(),
+                            );
+                            self.array_data
+                                .out_val
+                                .enqueue(&self.time, channel_elem)
+                                .unwrap();
+
                             let _ = dam::logging::log_event(&ArrayLog {
                                 in_ref: data.clone().into(),
                                 val: out_val.clone().into(),
@@ -162,6 +166,7 @@ where
                                 in_ref: data.clone().into(),
                                 val: out_val.clone().into(),
                             });
+                            println!("Done arrayval");
                             if id == curr_id {
                                 println!("ID: {:?}, Val: {:?}", id, out_val.clone());
                             }

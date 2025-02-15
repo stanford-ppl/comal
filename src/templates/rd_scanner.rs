@@ -6,7 +6,6 @@ use dam::{
     dam_macros::{context_macro, event_type},
     structures::Identifier,
 };
-pub use ramulator_wrapper;
 use serde::{Deserialize, Serialize};
 
 use super::access::MemoryData;
@@ -25,9 +24,21 @@ pub struct RdScanData<ValType: Clone, StopType: Clone> {
     // pub resp_addr: Box<dyn RecvAdapter<u64> + Send + Sync>,
 }
 
+pub struct UncompressedRdScanData<ValType: Clone, StopType: Clone> {
+    pub in_ref: Receiver<Token<ValType, StopType>>,
+    pub out_ref: Sender<Token<ValType, StopType>>,
+    pub out_crd: Sender<Token<ValType, StopType>>,
+    // pub addr: Sender<u64>,
+    // pub resp: Receiver<MemoryData>,
+    // pub resp_addr: Receiver<u64>,
+    // pub addr: Box<dyn SendAdapter<u64> + Send + Sync>,
+    // pub resp: Box<dyn RecvAdapter<ValType> + Send + Sync>,
+    // pub resp_addr: Box<dyn RecvAdapter<u64> + Send + Sync>,
+}
+
 #[context_macro]
 pub struct UncompressedCrdRdScan<ValType: Clone, StopType: Clone> {
-    rd_scan_data: RdScanData<ValType, StopType>,
+    rd_scan_data: UncompressedRdScanData<ValType, StopType>,
     meta_dim: ValType,
 }
 
@@ -54,7 +65,7 @@ where
     UncompressedCrdRdScan<ValType, StopType>: Context,
 {
     pub fn new(
-        rd_scan_data: RdScanData<ValType, StopType>,
+        rd_scan_data: UncompressedRdScanData<ValType, StopType>,
         meta_dim: ValType,
     ) -> UncompressedCrdRdScan<ValType, StopType> {
         let ucr = UncompressedCrdRdScan {
@@ -65,9 +76,9 @@ where
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
         (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
-        (ucr.rd_scan_data.addr).attach_sender(&ucr);
-        (ucr.rd_scan_data.resp).attach_receiver(&ucr);
-        (ucr.rd_scan_data.resp_addr).attach_receiver(&ucr);
+        // (ucr.rd_scan_data.addr).attach_sender(&ucr);
+        // (ucr.rd_scan_data.resp).attach_receiver(&ucr);
+        // (ucr.rd_scan_data.resp_addr).attach_receiver(&ucr);
 
         ucr
     }
@@ -266,6 +277,7 @@ where
                             .out_ref
                             .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
+                        println!("Done");
                         if curr_id == id {
                             println!("ID: {:?}, Val: {:?}", id, Token::<ValType, StopType>::Done);
                         }
@@ -738,6 +750,7 @@ where
                             out_crd: Token::Done,
                             out_ref: Token::Done,
                         });
+                        println!("Done");
                         if self.id() == id.clone() {
                             println!("Done");
                         }

@@ -119,9 +119,12 @@ impl Context for RamulatorContext<'_> {
                 break;
             }
 
+            // println!("Reader size: {}", self.readers.len());
+            // println!("Writer size: {}", self.writers.len());
+
             self.update_ticks();
-            self.update_write_requests(&mut request_manager);
             self.update_read_requests(&mut request_manager);
+            self.update_write_requests(&mut request_manager);
 
             self.time.incr_cycles(1);
             self.update_ticks();

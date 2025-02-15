@@ -86,6 +86,8 @@ where
                             Token::<ValType, StopType>::Done,
                         );
                         self.out_val.enqueue(&self.time, out_val_elem).unwrap();
+
+                        println!("Done computing");
                         return;
                     }
                     _ => {

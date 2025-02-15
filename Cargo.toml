@@ -7,13 +7,14 @@ edition = "2021"
 [lib]
 name = "comal"
 # crate-type = ["cdylib", "lib", "rlib"]
-crate-type = ["cdylib", "rlib"]
-# crate-type = ["lib"]
+# crate-type = ["rlib"]
+crate-type = ["lib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dam = { git = "https://github.com/stanford-ppl/DAM-RS.git", branch = "dev", default-features=true, features = ["coroutines", "dot", "log-mongo"]}
+# dam = { git = "https://github.com/stanford-ppl/DAM-RS.git", branch = "dev", default-features=true, features = ["coroutines", "dot", "log-mongo"]}
+dam = { git = "https://github.com/stanford-ppl/DAM-RS.git", branch = "dev", default-features=true, features = ["os-threads", "dot", "log-mongo"]}
 num = "0.4.1"
 serde_derive = "1.0.181"
 serde = "1.0.181"
@@ -41,6 +42,7 @@ fxhash = "0.2.1"
 derive_more = "0.99.17"
 num-bigint = "0.4.4"
 enum_dispatch = "0.3.13"
+# tokio = "1.43.0"
 
 [features]
 extension-module = ["pyo3/extension-module"]
@@ -50,8 +52,13 @@ default = ["extension-module"]
 prost-build = "0.11.9"
 cmake = "0.1"
 
+# [profile.dev.build-override]
+# debug = 2
+
 [profile.dev.build-override]
-debug = 2
+codegen-units = 1
+opt-level = 3
+debug = 1
 
 # [profile.release-with-debug]
 # inherits = "release"
