@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{vec_deque, HashMap, VecDeque};
 
 use dam::channel::PeekResult;
 use dam::context_tools::*;
@@ -74,6 +74,7 @@ pub struct RamulatorContext<'a> {
     datastore: Memory,
     writers: Vec<WriteBundle<'a>>,
     readers: Vec<ReadBundle<'a>>,
+    request_backlog: VecDeque<Access>,
     // Elapsed cycles is measured w.r.t. the memory clock, which isn't necessarily the same as the global 'tick'
     cycles_per_tick: (num_bigint::BigUint, num_bigint::BigUint),
     elapsed_cycles: num_bigint::BigUint,
@@ -87,6 +88,8 @@ impl Context for RamulatorContext<'_> {
 
         while self.continue_running(&request_manager) {
             // std::print!("Inside");
+            self.process_backlog(&mut request_manager);
+
             while self.ramulator.ret_available() {
                 let resp_loc = ByteAddress(self.ramulator.pop());
 
@@ -148,6 +151,7 @@ impl<'a> RamulatorContext<'a> {
             datastore,
             writers: vec![],
             readers: vec![],
+            request_backlog: VecDeque::new(),
             cycles_per_tick: (cycles_per_tick.0.into(), cycles_per_tick.1.into()),
             elapsed_cycles: 0u32.into(),
             context_info: Default::default(),
@@ -185,7 +189,7 @@ impl<'a> RamulatorContext<'a> {
         let expected_cycles = (cur_ticks * &self.cycles_per_tick.0) / &self.cycles_per_tick.1;
         while self.elapsed_cycles < expected_cycles {
             self.elapsed_cycles += 1u32;
-            self.ramulator.cycle();
+            self.ramulator.tick();
         }
     }
 
@@ -293,12 +297,19 @@ impl<'a> RamulatorContext<'a> {
     }
 
     fn enqueue_payload(&mut self, access: Access, manager: &mut RequestManager) {
-        if self
+        // if self
+        // .ramulator
+        // .available(access.get_addr().into(), access.is_write())
+        // {
+        let enqueue_success = self
             .ramulator
-            .available(access.get_addr().into(), access.is_write())
-        {
-            self.ramulator
-                .send(access.get_addr().into(), access.is_write());
+            .send(access.get_addr().into(), access.is_write());
+
+        // if (!enqueue_success) {
+        // println!("Enqueue failed");
+        // return;
+        // }
+        if enqueue_success {
             match access {
                 Access::SimpleRead(rd) => manager.add_request(rd.into()),
                 Access::SimpleWrite(write) => {
@@ -318,6 +329,46 @@ impl<'a> RamulatorContext<'a> {
                         .unwrap();
                 }
             }
+        } else {
+            self.request_backlog.push_back(access);
+        }
+    }
+
+    fn process_backlog(&mut self, request_manager: &mut RequestManager) {
+        
+        let retry_limit = 10;
+        let mut retries = 0;
+
+        while retries < retry_limit && !self.request_backlog.is_empty() {
+            let access = self.request_backlog.front().unwrap().clone();
+
+            if (self.ramulator.send(access.get_addr().into(), access.is_write())) {
+
+                self.request_backlog.pop_front();
+                match access {
+                    Access::SimpleRead(rd) => request_manager.add_request(rd.into()),
+                    Access::SimpleWrite(write) => {
+                        let index = write.bundle_index();
+                        let data = write.payload;
+
+                        self.write_data(write.get_addr().into(), data);
+                        self.writers[index]
+                            .ack
+                            .enqueue(
+                                &self.time,
+                                ChannelElement {
+                                    time: self.time.tick() + 1,
+                                    data: true,
+                                },
+                            )
+                            .unwrap();
+                    }
+                }
+                println!("Processed 1 request from backlog");
+            } else {
+                break;
+            }
+            retries += 1;
         }
     }
 
@@ -542,7 +593,7 @@ mod test {
 
         let mut parent = ProgramBuilder::default();
         let ramulator =
-            RamulatorWrapper::new_with_preset(ramulator_wrapper::PresetConfigs::HBM, "test.txt");
+            RamulatorWrapper::new("/home/rubensl/Documents/repos/ramulator_wrapper/hbm.yaml");
 
         // let ramulator = RamulatorWrapper::new("/home/rubensl/comal/src/templates/configs/DDR4-config.cfg", "test.txt");
 

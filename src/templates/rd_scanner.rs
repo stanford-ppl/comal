@@ -25,9 +25,18 @@ pub struct RdScanData<ValType: Clone, StopType: Clone> {
     // pub resp_addr: Box<dyn RecvAdapter<u64> + Send + Sync>,
 }
 
+pub struct UncompressedRdScanData<ValType: Clone, StopType: Clone> {
+    pub in_ref: Receiver<Token<ValType, StopType>>,
+    pub out_ref: Sender<Token<ValType, StopType>>,
+    pub out_crd: Sender<Token<ValType, StopType>>,
+    // pub addr: Sender<u64>,
+    // pub resp: Receiver<MemoryData>,
+    // pub resp_addr: Receiver<u64>,
+}
+
 #[context_macro]
 pub struct UncompressedCrdRdScan<ValType: Clone, StopType: Clone> {
-    rd_scan_data: RdScanData<ValType, StopType>,
+    rd_scan_data: UncompressedRdScanData<ValType, StopType>,
     meta_dim: ValType,
 }
 
@@ -54,7 +63,7 @@ where
     UncompressedCrdRdScan<ValType, StopType>: Context,
 {
     pub fn new(
-        rd_scan_data: RdScanData<ValType, StopType>,
+        rd_scan_data: UncompressedRdScanData<ValType, StopType>,
         meta_dim: ValType,
     ) -> UncompressedCrdRdScan<ValType, StopType> {
         let ucr = UncompressedCrdRdScan {
@@ -65,9 +74,9 @@ where
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
         (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
-        (ucr.rd_scan_data.addr).attach_sender(&ucr);
-        (ucr.rd_scan_data.resp).attach_receiver(&ucr);
-        (ucr.rd_scan_data.resp_addr).attach_receiver(&ucr);
+        // (ucr.rd_scan_data.addr).attach_sender(&ucr);
+        // (ucr.rd_scan_data.resp).attach_receiver(&ucr);
+        // (ucr.rd_scan_data.resp_addr).attach_receiver(&ucr);
 
         ucr
     }
@@ -548,8 +557,11 @@ where
 
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
 
-                            let crd_addr =
-                                get_crd_addr(self.base_addr.expect("Base addr is None"), read_addr, self.seg_arr.len());
+                            let crd_addr = get_crd_addr(
+                                self.base_addr.expect("Base addr is None"),
+                                read_addr,
+                                self.seg_arr.len(),
+                            );
 
                             // Send memory request for coord
                             self.rd_scan_data

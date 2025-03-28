@@ -30,6 +30,7 @@ struct Cli {
     dam_opts: DamOptions,
 }
 
+#[ignore = "Not a test"]
 fn main() {
     let args = Cli::parse();
     assert!(args.inner_par >= 1);

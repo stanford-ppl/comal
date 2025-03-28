@@ -1,3 +1,6 @@
 [submodule "tortilla"]
 	path = tortilla
 	url = https://github.com/stanford-ppl/tortilla.git
+[submodule "external/ramulator2_wrapper"]
+	path = external/ramulator2_wrapper
+	url = https://github.com/lrubens/ramulator2_wrapper.git

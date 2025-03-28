@@ -7,13 +7,16 @@ edition = "2021"
 [lib]
 name = "comal"
 # crate-type = ["cdylib", "lib", "rlib"]
-crate-type = ["cdylib", "rlib"]
+# crate-type = ["cdylib", "rlib"]
+crate-type = ["lib"]
 # crate-type = ["lib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 dam = { git = "https://github.com/stanford-ppl/DAM-RS.git", branch = "dev", default-features=true, features = ["coroutines", "dot", "log-mongo"]}
+# ramulator_wrapper = { git = "https://github.com/lrubens/ramulator2_wrapper.git", branch = "main"}
+ramulator_wrapper = { path = "external/ramulator2_wrapper" }
 num = "0.4.1"
 serde_derive = "1.0.181"
 serde = "1.0.181"
@@ -36,7 +39,6 @@ anyhow = "1.0.80"
 strum = { version = "0.26", features = ["derive"] }
 pyo3 = { version = "0.23.4", features = ["extension-module"] }
 tempfile = "3.8.0"
-ramulator_wrapper = "0.2.6"
 fxhash = "0.2.1"
 derive_more = "0.99.17"
 num-bigint = "0.4.4"
