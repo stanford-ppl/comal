@@ -44,7 +44,7 @@ use ndarray::{Array2, ArrayBase, Axis, CowArray, Ix1, Ix2, ShapeBuilder};
 use proto_headers::tortilla::*;
 
 // type VT = f32;
-const N: usize = 32;
+const N: usize = 16;
 type VT = Tensor<'static, f32, Ix2, N>;
 type CT = u32;
 type ST = u32;
@@ -126,7 +126,7 @@ pub fn build_from_proto<'a>(
     valmap: &mut Channels<'a, Token<VT, ST>>,
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
-    let mut block_size = None;
+    // let mut block_size = None;
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
             Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
