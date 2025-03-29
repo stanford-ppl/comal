@@ -7,7 +7,7 @@ use crate::{
 
 use super::access::SimpleRead;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct RequestManager {
     addr_to_access_map: fxhash::FxHashMap<ByteAddress, VecDeque<SimpleRead>>,
 }
