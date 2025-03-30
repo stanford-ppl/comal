@@ -1,4 +1,7 @@
-use std::{path::PathBuf, sync::{Arc, Mutex}};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use dam::{context_tools::*, dam_macros::context_macro};
 
@@ -47,8 +50,8 @@ where
         let mut curr_crd_cnt: ValType = ValType::default();
         let mut end_fiber = false;
         let initiation_interval = 1;
-        let mut crd_write_count = 0;
-        let mut seg_write_count = 0;
+        let mut crd_write_count: u64 = 0;
+        let mut seg_write_count: u64 = 0;
 
         let mut crd_arr = self.crd_arr.lock().unwrap();
         let mut seg_arr = self.seg_arr.lock().unwrap();
@@ -73,8 +76,8 @@ where
                         continue;
                     }
                     Token::Done => {
-                        println!("Crd write count: {}", crd_write_count);
-                        println!("Crd write count: {}", seg_write_count);
+                        println!("Crd write count (crd): {}", crd_write_count);
+                        println!("Crd write count (seg): {}", seg_write_count);
                         return;
                     }
                 },
@@ -120,7 +123,7 @@ where
         let latency = 1;
         let initiation_interval = 1;
         let mut locked = self.out_val.lock().unwrap();
-        let mut write_count = 0;
+        let mut write_count: u64 = 0;
         loop {
             match self.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
@@ -134,12 +137,12 @@ where
                         continue;
                     }
                     Token::Done => {
-                        let filename : String = "/tmp/tmp_result.txt".to_string();
-                        write_outputs(filename.into(), locked.to_vec());
+                        let filename: String = "/tmp/tmp_result.txt".to_string();
+                        // write_outputs(filename.into(), locked.to_vec());
                         // println!("res: {:?}", locked);
                         println!("Write count: {}", write_count);
                         break;
-                    },
+                    }
                 },
                 Err(_) => {
                     panic!("Unexpected end of stream");

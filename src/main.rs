@@ -32,7 +32,7 @@ struct Cli {
     #[arg(
         long,
         // default_value = "/home/rubensl/Documents/repos/samml-artifact/data/misc/sparse_softmax_tmp"
-        default_value = "/home/rubensl/Documents/repos/samml-artifact/data/gcn_unfused/gcn_adj_x1"
+        default_value = "/home/rubensl/samml-artifact/data/gcn_unfused/adj_linear1_mul"
     )]
     data: String,
 
@@ -75,13 +75,13 @@ fn main() {
         ),
     ));
 
-    let run_options = run_options.logging(LoggingOptions::Mongo(
-        MongoOptionsBuilder::default()
-            .db("joiner_log".to_string())
-            .uri("mongodb://127.0.0.1:27017".to_string())
-            .build()
-            .unwrap(),
-    ));
+    // let run_options = run_options.logging(LoggingOptions::Mongo(
+    //     MongoOptionsBuilder::default()
+    //         .db("joiner_log".to_string())
+    //         .uri("mongodb://127.0.0.1:27017".to_string())
+    //         .build()
+    //         .unwrap(),
+    // ));
 
     let initialized = program_builder.initialize(args.dam_opts.into()).unwrap();
     println!("{}", initialized.to_dot_string());
@@ -91,7 +91,8 @@ fn main() {
         println!("Initialization Time: {:?}", initialized_time - end_parse);
     }
 
-    let executed = initialized.run(run_options.build().unwrap());
+    // let executed = initialized.run(run_options.build().unwrap());
+    let executed = initialized.run(RunOptionsBuilder::default().mode(RunMode::Simple).build().unwrap());
     if args.breakdowns {
         println!("Execution Time: {:?}", initialized_time.elapsed());
     }

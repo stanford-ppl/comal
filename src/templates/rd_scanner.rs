@@ -126,19 +126,29 @@ where
         + std::ops::Mul<ValType, Output = ValType>
         + std::ops::Add<ValType, Output = ValType>
         + std::cmp::PartialOrd<ValType>,
-    StopType: DAMType + std::ops::Add<u32, Output = StopType>,
+    StopType: DAMType + std::ops::Add<u32, Output = StopType> + std::cmp::PartialEq,
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
         let id = Identifier { id: 0 };
         let curr_id = self.id();
-        let mut read_count = 0;
+        let mut read_count: u64 = 0;
+        let mut cached_ref = None;
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
-                Ok(curr_ref) => match curr_ref.data {
+                Ok(curr_ref) => match curr_ref.data.clone() {
                     Token::Val(val) => {
                         let mut crd_count: ValType = ValType::default();
+                        let mut seen_prev = false;
+                        if cached_ref != None {
+                            if curr_ref.data.clone()
+                                == cached_ref.clone().expect("Shouldn't be none")
+                            {
+                                seen_prev = true;
+                            }
+                        }
+                        cached_ref = Some(curr_ref.data.clone());
                         while crd_count < self.meta_dim {
                             let curr_time = self.time.tick();
                             self.rd_scan_data
@@ -164,7 +174,11 @@ where
                                     ),
                                 )
                                 .unwrap();
-                            read_count += 1;
+
+                            if !seen_prev {
+                                read_count += 1;
+                            }
+
                             if curr_id == id {
                                 println!(
                                     "ID: {:?}, Val: {:?}",
@@ -427,7 +441,7 @@ where
     // usize: From<ValType>,
     ValType: TryInto<usize>,
     <ValType as TryInto<usize>>::Error: std::fmt::Debug,
-    StopType: DAMType + std::ops::Add<u32, Output = StopType>,
+    StopType: DAMType + std::ops::Add<u32, Output = StopType> + std::cmp::PartialEq,
     Token<u32, u32>: From<Token<ValType, StopType>>,
 {
     fn init(&mut self) {}
@@ -443,19 +457,34 @@ where
         let id = Identifier { id: 0 };
         let curr_id = self.id();
         let mut stkn_cnt = 0;
-        let mut read_count = 0;
+        let mut read_count: u64 = 0;
+        let mut cached_ref = None;
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data.clone() {
                     Token::Val(val) => {
                         let idx: usize = val.try_into().unwrap();
                         let mut curr_addr = self.seg_arr[idx].clone();
+                        let mut seen_prev = false;
 
-                        read_count += 1;
+                        if cached_ref != None {
+                            if curr_ref.data.clone()
+                                == cached_ref.clone().expect("Shouldn't be none")
+                            {
+                                seen_prev = true;
+                            }
+                        }
+                        cached_ref = Some(curr_ref.data.clone());
+
+                        if !seen_prev {
+                            read_count += 1;
+                        }
 
                         let stop_addr = self.seg_arr[idx + 1].clone();
 
-                        read_count += 1;
+                        if !seen_prev {
+                            read_count += 1;
+                        }
 
                         self.time.incr_cycles(self.timing_config.initial_delay);
                         let mut initiated = true;
@@ -484,7 +513,6 @@ where
                             let mut final_rd_latency = self.timing_config.output_latency;
                             if read_addr - start_rd_addr >= self.timing_config.row_size {
                                 initiated = true;
-
                                 final_rd_latency = self.timing_config.miss_latency;
                             }
                             self.rd_scan_data
@@ -507,7 +535,9 @@ where
                                     ),
                                 )
                                 .unwrap();
-                            read_count += 1;
+                            if !seen_prev {
+                                read_count += 1;
+                            }
 
                             let _ = dam::logging::log_event(&LSLog {
                                 out_crd: Token::Val(coord.clone()).into(),
@@ -637,7 +667,7 @@ where
                         if self.id() == id.clone() {
                             println!("Done");
                         }
-                        println!("Crd read count: {}", read_count);
+                        println!("Crd read count (compressed): {}", read_count);
                         return;
                         // dbg!(Token::<ValType, StopType>::Done);
                     }

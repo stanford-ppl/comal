@@ -48,7 +48,7 @@ where
     f32: From<ValType>,
 {
     fn run(&mut self) {
-        let mut op_count = 0;
+        let mut op_count: u64 = 0;
         loop {
             //TODO: Dequeue from input channel
             let val_deq = self.in_val.dequeue(&self.time);

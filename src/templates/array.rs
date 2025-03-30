@@ -60,7 +60,7 @@ where
     fn run(&mut self) {
         let id = Identifier { id: 0 };
         let curr_id = self.id();
-        let mut num_reads = 0;
+        let mut num_reads : u64 = 0;
         loop {
             match self.array_data.in_ref.dequeue(&self.time) {
                 Ok(curr_in) => {

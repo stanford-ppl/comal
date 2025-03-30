@@ -131,7 +131,7 @@ where
         let id = self.id();
         let curr_id = Identifier { id: 0 };
         // let mut prev_tkn = Token::default();
-        let mut reduce_count = 0;
+        let mut reduce_count: u64 = 0;
         loop {
             match self.reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data.clone() {
@@ -220,8 +220,8 @@ where
                                 curr_in.data.clone(),
                                 Token::<ValType, StopType>::Done
                             );
-                            println!("Reduce: {}", reduce_count);
                         }
+                        println!("Reduce count: {}", reduce_count);
                         return;
                     }
                 },
@@ -289,7 +289,7 @@ where
         let id1 = Identifier { id: 0 };
         let mut icrd_stkn_pop_cnt = 0;
         let mut ocrd_val_pop_cnt = 0;
-        let mut reduce_count = 0;
+        let mut reduce_count: u64 = 0;
         loop {
             let in_ocrd = self.spacc1_data.in_crd_outer.peek_next(&self.time).unwrap();
             let in_icrd = self.spacc1_data.in_crd_inner.peek_next(&self.time).unwrap();
@@ -848,7 +848,7 @@ where
 
     fn run(&mut self) {
         let mut max_elem = self.min_val.clone();
-        let mut reduce_count = 0;
+        let mut reduce_count: u64 = 0;
         loop {
             match self.max_reduce_data.in_val.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
@@ -888,7 +888,7 @@ where
                             .out_val
                             .enqueue(&self.time, ChannelElement::new(curr_time + 1, Token::Done))
                             .unwrap();
-                        println!("Reduce count: {}", reduce_count);
+                        // println!("Reduce count: {}", reduce_count);
                         return;
                     }
                 },

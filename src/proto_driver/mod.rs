@@ -49,7 +49,7 @@ enum ChannelType<T: DAMType> {
     ReceiverType(Receiver<T>),
 }
 
-const DEFAULT_CHAN_SIZE: usize = 10240000;
+const DEFAULT_CHAN_SIZE: usize = 102400000;
 
 #[derive(Default)]
 pub struct Channels<'a, T>
