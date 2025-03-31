@@ -7,8 +7,8 @@ edition = "2021"
 [lib]
 name = "comal"
 # crate-type = ["cdylib", "lib", "rlib"]
-# crate-type = ["cdylib", "rlib"]
-crate-type = ["lib"]
+crate-type = ["cdylib", "lib"]
+# crate-type = ["lib"]
 # crate-type = ["lib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

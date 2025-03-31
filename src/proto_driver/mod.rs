@@ -123,11 +123,14 @@ pub fn build_from_proto<'a>(
     valmap: &mut Channels<'a, Token<VT, ST>>,
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
-    let ramulator =
-        RamulatorWrapper::new("external/ramulator2_wrapper/configs/hbm2.yaml");
-    // let ramulator =
-    //     RamulatorWrapper::new(ramulator_wrapper::PresetConfigs::HBM, "test.txt");
-    let mut mem_context = RamulatorContext::new(ramulator, (1u32, 1u32), Memory::new());
+    // let ramulator = RamulatorWrapper::new("external/ramulator2_wrapper/configs/hbm2.yaml");
+    let full_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("external/ramulator2_wrapper/configs/hbm2.yaml");
+    let mut mem_context = RamulatorContext::new(
+        full_path.to_str().unwrap(),
+        (1u32, 1u32),
+        Memory::new(),
+    );
 
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
