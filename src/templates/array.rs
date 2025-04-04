@@ -1,4 +1,6 @@
-use dam::structures::Identifiable;
+use std::collections::{BTreeMap, HashMap};
+
+use dam::structures::{Identifiable, Time};
 use dam::{
     context_tools::*,
     dam_macros::{context_macro, event_type},
@@ -6,7 +8,8 @@ use dam::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::primitive::Token;
+use super::memory_logger::MemoryWrapper;
+use super::primitive::{AccessBundle, AccessType, Token};
 
 pub struct ArrayData<RefType: Clone, ValType: Clone, StopType: Clone> {
     pub in_ref: Receiver<Token<RefType, StopType>>,
@@ -17,22 +20,37 @@ pub struct ArrayData<RefType: Clone, ValType: Clone, StopType: Clone> {
 pub struct Array<RefType: Clone, ValType: Clone, StopType: Clone> {
     array_data: ArrayData<RefType, ValType, StopType>,
     val_arr: Vec<ValType>,
+    pub access_map: BTreeMap<Time, AccessBundle>,
+    pub dump_chan: Sender<MemoryWrapper>,
+    base_addr: u64,
 }
 
 impl<RefType: DAMType, ValType: DAMType, StopType: DAMType> Array<RefType, ValType, StopType>
 where
     Array<RefType, ValType, StopType>: Context,
 {
-    pub fn new(array_data: ArrayData<RefType, ValType, StopType>, val_arr: Vec<ValType>) -> Self {
+    pub fn new(
+        array_data: ArrayData<RefType, ValType, StopType>,
+        val_arr: Vec<ValType>,
+        dump_chan: Sender<MemoryWrapper>,
+    ) -> Self {
         let arr = Array {
             array_data,
             val_arr,
+            base_addr: 0,
+            access_map: BTreeMap::new(),
+            dump_chan,
             context_info: Default::default(),
         };
         (arr.array_data.in_ref).attach_receiver(&arr);
         (arr.array_data.out_val).attach_sender(&arr);
+        (arr.dump_chan).attach_sender(&arr);
 
         arr
+    }
+
+    pub fn set_base_addr(&mut self, base_addr: u64) {
+        self.base_addr = base_addr;
     }
 }
 
@@ -60,7 +78,8 @@ where
     fn run(&mut self) {
         let id = Identifier { id: 0 };
         let curr_id = self.id();
-        let mut num_reads : u64 = 0;
+        let mut num_reads: u64 = 0;
+        let mut addr_map = HashMap::new();
         loop {
             match self.array_data.in_ref.dequeue(&self.time) {
                 Ok(curr_in) => {
@@ -68,10 +87,31 @@ where
                     match data.clone() {
                         Token::Val(val) => {
                             let idx: usize = val.try_into().unwrap();
+
+                            if addr_map.get(&idx.clone()).is_some() {
+                                self.access_map.insert(
+                                    self.time.tick(),
+                                    AccessBundle {
+                                        addr: *addr_map.get(&idx.clone()).unwrap(),
+                                        access_type: AccessType::Read,
+                                    },
+                                );
+                            } else {
+                                addr_map.insert(idx.clone(), self.base_addr);
+                                self.access_map.insert(
+                                    self.time.tick(),
+                                    AccessBundle {
+                                        addr: self.base_addr,
+                                        access_type: AccessType::Read,
+                                    },
+                                );
+                            }
+
                             let channel_elem = ChannelElement::new(
                                 self.time.tick() + 1,
                                 Token::Val(self.val_arr[idx].clone()),
                             );
+
                             num_reads += 1;
                             self.array_data
                                 .out_val
@@ -139,6 +179,13 @@ where
                             if id == curr_id {
                                 println!("ID: {:?}, Val: {:?}", id, out_val.clone());
                             }
+                            let mem = MemoryWrapper {
+                                map: self.access_map.clone(),
+                            };
+                            self.dump_chan.enqueue(
+                                &self.time,
+                                ChannelElement::new(self.time.tick() + 1, mem),
+                            ).unwrap();
                             return;
                         }
                     }
@@ -188,7 +235,8 @@ mod tests {
             in_ref: in_ref_receiver,
             out_val: out_val_sender,
         };
-        let arr = Array::new(data, val_arr);
+        let (snd, rcv) = parent.unbounded();
+        let arr = Array::new(data, val_arr, snd);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
         let out_val_checker = CheckerContext::new(out_val, out_val_receiver);
         parent.add_child(gen1);

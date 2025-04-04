@@ -1,10 +1,13 @@
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 
-use dam::{context_tools::*, dam_macros::context_macro};
+use dam::{context_tools::*, dam_macros::context_macro, structures::Time};
 
+use super::memory_logger::MemoryWrapper;
+use super::primitive::{AccessBundle, AccessType};
 use super::{primitive::Token, utils::write_outputs};
 
 #[context_macro]
@@ -12,22 +15,36 @@ pub struct CompressedWrScan<ValType: Clone, StopType: Clone> {
     pub input: Receiver<Token<ValType, StopType>>,
     pub seg_arr: Arc<Mutex<Vec<ValType>>>,
     pub crd_arr: Arc<Mutex<Vec<ValType>>>,
+    pub dump_chan: Sender<MemoryWrapper>,
+    pub base_addr: u64,
+    pub access_map: BTreeMap<Time, AccessBundle>,
 }
 
 impl<ValType: DAMType, StopType: DAMType> CompressedWrScan<ValType, StopType>
 where
     CompressedWrScan<ValType, StopType>: Context,
 {
-    pub fn new(input: Receiver<Token<ValType, StopType>>) -> Self {
+    pub fn new(
+        input: Receiver<Token<ValType, StopType>>,
+        dump_chan: Sender<MemoryWrapper>,
+    ) -> Self {
         let cwr = CompressedWrScan {
             input,
             seg_arr: Default::default(),
             crd_arr: Default::default(),
+            dump_chan,
+            base_addr: 0,
             context_info: Default::default(),
+            access_map: BTreeMap::new(),
         };
         (cwr).input.attach_receiver(&cwr);
+        (cwr).dump_chan.attach_sender(&cwr);
 
         cwr
+    }
+
+    pub fn set_base_addr(&mut self, base_addr: u64) {
+        self.base_addr = base_addr;
     }
 }
 
@@ -53,6 +70,8 @@ where
         let mut crd_write_count: u64 = 0;
         let mut seg_write_count: u64 = 0;
 
+        let addr_offset = 4;
+
         let mut crd_arr = self.crd_arr.lock().unwrap();
         let mut seg_arr = self.seg_arr.lock().unwrap();
         loop {
@@ -60,6 +79,14 @@ where
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         crd_arr.push(val.clone());
+                        self.access_map.insert(
+                            self.time.tick(),
+                            AccessBundle {
+                                addr: self.base_addr,
+                                access_type: AccessType::Write,
+                            },
+                        );
+                        self.base_addr += addr_offset;
                         curr_crd_cnt += 1;
                         end_fiber = false;
                         // println!("{:?}", val.clone());
@@ -78,6 +105,15 @@ where
                     Token::Done => {
                         println!("Crd write count (crd): {}", crd_write_count);
                         println!("Crd write count (seg): {}", seg_write_count);
+                        self.dump_chan.enqueue(
+                            &self.time,
+                            ChannelElement::new(
+                                self.time.tick(),
+                                MemoryWrapper {
+                                    map: self.access_map.clone(),
+                                },
+                            ),
+                        ).unwrap();
                         return;
                     }
                 },

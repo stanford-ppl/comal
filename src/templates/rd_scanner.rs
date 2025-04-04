@@ -1,5 +1,7 @@
+use std::collections::{BTreeMap, HashMap};
+
 use crate::config::rd_scanner::CompressedCrdRdScanConfig;
-use dam::structures::Identifiable;
+use dam::structures::{Identifiable, Time};
 use dam::{
     context_tools::*,
     dam_macros::{context_macro, event_type},
@@ -7,7 +9,8 @@ use dam::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::primitive::Token;
+use super::memory_logger::MemoryWrapper;
+use super::primitive::{AccessBundle, AccessType, Token};
 
 pub struct RdScanData<ValType: Clone, StopType: Clone> {
     pub in_ref: Receiver<Token<ValType, StopType>>,
@@ -26,6 +29,9 @@ pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     rd_scan_data: RdScanData<ValType, StopType>,
     seg_arr: Vec<ValType>,
     crd_arr: Vec<ValType>,
+    pub dump_chan: Sender<MemoryWrapper>,
+    pub access_map: BTreeMap<Time, AccessBundle>,
+    pub base_addr: u64,
 
     timing_config: CompressedCrdRdScanConfig,
 }
@@ -67,23 +73,32 @@ where
         rd_scan_data: RdScanData<ValType, StopType>,
         seg_arr: Vec<ValType>,
         crd_arr: Vec<ValType>,
+        dump_chan: Sender<MemoryWrapper>,
     ) -> Self {
         let ucr = CompressedCrdRdScan {
             rd_scan_data,
             seg_arr,
             crd_arr,
+            dump_chan,
             timing_config: Default::default(),
             context_info: Default::default(),
+            access_map: BTreeMap::new(),
+            base_addr: 0,
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
         (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
+        (ucr.dump_chan).attach_sender(&ucr);
 
         ucr
     }
 
     pub fn set_timings(&mut self, new_config: CompressedCrdRdScanConfig) {
         self.timing_config = new_config
+    }
+
+    pub fn set_base_addr(&mut self, base_addr: u64) {
+        self.base_addr = base_addr;
     }
 }
 
@@ -285,152 +300,6 @@ where
     }
 }
 
-impl<ValType, StopType> Context for TileRdScan<ValType, StopType>
-where
-    ValType: DAMType
-        + std::ops::AddAssign<u32>
-        + std::ops::Mul<ValType, Output = ValType>
-        + std::ops::Add<ValType, Output = ValType>
-        + std::cmp::PartialOrd<ValType>,
-    // usize: From<ValType>,
-    ValType: TryInto<usize>,
-    <ValType as TryInto<usize>>::Error: std::fmt::Debug,
-    StopType: DAMType + std::ops::Add<u32, Output = StopType>,
-{
-    fn init(&mut self) {}
-
-    fn run(&mut self) {
-        let latency = 1;
-        let initiation_interval = 1;
-        dbg!(latency);
-        dbg!(initiation_interval);
-        let mut tile: usize = 0;
-        loop {
-            match self.rd_scan_data.in_ref.dequeue(&self.time) {
-                Ok(curr_ref) => match curr_ref.data {
-                    Token::Val(val) => {
-                        let idx: usize = val.try_into().unwrap();
-                        let mut curr_addr = self.seg_arrs[tile][idx].clone();
-                        let stop_addr = self.seg_arrs[tile][idx + 1].clone();
-                        while curr_addr < stop_addr {
-                            let read_addr: usize = curr_addr.clone().try_into().unwrap();
-                            let coord = self.crd_arrs[tile][read_addr].clone();
-                            let curr_time = self.time.tick();
-
-                            self.rd_scan_data
-                                .out_crd
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(
-                                        curr_time + latency,
-                                        super::primitive::Token::Val(coord),
-                                    ),
-                                )
-                                .unwrap();
-                            self.rd_scan_data
-                                .out_ref
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(
-                                        curr_time + latency,
-                                        super::primitive::Token::Val(curr_addr.clone()),
-                                    ),
-                                )
-                                .unwrap();
-                            curr_addr += 1;
-                            self.time.incr_cycles(initiation_interval);
-                        }
-                        let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
-                        let output: Token<ValType, StopType> = match next_tkn.data {
-                            Token::Val(_) | Token::Done | Token::Empty => {
-                                Token::Stop(StopType::default())
-                            }
-                            Token::Stop(stop_tkn) => {
-                                self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
-                                Token::Stop(stop_tkn + 1)
-                            } // Token::Empty => {
-
-                              // }
-                        };
-
-                        let curr_time = self.time.tick();
-                        self.rd_scan_data
-                            .out_crd
-                            .enqueue(
-                                &self.time,
-                                ChannelElement::new(curr_time + latency, output.clone()),
-                            )
-                            .unwrap();
-                        self.rd_scan_data
-                            .out_ref
-                            .enqueue(
-                                &self.time,
-                                ChannelElement::new(curr_time + latency, output.clone()),
-                            )
-                            .unwrap();
-                    }
-                    Token::Stop(token) => {
-                        let curr_time = self.time.tick();
-                        self.rd_scan_data
-                            .out_crd
-                            .enqueue(
-                                &self.time,
-                                ChannelElement::new(
-                                    curr_time + latency,
-                                    Token::Stop(token.clone() + 1),
-                                ),
-                            )
-                            .unwrap();
-                        self.rd_scan_data
-                            .out_ref
-                            .enqueue(
-                                &self.time,
-                                ChannelElement::new(
-                                    curr_time + latency,
-                                    Token::Stop(token.clone() + 1),
-                                ),
-                            )
-                            .unwrap();
-                    }
-                    // Could either be a done token or an empty token
-                    // In the case of done token, return
-                    Token::Done => {
-                        let channel_elem =
-                            ChannelElement::new(self.time.tick() + latency, Token::Done);
-                        self.rd_scan_data
-                            .out_crd
-                            .enqueue(&self.time, channel_elem.clone())
-                            .unwrap();
-                        self.rd_scan_data
-                            .out_ref
-                            .enqueue(&self.time, channel_elem.clone())
-                            .unwrap();
-
-                        tile += 1;
-                        if tile == self.num_tiles {
-                            return;
-                        }
-                    }
-                    Token::Empty => {
-                        let channel_elem =
-                            ChannelElement::new(self.time.tick() + latency, Token::Empty);
-                        self.rd_scan_data
-                            .out_crd
-                            .enqueue(&self.time, channel_elem.clone())
-                            .unwrap();
-                        self.rd_scan_data
-                            .out_ref
-                            .enqueue(&self.time, channel_elem.clone())
-                            .unwrap();
-                    }
-                },
-                Err(_) => panic!("Error: rd_scan_data dequeue error"),
-            }
-            self.time.incr_cycles(initiation_interval);
-        }
-    }
-}
-
 impl<ValType, StopType> Context for CompressedCrdRdScan<ValType, StopType>
 where
     ValType: DAMType
@@ -459,6 +328,9 @@ where
         let mut stkn_cnt = 0;
         let mut read_count: u64 = 0;
         let mut cached_ref = None;
+        let addr_offset = 4;
+
+        let mut addr_map = HashMap::new();
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data.clone() {
@@ -466,6 +338,29 @@ where
                         let idx: usize = val.try_into().unwrap();
                         let mut curr_addr = self.seg_arr[idx].clone();
                         let mut seen_prev = false;
+
+                        let mut found_access = false;
+
+                        if addr_map.get(&idx.clone()).is_some() {
+                            self.access_map.insert(
+                                self.time.tick(),
+                                AccessBundle {
+                                    addr: *addr_map.get(&idx.clone()).unwrap(),
+                                    access_type: AccessType::Read,
+                                },
+                            );
+                            found_access = true;
+                        } else {
+                            addr_map.insert(idx.clone(), self.base_addr);
+                            self.access_map.insert(
+                                self.time.tick(),
+                                AccessBundle {
+                                    addr: self.base_addr,
+                                    access_type: AccessType::Read,
+                                },
+                            );
+                            self.base_addr += addr_offset;
+                        }
 
                         if cached_ref != None {
                             if curr_ref.data.clone()
@@ -481,6 +376,29 @@ where
                         }
 
                         let stop_addr = self.seg_arr[idx + 1].clone();
+
+                        // Addr to start reading coords later on
+                        let mut curr_crd_addr;
+                        if found_access {
+                            curr_crd_addr = *addr_map.get(&idx.clone()).unwrap() + addr_offset;
+                            self.access_map.insert(
+                                self.time.tick(),
+                                AccessBundle {
+                                    addr: *addr_map.get(&idx.clone()).unwrap() + addr_offset,
+                                    access_type: AccessType::Read,
+                                },
+                            );
+                        } else {
+                            self.access_map.insert(
+                                self.time.tick(),
+                                AccessBundle {
+                                    addr: self.base_addr,
+                                    access_type: AccessType::Read,
+                                },
+                            );
+                            self.base_addr += addr_offset;
+                            curr_crd_addr = self.base_addr;
+                        }
 
                         if !seen_prev {
                             read_count += 1;
@@ -538,6 +456,15 @@ where
                             if !seen_prev {
                                 read_count += 1;
                             }
+
+                            curr_crd_addr = curr_crd_addr + addr_offset;
+                            self.access_map.insert(
+                                self.time.tick(),
+                                AccessBundle {
+                                    addr: curr_crd_addr,
+                                    access_type: AccessType::Read,
+                                },
+                            );
 
                             let _ = dam::logging::log_event(&LSLog {
                                 out_crd: Token::Val(coord.clone()).into(),
@@ -668,6 +595,16 @@ where
                             println!("Done");
                         }
                         println!("Crd read count (compressed): {}", read_count);
+                        println!("Crd access tracker: {}", self.access_map.len());
+                        let mem = MemoryWrapper {
+                            map: self.access_map.clone(),
+                        };
+                        self.dump_chan
+                            .enqueue(&self.time, ChannelElement::new(self.time.tick() + 1, mem))
+                            .unwrap();
+                        // for (key, value) in self.access_map.iter().take(10) {
+                        //     println!("{}: {:?}", key, value);
+                        // }
                         return;
                         // dbg!(Token::<ValType, StopType>::Done);
                     }
@@ -903,7 +840,8 @@ mod tests {
             out_ref: ref_sender,
             out_crd: crd_sender,
         };
-        let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
+        let (dump_send, dump_rcv) = parent.unbounded();
+        let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr, dump_send);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
         let crd_checker = ConsumerContext::new(crd_receiver);
         let ref_checker = ConsumerContext::new(ref_receiver);
@@ -955,7 +893,8 @@ mod tests {
             out_ref: ref_sender,
             out_crd: crd_sender,
         };
-        let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
+        let (dump_send, dump_rcv) = parent.unbounded();
+        let cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr, dump_send);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);
         let crd_checker = CheckerContext::new(out_crd, crd_receiver);
         let ref_checker = CheckerContext::new(out_ref, ref_receiver);

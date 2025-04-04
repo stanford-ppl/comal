@@ -1,6 +1,6 @@
 use core::fmt;
 
-use dam::context_tools::*;
+use dam::{context_tools::*, structures::Time};
 use dam::templates::ops::*;
 use dam::types::StaticallySized;
 use dam::RegisterALUOp;
@@ -20,6 +20,18 @@ pub enum Repsiggen {
     Repeat,
     Stop,
     Done,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+pub enum AccessType {
+    Read,
+    Write
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)] 
+pub struct AccessBundle {
+    pub addr: u64,
+    pub access_type: AccessType,
 }
 
 pub trait Exp {

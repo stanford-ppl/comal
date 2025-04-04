@@ -1,10 +1,11 @@
 pub mod proto_headers;
 pub mod util;
 
+use crate::templates::locate::IterateLocate;
+use crate::templates::memory_logger::MemoryLogger;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
-use crate::templates::locate::IterateLocate;
 
 use self::proto_headers::tortilla::operation::*;
 use self::util::{get_repsig_id, AsStreamID};
@@ -121,6 +122,9 @@ pub fn build_from_proto<'a>(
     valmap: &mut Channels<'a, Token<VT, ST>>,
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
+    let mut mem_log = MemoryLogger::new();
+    let mut curr_base_addr = 0;
+    let addr_offset = 4;
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
             Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
@@ -228,8 +232,12 @@ pub fn build_from_proto<'a>(
                         base_path.join(format!("tensor_{}_mode_{}_crd", op.tensor, op.mode));
                     let seg = read_inputs(&seg_filename);
                     let crd = read_inputs(&crd_filename);
-                    let mut crs = CompressedCrdRdScan::new(f_data, seg, crd);
+                    let (send, rcv) = builder.unbounded();
+                    let mut crs = CompressedCrdRdScan::new(f_data, seg.clone(), crd.clone(), send);
+                    mem_log.add_scanner(rcv);
                     crs.set_timings(sam_options.compressed_read_config);
+                    crs.set_base_addr(curr_base_addr);
+                    curr_base_addr += ((seg.len() + crd.len()) * addr_offset) as u64;
                     builder.add_child(crs);
                 } else {
                     let shape_filename = base_path.join(format!("tensor_{}_mode_shape", op.tensor));
@@ -241,7 +249,12 @@ pub fn build_from_proto<'a>(
             Op::FiberWrite(op) => {
                 let in_crd_id = get_crd_id(&op.input_crd);
                 let receiver = crdmap.get_receiver(in_crd_id, builder);
-                builder.add_child(CompressedWrScan::new(receiver));
+                let (send, rcv) = builder.unbounded();
+                mem_log.add_scanner(rcv);
+                let mut wr = CompressedWrScan::new(receiver, send);
+                wr.set_base_addr(curr_base_addr);
+                curr_base_addr += (1000 * addr_offset) as u64;
+                builder.add_child(wr);
             }
             Op::Repeat(op) => {
                 // TODO: Need to check if input_rep_crd exists for backwards compatibility
@@ -372,24 +385,10 @@ pub fn build_from_proto<'a>(
                     let latency = 1;
                     let ii = 1;
                     let binary_func = match op.stages[0].op() {
-                        alu::AluOp::Add => {
-                            |val1: VT, val2: VT| -> VT {
-                                val1 + val2
-                            }
-                        }
-                        alu::AluOp::Sub => {
-                            |val1: VT, val2: VT| -> VT {
-                                val1 - val2
-                            }
-                        }
-                        alu::AluOp::Mul => {
-                            |val1: VT, val2: VT| -> VT { val1 * val2 }
-                        }
-                        alu::AluOp::Div => {
-                            |val1: VT, val2: VT| -> VT {
-                                val1 / val2
-                            }
-                        }
+                        alu::AluOp::Add => |val1: VT, val2: VT| -> VT { val1 + val2 },
+                        alu::AluOp::Sub => |val1: VT, val2: VT| -> VT { val1 - val2 },
+                        alu::AluOp::Mul => |val1: VT, val2: VT| -> VT { val1 * val2 },
+                        alu::AluOp::Div => |val1: VT, val2: VT| -> VT { val1 / val2 },
                         _ => todo!(),
                     };
                     builder.add_child(Binary::new(
@@ -546,7 +545,13 @@ pub fn build_from_proto<'a>(
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
                 let vals = read_inputs(&val_filename);
-                builder.add_child(Array::new(array_data, vals));
+                let vals_len = vals.len();
+                let (snd, rcv) = builder.unbounded();
+                let mut arr = Array::new(array_data, vals, snd);
+                arr.set_base_addr(curr_base_addr);
+                curr_base_addr += (vals_len * addr_offset) as u64;
+                mem_log.add_scanner(rcv);
+                builder.add_child(arr);
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
@@ -578,7 +583,10 @@ pub fn build_from_proto<'a>(
                         in_crd2: crdmap.get_receiver(in_crd2, builder),
                         out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                         out_crd0: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
-                        out_crd1: crdmap.get_sender(get_crd_id(&Some(op.output_outer_crds[0].clone())), builder),
+                        out_crd1: crdmap.get_sender(
+                            get_crd_id(&Some(op.output_outer_crds[0].clone())),
+                            builder,
+                        ),
                     };
                     builder.add_child(Spacc2::new(spacc2_data));
                 }
@@ -673,6 +681,7 @@ pub fn build_from_proto<'a>(
             _ => todo!(),
         }
     }
+    builder.add_child(mem_log);
 }
 
 pub fn parse_proto<'a>(
