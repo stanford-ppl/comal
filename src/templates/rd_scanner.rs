@@ -32,6 +32,7 @@ pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     pub dump_chan: Sender<MemoryWrapper>,
     pub access_map: BTreeMap<Time, AccessBundle>,
     pub base_addr: u64,
+    pub rd_latency: u64,
 
     timing_config: CompressedCrdRdScanConfig,
 }
@@ -84,6 +85,7 @@ where
             context_info: Default::default(),
             access_map: BTreeMap::new(),
             base_addr: 0,
+            rd_latency: 1,
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
@@ -99,6 +101,10 @@ where
 
     pub fn set_base_addr(&mut self, base_addr: u64) {
         self.base_addr = base_addr;
+    }
+
+    pub fn set_rd_latency(&mut self, latency: u64) {
+        self.rd_latency = latency;
     }
 }
 
@@ -324,7 +330,7 @@ where
         self.time.incr_cycles(self.timing_config.startup_delay);
         let mut seg_initiated = false;
         let id = Identifier { id: 0 };
-        let curr_id = self.id();
+        let _curr_id = self.id();
         let mut stkn_cnt = 0;
         let mut read_count: u64 = 0;
         let mut cached_ref = None;
@@ -405,7 +411,7 @@ where
                         }
 
                         self.time.incr_cycles(self.timing_config.initial_delay);
-                        let mut initiated = true;
+                        // let mut initiated = true;
 
                         let mut start_seg = 0;
                         if seg_initiated {
@@ -420,19 +426,17 @@ where
                         }
 
                         while curr_addr < stop_addr {
-                            let mut start_rd_addr = 0;
+                            // let mut start_rd_addr = 0;
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
                             let coord = self.crd_arr[read_addr].clone();
                             let curr_time = self.time.tick();
-                            if initiated {
-                                start_rd_addr = read_addr;
-                                initiated = false;
-                            }
-                            let mut final_rd_latency = self.timing_config.output_latency;
-                            if read_addr - start_rd_addr >= self.timing_config.row_size {
-                                initiated = true;
-                                final_rd_latency = self.timing_config.miss_latency;
-                            }
+                            // if initiated {
+                                // start_rd_addr = read_addr;
+                                // initiated = false;
+                            // }
+                            // Using avg rd latency from Ramulator
+                            let final_rd_latency = self.rd_latency;
+
                             self.rd_scan_data
                                 .out_crd
                                 .enqueue(

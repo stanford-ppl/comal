@@ -125,6 +125,10 @@ pub fn build_from_proto<'a>(
     let mut mem_log = MemoryLogger::new();
     let mut curr_base_addr = 0;
     let addr_offset = 4;
+
+    // Avg latency numbers from ramulator
+    let rd_latency = 12;
+    let wr_latency = 15;
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
             Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
@@ -237,6 +241,7 @@ pub fn build_from_proto<'a>(
                     mem_log.add_scanner(rcv);
                     crs.set_timings(sam_options.compressed_read_config);
                     crs.set_base_addr(curr_base_addr);
+                    crs.set_rd_latency(rd_latency);
                     curr_base_addr += ((seg.len() + crd.len()) * addr_offset) as u64;
                     builder.add_child(crs);
                 } else {
@@ -253,6 +258,7 @@ pub fn build_from_proto<'a>(
                 mem_log.add_scanner(rcv);
                 let mut wr = CompressedWrScan::new(receiver, send);
                 wr.set_base_addr(curr_base_addr);
+                wr.set_wr_latency(wr_latency);
                 curr_base_addr += (1000 * addr_offset) as u64;
                 builder.add_child(wr);
             }
@@ -362,34 +368,18 @@ pub fn build_from_proto<'a>(
                 if in_val_ids.len() == 2 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
-                    // if op.stages[0].op() == alu::AluOp::Add {
-                    //     builder.add_child(ALUAdd::new(
-                    //         val_receiver1,
-                    //         val_receiver2,
-                    //         out_val_sender,
-                    //     ));
-                    // } else {
-                    //     builder.add_child(make_alu(
-                    //         val_receiver1,
-                    //         val_receiver2,
-                    //         out_val_sender,
-                    //         match op.stages[0].op() {
-                    //             alu::AluOp::Add => ALUAddOp(),
-                    //             alu::AluOp::Sub => ALUSubOp(),
-                    //             alu::AluOp::Mul => ALUMulOp(),
-                    //             alu::AluOp::Div => ALUDivOp(),
-                    //             _ => todo!(),
-                    //         },
-                    //     ));
-                    // }
                     let latency = 1;
                     let ii = 1;
                     let binary_func = match op.stages[0].op() {
                         alu::AluOp::Add => |val1: VT, val2: VT| -> VT { val1 + val2 },
                         alu::AluOp::Sub => |val1: VT, val2: VT| -> VT { val1 - val2 },
                         alu::AluOp::Mul => |val1: VT, val2: VT| -> VT { val1 * val2 },
+                        alu::AluOp::Elemmul => |val1: VT, val2: VT| -> VT { val1 * val2 },
                         alu::AluOp::Div => |val1: VT, val2: VT| -> VT { val1 / val2 },
-                        _ => todo!(),
+                        _ => {
+                            println!("Op: {:?}", op.stages[0].op());
+                            todo!()
+                        },
                     };
                     builder.add_child(Binary::new(
                         val_receiver1,
@@ -549,6 +539,7 @@ pub fn build_from_proto<'a>(
                 let (snd, rcv) = builder.unbounded();
                 let mut arr = Array::new(array_data, vals, snd);
                 arr.set_base_addr(curr_base_addr);
+                arr.set_rd_latency(rd_latency);
                 curr_base_addr += (vals_len * addr_offset) as u64;
                 mem_log.add_scanner(rcv);
                 builder.add_child(arr);

@@ -23,6 +23,7 @@ pub struct Array<RefType: Clone, ValType: Clone, StopType: Clone> {
     pub access_map: BTreeMap<Time, AccessBundle>,
     pub dump_chan: Sender<MemoryWrapper>,
     base_addr: u64,
+    rd_latency: u64,
 }
 
 impl<RefType: DAMType, ValType: DAMType, StopType: DAMType> Array<RefType, ValType, StopType>
@@ -38,6 +39,7 @@ where
             array_data,
             val_arr,
             base_addr: 0,
+            rd_latency: 1,
             access_map: BTreeMap::new(),
             dump_chan,
             context_info: Default::default(),
@@ -51,6 +53,10 @@ where
 
     pub fn set_base_addr(&mut self, base_addr: u64) {
         self.base_addr = base_addr;
+    }
+
+    pub fn set_rd_latency(&mut self, latency: u64) {
+        self.rd_latency = latency;
     }
 }
 
@@ -108,7 +114,7 @@ where
                             }
 
                             let channel_elem = ChannelElement::new(
-                                self.time.tick() + 1,
+                                self.time.tick() + self.rd_latency,
                                 Token::Val(self.val_arr[idx].clone()),
                             );
 
@@ -182,10 +188,9 @@ where
                             let mem = MemoryWrapper {
                                 map: self.access_map.clone(),
                             };
-                            self.dump_chan.enqueue(
-                                &self.time,
-                                ChannelElement::new(self.time.tick() + 1, mem),
-                            ).unwrap();
+                            self.dump_chan
+                                .enqueue(&self.time, ChannelElement::new(self.time.tick() + 1, mem))
+                                .unwrap();
                             return;
                         }
                     }

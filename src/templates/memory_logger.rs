@@ -75,10 +75,11 @@ impl Context for MemoryLogger {
             final_mems.append(&mut data);
         }
 
-        for (key, value) in final_mems.iter().take(500) {
-            println!("{}: {:?}", key, value);
-        }
-        // println!("Size: {}", final_mems.len());
+        // Debug print
+        // for (key, value) in final_mems.iter().take(10) {
+        //     println!("{}: {:?}", key, value);
+        // }
+
         dump_access_bundles(&final_mems, "memory_log.txt").unwrap();
 
         self.time.incr_cycles(1);

@@ -17,6 +17,7 @@ pub struct CompressedWrScan<ValType: Clone, StopType: Clone> {
     pub crd_arr: Arc<Mutex<Vec<ValType>>>,
     pub dump_chan: Sender<MemoryWrapper>,
     pub base_addr: u64,
+    pub wr_latency: u64,
     pub access_map: BTreeMap<Time, AccessBundle>,
 }
 
@@ -36,6 +37,7 @@ where
             base_addr: 0,
             context_info: Default::default(),
             access_map: BTreeMap::new(),
+            wr_latency: 1,
         };
         (cwr).input.attach_receiver(&cwr);
         (cwr).dump_chan.attach_sender(&cwr);
@@ -45,6 +47,10 @@ where
 
     pub fn set_base_addr(&mut self, base_addr: u64) {
         self.base_addr = base_addr;
+    }
+
+    pub fn set_wr_latency(&mut self, latency: u64) {
+        self.wr_latency = latency;
     }
 }
 
@@ -91,6 +97,7 @@ where
                         end_fiber = false;
                         // println!("{:?}", val.clone());
                         crd_write_count += 1;
+                        self.time.incr_cycles(self.wr_latency);
                     }
                     Token::Stop(_) if !end_fiber => {
                         seg_arr.push(curr_crd_cnt.clone());
@@ -130,6 +137,7 @@ where
 pub struct ValsWrScan<ValType: Clone, StopType: Clone> {
     pub input: Receiver<Token<ValType, StopType>>,
     pub out_val: Arc<Mutex<Vec<ValType>>>,
+    pub wr_latency: u64,
 }
 
 impl<ValType: DAMType, StopType: DAMType> ValsWrScan<ValType, StopType>
@@ -140,11 +148,16 @@ where
         let vals = ValsWrScan {
             input,
             out_val: Default::default(),
+            wr_latency: 1,
             context_info: Default::default(),
         };
         (vals.input).attach_receiver(&vals);
 
         vals
+    }
+
+    pub fn set_wr_latency(&mut self, latency: u64) {
+        self.wr_latency = latency;
     }
 }
 
@@ -167,6 +180,7 @@ where
                         // println!("Value: {:?}", Token::<ValType, StopType>::Val(val.clone()));
                         locked.push(val.clone());
                         // println!("{:?}", val.clone());
+                        self.time.incr_cycles(self.wr_latency);
                         write_count += 1;
                     }
                     Token::Empty | Token::Stop(_) => {
