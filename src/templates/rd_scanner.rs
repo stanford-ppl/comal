@@ -33,6 +33,7 @@ pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     pub access_map: BTreeMap<Time, AccessBundle>,
     pub base_addr: u64,
     pub rd_latency: u64,
+    pub log_memory: bool,
 
     timing_config: CompressedCrdRdScanConfig,
 }
@@ -86,6 +87,7 @@ where
             access_map: BTreeMap::new(),
             base_addr: 0,
             rd_latency: 1,
+            log_memory: false,
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
         (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
@@ -105,6 +107,10 @@ where
 
     pub fn set_rd_latency(&mut self, latency: u64) {
         self.rd_latency = latency;
+    }
+
+    pub fn log_mem(&mut self, log: bool) {
+        self.log_memory = log;
     }
 }
 
@@ -431,8 +437,8 @@ where
                             let coord = self.crd_arr[read_addr].clone();
                             let curr_time = self.time.tick();
                             // if initiated {
-                                // start_rd_addr = read_addr;
-                                // initiated = false;
+                            // start_rd_addr = read_addr;
+                            // initiated = false;
                             // }
                             // Using avg rd latency from Ramulator
                             let final_rd_latency = self.rd_latency;
@@ -601,11 +607,13 @@ where
                         println!("Crd read count (compressed): {}", read_count);
                         println!("Crd access tracker: {}", self.access_map.len());
                         let mem = MemoryWrapper {
-                            map: self.access_map.clone(),
+                            map: std::mem::take(&mut self.access_map),
                         };
-                        self.dump_chan
-                            .enqueue(&self.time, ChannelElement::new(self.time.tick() + 1, mem))
-                            .unwrap();
+                        if self.log_memory {
+                            self.dump_chan
+                                .enqueue(&self.time, ChannelElement::new(self.time.tick() + 1, mem))
+                                .unwrap();
+                        }
                         // for (key, value) in self.access_map.iter().take(10) {
                         //     println!("{}: {:?}", key, value);
                         // }

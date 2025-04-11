@@ -15,6 +15,7 @@ use super::primitive::{AccessBundle, AccessType, Token};
 #[context_macro]
 pub struct MemoryLogger {
     pub scanners: Vec<Receiver<MemoryWrapper>>,
+    pub log_memory: bool,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -33,6 +34,7 @@ impl MemoryLogger {
         let mem = MemoryLogger {
             scanners: vec![],
             context_info: Default::default(),
+            log_memory: false,
         };
 
         mem
@@ -42,26 +44,33 @@ impl MemoryLogger {
         scanner.attach_receiver(self);
         self.scanners.push(scanner);
     }
+
+    pub fn log_memory(&mut self, log: bool) {
+        self.log_memory = log;
+    }
 }
 
-pub fn dump_access_bundles<T>(btree_map: &BTreeMap<T, AccessBundle>, filename: &str) -> io::Result<()> {
+pub fn dump_access_bundles<T>(
+    btree_map: &BTreeMap<T, AccessBundle>,
+    filename: &str,
+) -> io::Result<()> {
     // Create a file with a buffered writer - much more efficient for many writes
     let file = File::create(filename)?;
     let mut writer = BufWriter::with_capacity(8 * 1024 * 1024, file); // 8MB buffer
-    
+
     for (_time, access_bundle) in btree_map {
         let access_type_str = match access_bundle.access_type {
             AccessType::Read => "LD",
             AccessType::Write => "ST",
         };
-        
+
         // Write directly to the buffered writer
         writeln!(writer, "{} 0x{:08x}", access_type_str, access_bundle.addr)?;
     }
-    
+
     // Ensure all data is written by flushing the buffer
     writer.flush()?;
-    
+
     Ok(())
 }
 
@@ -70,17 +79,14 @@ impl Context for MemoryLogger {
 
     fn run(&mut self) {
         let mut final_mems: BTreeMap<Time, AccessBundle> = BTreeMap::new();
-        for chan in self.scanners.iter() {
-            let mut data = chan.dequeue(&self.time).unwrap().data.map;
-            final_mems.append(&mut data);
+        if self.log_memory {
+            for chan in self.scanners.iter() {
+                let data = chan.dequeue(&self.time).unwrap().data.map;
+                // final_mems.append(&mut data);
+                final_mems.extend(data.into_iter());
+            }
+            dump_access_bundles(&final_mems, "memory_log.txt").unwrap();
         }
-
-        // Debug print
-        // for (key, value) in final_mems.iter().take(10) {
-        //     println!("{}: {:?}", key, value);
-        // }
-
-        dump_access_bundles(&final_mems, "memory_log.txt").unwrap();
 
         self.time.incr_cycles(1);
     }

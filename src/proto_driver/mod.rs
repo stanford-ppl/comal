@@ -126,6 +126,9 @@ pub fn build_from_proto<'a>(
     let mut curr_base_addr = 0;
     let addr_offset = 4;
 
+    let log_memory = false;
+    mem_log.log_memory(log_memory);
+
     // Avg latency numbers from ramulator
     let rd_latency = 12;
     let wr_latency = 15;
@@ -242,6 +245,7 @@ pub fn build_from_proto<'a>(
                     crs.set_timings(sam_options.compressed_read_config);
                     crs.set_base_addr(curr_base_addr);
                     crs.set_rd_latency(rd_latency);
+                    crs.log_mem(log_memory);
                     curr_base_addr += ((seg.len() + crd.len()) * addr_offset) as u64;
                     builder.add_child(crs);
                 } else {
@@ -259,7 +263,10 @@ pub fn build_from_proto<'a>(
                 let mut wr = CompressedWrScan::new(receiver, send);
                 wr.set_base_addr(curr_base_addr);
                 wr.set_wr_latency(wr_latency);
+                // TODO: Figure out how to get proper size
+                // Hardcoding for now
                 curr_base_addr += (1000 * addr_offset) as u64;
+                wr.log_mem(log_memory);
                 builder.add_child(wr);
             }
             Op::Repeat(op) => {
@@ -541,6 +548,7 @@ pub fn build_from_proto<'a>(
                 arr.set_base_addr(curr_base_addr);
                 arr.set_rd_latency(rd_latency);
                 curr_base_addr += (vals_len * addr_offset) as u64;
+                arr.log_mem(log_memory);
                 mem_log.add_scanner(rcv);
                 builder.add_child(arr);
             }
@@ -585,7 +593,13 @@ pub fn build_from_proto<'a>(
             Op::ValWrite(op) => {
                 let in_val_id = get_val_id(&op.input_val);
                 let val_receiver = valmap.get_receiver(in_val_id, builder);
-                builder.add_child(ValsWrScan::new(val_receiver));
+                let (snd, rcv) = builder.unbounded();
+                let mut vs = ValsWrScan::new(val_receiver, snd);
+                vs.set_wr_latency(wr_latency);
+                vs.set_base_addr(curr_base_addr);
+                vs.log_mem(log_memory);
+                mem_log.add_scanner(rcv);
+                builder.add_child(vs);
             }
             Op::CoordMask(_) => unimplemented!("SAMML can't output coord mask op yet"),
             operation::Op::Func(_) => todo!(),

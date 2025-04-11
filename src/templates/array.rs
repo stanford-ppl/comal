@@ -24,6 +24,7 @@ pub struct Array<RefType: Clone, ValType: Clone, StopType: Clone> {
     pub dump_chan: Sender<MemoryWrapper>,
     base_addr: u64,
     rd_latency: u64,
+    log_memory: bool,
 }
 
 impl<RefType: DAMType, ValType: DAMType, StopType: DAMType> Array<RefType, ValType, StopType>
@@ -42,6 +43,7 @@ where
             rd_latency: 1,
             access_map: BTreeMap::new(),
             dump_chan,
+            log_memory: false,
             context_info: Default::default(),
         };
         (arr.array_data.in_ref).attach_receiver(&arr);
@@ -57,6 +59,10 @@ where
 
     pub fn set_rd_latency(&mut self, latency: u64) {
         self.rd_latency = latency;
+    }
+
+    pub fn log_mem(&mut self, log: bool) {
+        self.log_memory = log;
     }
 }
 
@@ -186,11 +192,16 @@ where
                                 println!("ID: {:?}, Val: {:?}", id, out_val.clone());
                             }
                             let mem = MemoryWrapper {
-                                map: self.access_map.clone(),
+                                map: std::mem::take(&mut self.access_map),
                             };
-                            self.dump_chan
-                                .enqueue(&self.time, ChannelElement::new(self.time.tick() + 1, mem))
-                                .unwrap();
+                            if self.log_memory {
+                                self.dump_chan
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(self.time.tick() + 1, mem),
+                                    )
+                                    .unwrap();
+                            }
                             return;
                         }
                     }
