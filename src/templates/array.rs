@@ -7,6 +7,8 @@ use dam::{
 use serde::{Deserialize, Serialize};
 
 use super::primitive::Token;
+// HBM timing interface
+use crate::templates::ramulator::hbm_context::ParAddrs;
 
 pub struct ArrayData<RefType: Clone, ValType: Clone, StopType: Clone> {
     pub in_ref: Receiver<Token<RefType, StopType>>,
@@ -17,6 +19,11 @@ pub struct ArrayData<RefType: Clone, ValType: Clone, StopType: Clone> {
 pub struct Array<RefType: Clone, ValType: Clone, StopType: Clone> {
     array_data: ArrayData<RefType, ValType, StopType>,
     val_arr: Vec<ValType>,
+    // Optional HBM-backed read interface for val_arr
+    hbm_rd_addr_snd: Option<Sender<ParAddrs>>,
+    hbm_rd_resp_rcv: Option<Receiver<u64>>,
+    hbm_rd_base: u64,
+    hbm_rd_stride: u64,
 }
 
 impl<RefType: DAMType, ValType: DAMType, StopType: DAMType> Array<RefType, ValType, StopType>
@@ -27,12 +34,32 @@ where
         let arr = Array {
             array_data,
             val_arr,
+            hbm_rd_addr_snd: None,
+            hbm_rd_resp_rcv: None,
+            hbm_rd_base: 0,
+            hbm_rd_stride: 4,
             context_info: Default::default(),
         };
         (arr.array_data.in_ref).attach_receiver(&arr);
         (arr.array_data.out_val).attach_sender(&arr);
 
         arr
+    }
+
+    // Enable HBM-driven timing for reading from val_arr by reference index
+    pub fn enable_hbm_reads(
+        &mut self,
+        rd_addr_snd: Sender<ParAddrs>,
+        rd_resp_rcv: Receiver<u64>,
+        base: u64,
+        stride: u64,
+    ) {
+        rd_addr_snd.attach_sender(self);
+        rd_resp_rcv.attach_receiver(self);
+        self.hbm_rd_addr_snd = Some(rd_addr_snd);
+        self.hbm_rd_resp_rcv = Some(rd_resp_rcv);
+        self.hbm_rd_base = base;
+        self.hbm_rd_stride = stride.max(1);
     }
 }
 
@@ -60,7 +87,8 @@ where
     fn run(&mut self) {
         let id = Identifier { id: 0 };
         let curr_id = self.id();
-        let mut num_reads : u64 = 0;
+        let mut num_reads: u64 = 0;
+        let use_hbm = self.hbm_rd_addr_snd.is_some() && self.hbm_rd_resp_rcv.is_some();
         loop {
             match self.array_data.in_ref.dequeue(&self.time) {
                 Ok(curr_in) => {
@@ -68,6 +96,27 @@ where
                     match data.clone() {
                         Token::Val(val) => {
                             let idx: usize = val.try_into().unwrap();
+                            if use_hbm {
+                                let addr = self.hbm_rd_base + (idx as u64) * self.hbm_rd_stride;
+                                if let Some(snd) = &self.hbm_rd_addr_snd {
+                                    snd.enqueue(
+                                        &self.time,
+                                        ChannelElement::new(
+                                            self.time.tick(),
+                                            ParAddrs::new(vec![addr]),
+                                        ),
+                                    )
+                                    .unwrap();
+                                }
+                                if let Some(rcv) = &self.hbm_rd_resp_rcv {
+                                    loop {
+                                        match rcv.dequeue(&self.time) {
+                                            Ok(_) => break,
+                                            Err(_) => self.time.incr_cycles(1),
+                                        }
+                                    }
+                                }
+                            }
                             let channel_elem = ChannelElement::new(
                                 self.time.tick() + 1,
                                 Token::Val(self.val_arr[idx].clone()),
@@ -158,6 +207,7 @@ mod tests {
     use dam::utility_contexts::*;
 
     use crate::templates::primitive::Token;
+    use crate::templates::ramulator::hbm_context::{HBMConfig, HBMContext, ParAddrs, ReadBundle};
     use crate::token_vec;
 
     use super::Array;
@@ -174,6 +224,58 @@ mod tests {
         };
         let val_arr = vec![1u32, 2, 3, 4, 5];
         array_test(in_ref, out_val, val_arr);
+    }
+
+    #[test]
+    fn array_hbm_mode_smoke() {
+        const USE_HBM: bool = false;
+        let mut parent = ProgramBuilder::default();
+        let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<u32, u32>>();
+        let data = ArrayData::<u32, u32, u32> {
+            in_ref: in_ref_receiver,
+            out_val: out_val_sender,
+        };
+        let val_arr = vec![10u32, 20, 30, 40];
+        let mut arr = Array::new(data, val_arr);
+
+        if USE_HBM {
+            let (rd_addr_snd, rd_addr_rcv) = parent.unbounded::<ParAddrs>();
+            let (rd_resp_snd, rd_resp_rcv) = parent.unbounded::<u64>();
+            let mut mem = HBMContext::new(
+                &mut parent,
+                HBMConfig {
+                    addr_offset: 64,
+                    channel_num: 8,
+                    per_channel_latency: 4,
+                    per_channel_init_interval: 2,
+                    per_channel_outstanding: 1,
+                    per_channel_start_up_time: 10,
+                },
+            );
+            mem.add_reader(ReadBundle {
+                addr: rd_addr_rcv,
+                resp: rd_resp_snd,
+            });
+            arr.enable_hbm_reads(rd_addr_snd, rd_resp_rcv, 0x6000_0000, 4);
+            parent.add_child(mem);
+        }
+
+        let in_ref = || token_vec!(u32; u32; 0, 2, 1, "D").into_iter();
+        let expected = || token_vec!(u32; u32; 10, 30, 20, "D").into_iter();
+        parent.add_child(GeneratorContext::new(in_ref, in_ref_sender));
+        parent.add_child(CheckerContext::new(expected, out_val_receiver));
+        parent.add_child(arr);
+
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        println!(
+            "Array elapsed (HBM={}): {:?}",
+            USE_HBM,
+            executed.elapsed_cycles()
+        );
     }
 
     fn array_test<IRT, ORT>(in_ref: fn() -> IRT, out_val: fn() -> ORT, val_arr: Vec<u32>)

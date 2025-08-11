@@ -8,6 +8,8 @@ use dam::{
 use serde::{Deserialize, Serialize};
 
 use super::primitive::Token;
+// HBM timing interface
+use crate::templates::ramulator::hbm_context::ParAddrs;
 
 pub struct RdScanData<ValType: Clone, StopType: Clone> {
     pub in_ref: Receiver<Token<ValType, StopType>>,
@@ -28,6 +30,16 @@ pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     crd_arr: Vec<ValType>,
 
     timing_config: CompressedCrdRdScanConfig,
+    // Optional HBM-backed timing interfaces (seg/crd)
+    hbm_seg_addr_snd: Option<Sender<ParAddrs>>,
+    hbm_seg_resp_rcv: Option<Receiver<u64>>,
+    hbm_crd_addr_snd: Option<Sender<ParAddrs>>,
+    hbm_crd_resp_rcv: Option<Receiver<u64>>,
+    // Address mapping config: physical address = base + index * stride
+    hbm_seg_base: u64,
+    hbm_crd_base: u64,
+    hbm_seg_stride: u64,
+    hbm_crd_stride: u64,
 }
 
 #[context_macro]
@@ -73,6 +85,14 @@ where
             seg_arr,
             crd_arr,
             timing_config: Default::default(),
+            hbm_seg_addr_snd: None,
+            hbm_seg_resp_rcv: None,
+            hbm_crd_addr_snd: None,
+            hbm_crd_resp_rcv: None,
+            hbm_seg_base: 0,
+            hbm_crd_base: 0,
+            hbm_seg_stride: 4,
+            hbm_crd_stride: 4,
             context_info: Default::default(),
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
@@ -85,30 +105,34 @@ where
     pub fn set_timings(&mut self, new_config: CompressedCrdRdScanConfig) {
         self.timing_config = new_config
     }
-}
 
-impl<ValType: DAMType, StopType: DAMType> TileRdScan<ValType, StopType>
-where
-    TileRdScan<ValType, StopType>: Context,
-{
-    pub fn new(
-        rd_scan_data: RdScanData<ValType, StopType>,
-        seg_arrs: Vec<Vec<ValType>>,
-        crd_arrs: Vec<Vec<ValType>>,
-        num_tiles: usize,
-    ) -> Self {
-        let ucr = TileRdScan {
-            rd_scan_data,
-            seg_arrs,
-            crd_arrs,
-            num_tiles,
-            context_info: Default::default(),
-        };
-        (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
-        (ucr.rd_scan_data.out_ref).attach_sender(&ucr);
-        (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
+    // Enable HBM-driven timing. The addresses sent are base + index * stride.
+    pub fn enable_hbm(
+        &mut self,
+        seg_addr_snd: Sender<ParAddrs>,
+        seg_resp_rcv: Receiver<u64>,
+        crd_addr_snd: Sender<ParAddrs>,
+        crd_resp_rcv: Receiver<u64>,
+        seg_base: u64,
+        crd_base: u64,
+        seg_stride: u64,
+        crd_stride: u64,
+    ) {
+        // Attach channels to this context
+        seg_addr_snd.attach_sender(self);
+        crd_addr_snd.attach_sender(self);
+        seg_resp_rcv.attach_receiver(self);
+        crd_resp_rcv.attach_receiver(self);
 
-        ucr
+        self.hbm_seg_addr_snd = Some(seg_addr_snd);
+        self.hbm_seg_resp_rcv = Some(seg_resp_rcv);
+        self.hbm_crd_addr_snd = Some(crd_addr_snd);
+        self.hbm_crd_resp_rcv = Some(crd_resp_rcv);
+
+        self.hbm_seg_base = seg_base;
+        self.hbm_crd_base = crd_base;
+        self.hbm_seg_stride = seg_stride.max(1);
+        self.hbm_crd_stride = crd_stride.max(1);
     }
 }
 
@@ -448,14 +472,22 @@ where
 
     fn run(&mut self) {
         let factor = self.timing_config.data_load_factor;
-        let seg_arr_len = self.seg_arr.len() as f64 * factor;
-        let crd_arr_len = self.crd_arr.len() as f64 * factor;
-        self.time.incr_cycles(seg_arr_len.ceil() as u64);
-        self.time.incr_cycles(crd_arr_len.ceil() as u64);
-        self.time.incr_cycles(self.timing_config.startup_delay);
+        let use_hbm = self.hbm_seg_addr_snd.is_some()
+            && self.hbm_seg_resp_rcv.is_some()
+            && self.hbm_crd_addr_snd.is_some()
+            && self.hbm_crd_resp_rcv.is_some();
+
+        if !use_hbm {
+            // Original synthetic load and startup delay when not using HBM-backed timing
+            let seg_arr_len = self.seg_arr.len() as f64 * factor;
+            let crd_arr_len = self.crd_arr.len() as f64 * factor;
+            self.time.incr_cycles(seg_arr_len.ceil() as u64);
+            self.time.incr_cycles(crd_arr_len.ceil() as u64);
+            self.time.incr_cycles(self.timing_config.startup_delay);
+        }
         let mut seg_initiated = false;
         let id = Identifier { id: 0 };
-        let curr_id = self.id();
+        // let curr_id = self.id();
         let mut stkn_cnt = 0;
         let mut read_count: u64 = 0;
         let mut cached_ref = None;
@@ -463,8 +495,36 @@ where
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data.clone() {
                     Token::Val(val) => {
-                        let idx: usize = val.try_into().unwrap();
-                        let mut curr_addr = self.seg_arr[idx].clone();
+                        // When using HBM, first issue read requests for seg_arr[idx] and seg_arr[idx+1]
+                        if use_hbm {
+                            let idx: usize = val.clone().try_into().unwrap();
+                            let base = self.hbm_seg_base;
+                            let stride = self.hbm_seg_stride;
+                            let addr0 = base + (idx as u64) * stride;
+                            let addr1 = base + ((idx + 1) as u64) * stride;
+                            if let Some(snd) = &self.hbm_seg_addr_snd {
+                                snd.enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        self.time.tick(),
+                                        ParAddrs::new(vec![addr0, addr1]),
+                                    ),
+                                )
+                                .unwrap();
+                            }
+                            // wait for 2 responses to model memory delay
+                            let mut seg_ack = 0;
+                            if let Some(rcv) = &self.hbm_seg_resp_rcv {
+                                while seg_ack < 2 {
+                                    match rcv.dequeue(&self.time) {
+                                        Ok(_) => seg_ack += 1,
+                                        Err(_) => self.time.incr_cycles(1),
+                                    }
+                                }
+                            }
+                        }
+
+                        let mut curr_addr = self.seg_arr[val.clone().try_into().unwrap()].clone();
                         let mut seen_prev = false;
 
                         if cached_ref != None {
@@ -480,41 +540,82 @@ where
                             read_count += 1;
                         }
 
-                        let stop_addr = self.seg_arr[idx + 1].clone();
+                        let stop_addr = self.seg_arr[val.clone().try_into().unwrap() + 1].clone();
 
                         if !seen_prev {
                             read_count += 1;
                         }
 
-                        self.time.incr_cycles(self.timing_config.initial_delay);
+                        if !use_hbm {
+                            // Original synthetic timing
+                            self.time.incr_cycles(self.timing_config.initial_delay);
+                        }
                         let mut initiated = true;
 
                         let mut start_seg = 0;
                         if seg_initiated {
-                            start_seg = idx;
+                            start_seg = val.clone().try_into().unwrap();
                             seg_initiated = false;
                         }
 
-                        if idx - start_seg >= self.timing_config.row_size {
-                            seg_initiated = true;
+                        if !use_hbm {
+                            if val.try_into().unwrap() - start_seg >= self.timing_config.row_size {
+                                seg_initiated = true;
 
-                            self.time.incr_cycles(self.timing_config.miss_latency);
+                                self.time.incr_cycles(self.timing_config.miss_latency);
+                            }
                         }
 
                         while curr_addr < stop_addr {
-                            let mut start_rd_addr = 0;
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
+                            if use_hbm {
+                                // Send crd read request and wait for completion
+                                if let Some(snd) = &self.hbm_crd_addr_snd {
+                                    let base = self.hbm_crd_base;
+                                    let stride = self.hbm_crd_stride;
+                                    let phy = base + (read_addr as u64) * stride;
+                                    snd.enqueue(
+                                        &self.time,
+                                        ChannelElement::new(
+                                            self.time.tick(),
+                                            ParAddrs::new(vec![phy]),
+                                        ),
+                                    )
+                                    .unwrap();
+                                }
+                                // Block until we get the memory response for this address
+                                if let Some(rcv) = &self.hbm_crd_resp_rcv {
+                                    loop {
+                                        match rcv.dequeue(&self.time) {
+                                            Ok(_) => break,
+                                            Err(_) => self.time.incr_cycles(1),
+                                        }
+                                    }
+                                }
+                            }
+
+                            // After memory completes, fetch data locally and emit
                             let coord = self.crd_arr[read_addr].clone();
                             let curr_time = self.time.tick();
-                            if initiated {
-                                start_rd_addr = read_addr;
-                                initiated = false;
+                            let mut final_rd_latency = if use_hbm {
+                                // Memory latency already accounted for; only add output_latency
+                                self.timing_config.output_latency
+                            } else {
+                                self.timing_config.output_latency
+                            };
+
+                            if !use_hbm {
+                                let mut start_rd_addr = 0usize;
+                                if initiated {
+                                    start_rd_addr = read_addr;
+                                    initiated = false;
+                                }
+                                if read_addr - start_rd_addr >= self.timing_config.row_size {
+                                    initiated = true;
+                                    final_rd_latency = self.timing_config.miss_latency;
+                                }
                             }
-                            let mut final_rd_latency = self.timing_config.output_latency;
-                            if read_addr - start_rd_addr >= self.timing_config.row_size {
-                                initiated = true;
-                                final_rd_latency = self.timing_config.miss_latency;
-                            }
+
                             self.rd_scan_data
                                 .out_crd
                                 .enqueue(
@@ -554,8 +655,10 @@ where
                             }
 
                             curr_addr += 1;
-                            self.time
-                                .incr_cycles(self.timing_config.sequential_interval);
+                            if !use_hbm {
+                                self.time
+                                    .incr_cycles(self.timing_config.sequential_interval);
+                            }
                         }
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
@@ -714,8 +817,10 @@ where
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
             }
             // println!("Stop token cnt: {}", stkn_cnt);
-            self.time
-                .incr_cycles(self.timing_config.sequential_interval);
+            if !use_hbm {
+                self.time
+                    .incr_cycles(self.timing_config.sequential_interval);
+            }
         }
     }
 }
@@ -734,9 +839,98 @@ mod tests {
 
     use crate::templates::primitive::Token;
     use crate::token_vec;
+    // Import HBM context types
+    use crate::templates::ramulator::hbm_context::{HBMConfig, HBMContext, ParAddrs, ReadBundle};
 
     use super::CompressedCrdRdScan;
     use super::RdScanData;
+
+    #[test]
+    fn crd_2d_hbm_mode_smoke() {
+        const USE_HBM: bool = true;
+        let seg_arr = vec![0u32, 3, 6];
+        let crd_arr = vec![0, 2, 3, 4, 5, 6];
+        let in_ref = || token_vec!(u32; u32; 0, "S0", "D").into_iter();
+
+        let mut parent = ProgramBuilder::default();
+        // Channels for scan
+        let (ref_snd, ref_rcv) = parent.unbounded::<Token<u32, u32>>();
+        let (crd_snd, crd_rcv) = parent.unbounded::<Token<u32, u32>>();
+        let (in_snd, in_rcv) = parent.unbounded::<Token<u32, u32>>();
+
+        // Initialize scan context
+        let data = RdScanData {
+            in_ref: in_rcv,
+            out_ref: ref_snd,
+            out_crd: crd_snd,
+        };
+        let mut cr = CompressedCrdRdScan::new(data, seg_arr, crd_arr);
+
+        // Optionally setup HBM
+        if USE_HBM {
+            // Channels for HBM
+            let (seg_addr_snd, seg_addr_rcv) = parent.unbounded::<ParAddrs>();
+            let (seg_resp_snd, seg_resp_rcv) = parent.unbounded::<u64>();
+            let (crd_addr_snd, crd_addr_rcv) = parent.unbounded::<ParAddrs>();
+            let (crd_resp_snd, crd_resp_rcv) = parent.unbounded::<u64>();
+            let mut mem = HBMContext::new(
+                &mut parent,
+                HBMConfig {
+                    addr_offset: 64,
+                    channel_num: 8,
+                    per_channel_latency: 4,
+                    per_channel_init_interval: 2,
+                    per_channel_outstanding: 1,
+                    per_channel_start_up_time: 10,
+                },
+            );
+            mem.add_reader(ReadBundle {
+                addr: seg_addr_rcv,
+                resp: seg_resp_snd,
+            });
+            mem.add_reader(ReadBundle {
+                addr: crd_addr_rcv,
+                resp: crd_resp_snd,
+            });
+            cr.enable_hbm(
+                seg_addr_snd,
+                seg_resp_rcv,
+                crd_addr_snd,
+                crd_resp_rcv,
+                0x1000_0000,
+                0x2000_0000,
+                4,
+                4,
+            );
+            parent.add_child(mem);
+        }
+
+        // Attach drivers and scan
+        parent.add_child(GeneratorContext::new(in_ref, in_snd));
+        parent.add_child(ConsumerContext::new(crd_rcv));
+        parent.add_child(ConsumerContext::new(ref_rcv));
+        parent.add_child(cr);
+
+        let init = parent
+            .initialize(
+                InitializationOptionsBuilder::default()
+                    .run_flavor_inference(true)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let exec = init.run(
+            RunOptionsBuilder::default()
+                .mode(RunMode::Simple)
+                .build()
+                .unwrap(),
+        );
+        println!(
+            "Elapsed cycles (HBM={}): {:?}",
+            USE_HBM,
+            exec.elapsed_cycles().unwrap()
+        );
+    }
 
     #[test]
     fn crd_2d_maybe_token() {
@@ -818,7 +1012,7 @@ mod tests {
         let crd_arr = vec![
             0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 14, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14,
             0, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 0, 1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14,
-            0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 13, 14,
+            0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 12, 13, 14,
         ];
         let in_ref = || token_vec!(u32; u32; "S0", 5, 5, 0, "S0", 3, 1, "S1", "D").into_iter();
         compressed_rd_scan_calibration(seg_arr, crd_arr, in_ref, 93);
