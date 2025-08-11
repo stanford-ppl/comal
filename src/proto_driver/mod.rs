@@ -1,10 +1,10 @@
 pub mod proto_headers;
 pub mod util;
 
+use crate::templates::locate::IterateLocate;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::path::PathBuf;
-use crate::templates::locate::IterateLocate;
 
 use self::proto_headers::tortilla::operation::*;
 use self::util::{get_repsig_id, AsStreamID};
@@ -29,6 +29,10 @@ use crate::templates::new_alu::{ALUAdd, ALUMul};
 use crate::templates::primitive::ALUMaxOp;
 use crate::templates::scatter_gather::{Gather, Scatter};
 use crate::templates::unary::Unary;
+// HBM timing interfaces
+use crate::templates::ramulator::hbm_context::{
+    HBMConfig, HBMContext, ParAddrs, ReadBundle, WriteBundle,
+};
 
 use super::templates::{alu::make_unary_alu, primitive::ALUExpOp};
 use dam::channel::adapters::{RecvAdapter, SendAdapter};
@@ -121,6 +125,23 @@ pub fn build_from_proto<'a>(
     valmap: &mut Channels<'a, Token<VT, ST>>,
     repmap: &mut Channels<'a, Repsiggen>,
 ) {
+    const ENABLE_HBM: bool = true;
+    // Optional HBM memory timing context
+    let mut hbm_ctx_opt = if ENABLE_HBM {
+        Some(HBMContext::new(
+            builder,
+            HBMConfig {
+                addr_offset: 64,
+                channel_num: 8,
+                per_channel_latency: 4,
+                per_channel_init_interval: 4,
+                per_channel_outstanding: 1,
+                per_channel_start_up_time: 14,
+            },
+        ))
+    } else {
+        None
+    };
     for operation in comal_graph.graph.unwrap().operators {
         match operation.op.expect("Error processing") {
             Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
@@ -230,6 +251,32 @@ pub fn build_from_proto<'a>(
                     let crd = read_inputs(&crd_filename);
                     let mut crs = CompressedCrdRdScan::new(f_data, seg, crd);
                     crs.set_timings(sam_options.compressed_read_config);
+                    if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                        // Hook HBM read bundles for seg/crd
+                        let (seg_addr_snd, seg_addr_rcv) = builder.unbounded::<ParAddrs>();
+                        let (seg_resp_snd, seg_resp_rcv) = builder.unbounded::<u64>();
+                        let (crd_addr_snd, crd_addr_rcv) = builder.unbounded::<ParAddrs>();
+                        let (crd_resp_snd, crd_resp_rcv) = builder.unbounded::<u64>();
+                        hbm.add_reader(ReadBundle {
+                            addr: seg_addr_rcv,
+                            resp: seg_resp_snd,
+                        });
+                        hbm.add_reader(ReadBundle {
+                            addr: crd_addr_rcv,
+                            resp: crd_resp_snd,
+                        });
+                        // Assume 32-bit words
+                        crs.enable_hbm(
+                            seg_addr_snd,
+                            seg_resp_rcv,
+                            crd_addr_snd,
+                            crd_resp_rcv,
+                            0x1000_0000,
+                            0x2000_0000,
+                            4,
+                            4,
+                        );
+                    }
                     builder.add_child(crs);
                 } else {
                     let shape_filename = base_path.join(format!("tensor_{}_mode_shape", op.tensor));
@@ -241,7 +288,33 @@ pub fn build_from_proto<'a>(
             Op::FiberWrite(op) => {
                 let in_crd_id = get_crd_id(&op.input_crd);
                 let receiver = crdmap.get_receiver(in_crd_id, builder);
-                builder.add_child(CompressedWrScan::new(receiver));
+                let mut wr = CompressedWrScan::new(receiver);
+                if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                    // Hook HBM writer bundles for crd and seg
+                    let (crd_addr_snd, crd_addr_rcv) = builder.unbounded::<ParAddrs>();
+                    let (crd_resp_snd, crd_resp_rcv) = builder.unbounded::<u64>();
+                    let (seg_addr_snd, seg_addr_rcv) = builder.unbounded::<ParAddrs>();
+                    let (seg_resp_snd, seg_resp_rcv) = builder.unbounded::<u64>();
+                    hbm.add_writer(WriteBundle {
+                        addr: crd_addr_rcv,
+                        resp: crd_resp_snd,
+                    });
+                    hbm.add_writer(WriteBundle {
+                        addr: seg_addr_rcv,
+                        resp: seg_resp_snd,
+                    });
+                    wr.enable_hbm_writes(
+                        crd_addr_snd,
+                        crd_resp_rcv,
+                        seg_addr_snd,
+                        seg_resp_rcv,
+                        0x4000_0000,
+                        0x5000_0000,
+                        4,
+                        4,
+                    );
+                }
+                builder.add_child(wr);
             }
             Op::Repeat(op) => {
                 // TODO: Need to check if input_rep_crd exists for backwards compatibility
@@ -372,29 +445,11 @@ pub fn build_from_proto<'a>(
                     let latency = 1;
                     let ii = 1;
                     let binary_func = match op.stages[0].op() {
-                        alu::AluOp::Add => {
-                            |val1: VT, val2: VT| -> VT {
-                                val1 + val2
-                            }
-                        }
-                        alu::AluOp::Sub => {
-                            |val1: VT, val2: VT| -> VT {
-                                val1 - val2
-                            }
-                        }
-                        alu::AluOp::Mul => {
-                            |val1: VT, val2: VT| -> VT { val1 * val2 }
-                        }
-                        alu::AluOp::Div => {
-                            |val1: VT, val2: VT| -> VT {
-                                val1 / val2
-                            }
-                        }
-                        alu::AluOp::Elemmul => {
-                            |val1: VT, val2: VT| -> VT {
-                                val1 * val2
-                            }
-                        }
+                        alu::AluOp::Add => |val1: VT, val2: VT| -> VT { val1 + val2 },
+                        alu::AluOp::Sub => |val1: VT, val2: VT| -> VT { val1 - val2 },
+                        alu::AluOp::Mul => |val1: VT, val2: VT| -> VT { val1 * val2 },
+                        alu::AluOp::Div => |val1: VT, val2: VT| -> VT { val1 / val2 },
+                        alu::AluOp::Elemmul => |val1: VT, val2: VT| -> VT { val1 * val2 },
                         _ => todo!(),
                     };
                     builder.add_child(Binary::new(
@@ -551,7 +606,17 @@ pub fn build_from_proto<'a>(
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
                 let vals = read_inputs(&val_filename);
-                builder.add_child(Array::new(array_data, vals));
+                let mut arr = Array::new(array_data, vals);
+                if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                    let (rd_addr_snd, rd_addr_rcv) = builder.unbounded::<ParAddrs>();
+                    let (rd_resp_snd, rd_resp_rcv) = builder.unbounded::<u64>();
+                    hbm.add_reader(ReadBundle {
+                        addr: rd_addr_rcv,
+                        resp: rd_resp_snd,
+                    });
+                    arr.enable_hbm_reads(rd_addr_snd, rd_resp_rcv, 0x6000_0000, 4);
+                }
+                builder.add_child(arr);
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
@@ -583,7 +648,10 @@ pub fn build_from_proto<'a>(
                         in_crd2: crdmap.get_receiver(in_crd2, builder),
                         out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                         out_crd0: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
-                        out_crd1: crdmap.get_sender(get_crd_id(&Some(op.output_outer_crds[0].clone())), builder),
+                        out_crd1: crdmap.get_sender(
+                            get_crd_id(&Some(op.output_outer_crds[0].clone())),
+                            builder,
+                        ),
                     };
                     builder.add_child(Spacc2::new(spacc2_data));
                 }
@@ -591,7 +659,17 @@ pub fn build_from_proto<'a>(
             Op::ValWrite(op) => {
                 let in_val_id = get_val_id(&op.input_val);
                 let val_receiver = valmap.get_receiver(in_val_id, builder);
-                builder.add_child(ValsWrScan::new(val_receiver));
+                let mut vals = ValsWrScan::new(val_receiver);
+                if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                    let (wr_addr_snd, wr_addr_rcv) = builder.unbounded::<ParAddrs>();
+                    let (wr_resp_snd, wr_resp_rcv) = builder.unbounded::<u64>();
+                    hbm.add_writer(WriteBundle {
+                        addr: wr_addr_rcv,
+                        resp: wr_resp_snd,
+                    });
+                    vals.enable_hbm_writes(wr_addr_snd, wr_resp_rcv, 0x3000_0000, 4);
+                }
+                builder.add_child(vals);
             }
             Op::CoordMask(_) => unimplemented!("SAMML can't output coord mask op yet"),
             operation::Op::Func(_) => todo!(),
@@ -677,6 +755,9 @@ pub fn build_from_proto<'a>(
             },
             _ => todo!(),
         }
+    }
+    if let Some(hbm) = hbm_ctx_opt {
+        builder.add_child(hbm);
     }
 }
 
