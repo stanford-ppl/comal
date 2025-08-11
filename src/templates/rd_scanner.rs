@@ -260,7 +260,7 @@ where
                         if curr_id == id {
                             println!("ID: {:?}, Val: {:?}", id, Token::<ValType, StopType>::Done);
                         }
-                        println!("Crd read count: {}", read_count);
+                        println!("Uncompressed Crd read count: {}", read_count);
                         return;
                     }
                     Token::Empty => {

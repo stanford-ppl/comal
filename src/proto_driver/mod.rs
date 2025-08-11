@@ -390,6 +390,11 @@ pub fn build_from_proto<'a>(
                                 val1 / val2
                             }
                         }
+                        alu::AluOp::Elemmul => {
+                            |val1: VT, val2: VT| -> VT {
+                                val1 * val2
+                            }
+                        }
                         _ => todo!(),
                     };
                     builder.add_child(Binary::new(
