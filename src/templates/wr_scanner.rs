@@ -1,11 +1,8 @@
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use dam::{context_tools::*, dam_macros::context_macro};
 
-use super::{primitive::Token, utils::write_outputs};
+use super::primitive::Token;
 // HBM timing interface
 use crate::templates::ramulator::hbm_context::ParAddrs;
 
@@ -24,6 +21,9 @@ pub struct CompressedWrScan<ValType: Clone, StopType: Clone> {
     hbm_seg_base: u64,
     hbm_crd_stride: u64,
     hbm_seg_stride: u64,
+    // Batch sizes (default 1 = no batching)
+    hbm_crd_batch: usize,
+    hbm_seg_batch: usize,
 }
 
 impl<ValType: DAMType, StopType: DAMType> CompressedWrScan<ValType, StopType>
@@ -43,6 +43,8 @@ where
             hbm_seg_base: 0,
             hbm_crd_stride: 4,
             hbm_seg_stride: 4,
+            hbm_crd_batch: 8,
+            hbm_seg_batch: 8,
             context_info: Default::default(),
         };
         (cwr).input.attach_receiver(&cwr);
@@ -77,6 +79,11 @@ where
         self.hbm_crd_stride = crd_stride.max(1);
         self.hbm_seg_stride = seg_stride.max(1);
     }
+
+    pub fn set_hbm_batch_sizes(&mut self, crd_batch: usize, seg_batch: usize) {
+        self.hbm_crd_batch = crd_batch.max(1);
+        self.hbm_seg_batch = seg_batch.max(1);
+    }
 }
 
 impl<ValType, StopType> Context for CompressedWrScan<ValType, StopType>
@@ -101,37 +108,66 @@ where
         let mut crd_write_count: u64 = 0;
         let mut seg_write_count: u64 = 0;
 
-        let mut crd_arr = self.crd_arr.lock().unwrap();
-        let mut seg_arr = self.seg_arr.lock().unwrap();
         let use_crd_hbm = self.hbm_crd_addr_snd.is_some() && self.hbm_crd_resp_rcv.is_some();
         let use_seg_hbm = self.hbm_seg_addr_snd.is_some() && self.hbm_seg_resp_rcv.is_some();
+        // Track logical lengths without holding locks
+        let mut _crd_len = { self.crd_arr.lock().unwrap().len() };
+        let mut _seg_len = { self.seg_arr.lock().unwrap().len() };
+
+        // Pending batches for writes
+        let mut pending_crd_idx: Vec<usize> = Vec::new();
+        let mut pending_crd_vals: Vec<ValType> = Vec::new();
+        let mut pending_seg_idx: Vec<usize> = Vec::new();
+        let mut pending_seg_vals: Vec<ValType> = Vec::new();
+
         loop {
             match self.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         if use_crd_hbm {
-                            let idx = crd_arr.len();
-                            let addr = self.hbm_crd_base + (idx as u64) * self.hbm_crd_stride;
-                            if let Some(snd) = &self.hbm_crd_addr_snd {
-                                snd.enqueue(
-                                    &self.time,
-                                    ChannelElement::new(
-                                        self.time.tick(),
-                                        ParAddrs::new(vec![addr]),
-                                    ),
-                                )
-                                .unwrap();
-                            }
-                            if let Some(rcv) = &self.hbm_crd_resp_rcv {
-                                loop {
-                                    match rcv.dequeue(&self.time) {
-                                        Ok(_) => break,
-                                        Err(_) => self.time.incr_cycles(1),
+                            // Defer commit until batch flush
+                            let idx = _crd_len + pending_crd_vals.len();
+                            pending_crd_idx.push(idx);
+                            pending_crd_vals.push(val.clone());
+                            if pending_crd_idx.len() >= self.hbm_crd_batch {
+                                // Flush CRD batch: send addresses, wait acks, then commit
+                                if let Some(snd) = &self.hbm_crd_addr_snd {
+                                    let addrs: Vec<u64> = pending_crd_idx
+                                        .iter()
+                                        .map(|i| {
+                                            self.hbm_crd_base + (*i as u64) * self.hbm_crd_stride
+                                        })
+                                        .collect();
+                                    snd.enqueue(
+                                        &self.time,
+                                        ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                    )
+                                    .unwrap();
+                                }
+                                if let Some(rcv) = &self.hbm_crd_resp_rcv {
+                                    let mut acks = 0usize;
+                                    while acks < pending_crd_idx.len() {
+                                        match rcv.dequeue(&self.time) {
+                                            Ok(_) => acks += 1,
+                                            Err(_) => self.time.incr_cycles(1),
+                                        }
                                     }
                                 }
+                                // Commit
+                                {
+                                    let mut lock = self.crd_arr.lock().unwrap();
+                                    for v in pending_crd_vals.drain(..) {
+                                        lock.push(v);
+                                    }
+                                }
+                                _crd_len += pending_crd_idx.len();
+                                pending_crd_idx.clear();
                             }
+                        } else {
+                            let mut lock = self.crd_arr.lock().unwrap();
+                            lock.push(val.clone());
+                            _crd_len += 1;
                         }
-                        crd_arr.push(val.clone());
                         curr_crd_cnt += 1;
                         end_fiber = false;
                         // println!("{:?}", val.clone());
@@ -139,37 +175,173 @@ where
                     }
                     Token::Stop(_) if !end_fiber => {
                         if use_seg_hbm {
-                            let idx = seg_arr.len();
-                            let addr = self.hbm_seg_base + (idx as u64) * self.hbm_seg_stride;
-                            if let Some(snd) = &self.hbm_seg_addr_snd {
-                                snd.enqueue(
-                                    &self.time,
-                                    ChannelElement::new(
-                                        self.time.tick(),
-                                        ParAddrs::new(vec![addr]),
-                                    ),
-                                )
-                                .unwrap();
-                            }
-                            if let Some(rcv) = &self.hbm_seg_resp_rcv {
-                                loop {
-                                    match rcv.dequeue(&self.time) {
-                                        Ok(_) => break,
-                                        Err(_) => self.time.incr_cycles(1),
+                            // Defer commit until batch flush
+                            let idx = _seg_len + pending_seg_vals.len();
+                            pending_seg_idx.push(idx);
+                            pending_seg_vals.push(curr_crd_cnt.clone());
+                            if pending_seg_idx.len() >= self.hbm_seg_batch {
+                                // Flush SEG batch
+                                if let Some(snd) = &self.hbm_seg_addr_snd {
+                                    let addrs: Vec<u64> = pending_seg_idx
+                                        .iter()
+                                        .map(|i| {
+                                            self.hbm_seg_base + (*i as u64) * self.hbm_seg_stride
+                                        })
+                                        .collect();
+                                    snd.enqueue(
+                                        &self.time,
+                                        ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                    )
+                                    .unwrap();
+                                }
+                                if let Some(rcv) = &self.hbm_seg_resp_rcv {
+                                    let mut acks = 0usize;
+                                    while acks < pending_seg_idx.len() {
+                                        match rcv.dequeue(&self.time) {
+                                            Ok(_) => acks += 1,
+                                            Err(_) => self.time.incr_cycles(1),
+                                        }
                                     }
                                 }
+                                // Commit
+                                {
+                                    let mut lock = self.seg_arr.lock().unwrap();
+                                    for v in pending_seg_vals.drain(..) {
+                                        lock.push(v);
+                                    }
+                                }
+                                _seg_len += pending_seg_idx.len();
+                                pending_seg_idx.clear();
                             }
+                        } else {
+                            let mut lock = self.seg_arr.lock().unwrap();
+                            lock.push(curr_crd_cnt.clone());
+                            _seg_len += 1;
                         }
-                        seg_arr.push(curr_crd_cnt.clone());
                         end_fiber = true;
                         seg_write_count += 1;
                     }
                     Token::Empty | Token::Stop(_) => {
-                        // TODO: Maybe needs to be processed too
-
+                        // Flush pending batches on control tokens
+                        if use_crd_hbm && !pending_crd_idx.is_empty() {
+                            if let Some(snd) = &self.hbm_crd_addr_snd {
+                                let addrs: Vec<u64> = pending_crd_idx
+                                    .iter()
+                                    .map(|i| self.hbm_crd_base + (*i as u64) * self.hbm_crd_stride)
+                                    .collect();
+                                snd.enqueue(
+                                    &self.time,
+                                    ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                )
+                                .unwrap();
+                            }
+                            if let Some(rcv) = &self.hbm_crd_resp_rcv {
+                                let mut acks = 0usize;
+                                while acks < pending_crd_idx.len() {
+                                    match rcv.dequeue(&self.time) {
+                                        Ok(_) => acks += 1,
+                                        Err(_) => self.time.incr_cycles(1),
+                                    }
+                                }
+                            }
+                            {
+                                let mut lock = self.crd_arr.lock().unwrap();
+                                for v in pending_crd_vals.drain(..) {
+                                    lock.push(v);
+                                }
+                            }
+                            _crd_len += pending_crd_idx.len();
+                            pending_crd_idx.clear();
+                        }
+                        if use_seg_hbm && !pending_seg_idx.is_empty() {
+                            if let Some(snd) = &self.hbm_seg_addr_snd {
+                                let addrs: Vec<u64> = pending_seg_idx
+                                    .iter()
+                                    .map(|i| self.hbm_seg_base + (*i as u64) * self.hbm_seg_stride)
+                                    .collect();
+                                snd.enqueue(
+                                    &self.time,
+                                    ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                )
+                                .unwrap();
+                            }
+                            if let Some(rcv) = &self.hbm_seg_resp_rcv {
+                                let mut acks = 0usize;
+                                while acks < pending_seg_idx.len() {
+                                    match rcv.dequeue(&self.time) {
+                                        Ok(_) => acks += 1,
+                                        Err(_) => self.time.incr_cycles(1),
+                                    }
+                                }
+                            }
+                            {
+                                let mut lock = self.seg_arr.lock().unwrap();
+                                for v in pending_seg_vals.drain(..) {
+                                    lock.push(v);
+                                }
+                            }
+                            _seg_len += pending_seg_idx.len();
+                            pending_seg_idx.clear();
+                        }
                         continue;
                     }
                     Token::Done => {
+                        if use_crd_hbm && !pending_crd_idx.is_empty() {
+                            if let Some(snd) = &self.hbm_crd_addr_snd {
+                                let addrs: Vec<u64> = pending_crd_idx
+                                    .iter()
+                                    .map(|i| self.hbm_crd_base + (*i as u64) * self.hbm_crd_stride)
+                                    .collect();
+                                snd.enqueue(
+                                    &self.time,
+                                    ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                )
+                                .unwrap();
+                            }
+                            if let Some(rcv) = &self.hbm_crd_resp_rcv {
+                                let mut acks = 0usize;
+                                while acks < pending_crd_idx.len() {
+                                    match rcv.dequeue(&self.time) {
+                                        Ok(_) => acks += 1,
+                                        Err(_) => self.time.incr_cycles(1),
+                                    }
+                                }
+                            }
+                            let mut lock = self.crd_arr.lock().unwrap();
+                            for v in pending_crd_vals.drain(..) {
+                                lock.push(v);
+                            }
+                            _crd_len += pending_crd_idx.len();
+                            pending_crd_idx.clear();
+                        }
+                        if use_seg_hbm && !pending_seg_idx.is_empty() {
+                            if let Some(snd) = &self.hbm_seg_addr_snd {
+                                let addrs: Vec<u64> = pending_seg_idx
+                                    .iter()
+                                    .map(|i| self.hbm_seg_base + (*i as u64) * self.hbm_seg_stride)
+                                    .collect();
+                                snd.enqueue(
+                                    &self.time,
+                                    ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                )
+                                .unwrap();
+                            }
+                            if let Some(rcv) = &self.hbm_seg_resp_rcv {
+                                let mut acks = 0usize;
+                                while acks < pending_seg_idx.len() {
+                                    match rcv.dequeue(&self.time) {
+                                        Ok(_) => acks += 1,
+                                        Err(_) => self.time.incr_cycles(1),
+                                    }
+                                }
+                            }
+                            let mut lock = self.seg_arr.lock().unwrap();
+                            for v in pending_seg_vals.drain(..) {
+                                lock.push(v);
+                            }
+                            _seg_len += pending_seg_idx.len();
+                            pending_seg_idx.clear();
+                        }
                         println!("Crd write count (crd): {}", crd_write_count);
                         println!("Crd write count (seg): {}", seg_write_count);
                         return;
@@ -193,6 +365,8 @@ pub struct ValsWrScan<ValType: Clone, StopType: Clone> {
     hbm_wr_resp_rcv: Option<Receiver<u64>>,
     hbm_wr_base: u64,
     hbm_wr_stride: u64,
+    // Batch size for value writes
+    hbm_wr_batch: usize,
 }
 
 impl<ValType: DAMType, StopType: DAMType> ValsWrScan<ValType, StopType>
@@ -207,6 +381,7 @@ where
             hbm_wr_resp_rcv: None,
             hbm_wr_base: 0,
             hbm_wr_stride: 4,
+            hbm_wr_batch: 1,
             context_info: Default::default(),
         };
         (vals.input).attach_receiver(&vals);
@@ -229,6 +404,10 @@ where
         self.hbm_wr_base = base;
         self.hbm_wr_stride = stride.max(1);
     }
+
+    pub fn set_hbm_batch_size(&mut self, batch: usize) {
+        self.hbm_wr_batch = batch.max(1);
+    }
 }
 
 impl<ValType, StopType> Context for ValsWrScan<ValType, StopType>
@@ -241,45 +420,121 @@ where
     fn run(&mut self) {
         let latency = 1;
         let initiation_interval = 1;
-        let mut locked = self.out_val.lock().unwrap();
-        let mut write_count: u64 = 0;
+        let mut pending_idx: Vec<usize> = Vec::new();
+        let mut pending_vals: Vec<ValType> = Vec::new();
+        let mut out_len = { self.out_val.lock().unwrap().len() };
         let use_hbm = self.hbm_wr_addr_snd.is_some() && self.hbm_wr_resp_rcv.is_some();
+        let mut write_count: u64 = 0;
         loop {
             match self.input.dequeue(&self.time) {
                 Ok(curr_in) => match curr_in.data {
                     Token::Val(val) => {
                         if use_hbm {
-                            let idx = locked.len();
-                            let addr = self.hbm_wr_base + (idx as u64) * self.hbm_wr_stride;
-                            if let Some(snd) = &self.hbm_wr_addr_snd {
-                                snd.enqueue(
-                                    &self.time,
-                                    ChannelElement::new(
-                                        self.time.tick(),
-                                        ParAddrs::new(vec![addr]),
-                                    ),
-                                )
-                                .unwrap();
-                            }
-                            if let Some(rcv) = &self.hbm_wr_resp_rcv {
-                                loop {
-                                    match rcv.dequeue(&self.time) {
-                                        Ok(_) => break,
-                                        Err(_) => self.time.incr_cycles(1),
+                            let idx = out_len + pending_vals.len();
+                            pending_idx.push(idx);
+                            pending_vals.push(val.clone());
+                            if pending_idx.len() >= self.hbm_wr_batch {
+                                if let Some(snd) = &self.hbm_wr_addr_snd {
+                                    let addrs: Vec<u64> = pending_idx
+                                        .iter()
+                                        .map(|i| {
+                                            self.hbm_wr_base + (*i as u64) * self.hbm_wr_stride
+                                        })
+                                        .collect();
+                                    snd.enqueue(
+                                        &self.time,
+                                        ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                    )
+                                    .unwrap();
+                                }
+                                if let Some(rcv) = &self.hbm_wr_resp_rcv {
+                                    let mut acks = 0usize;
+                                    while acks < pending_idx.len() {
+                                        match rcv.dequeue(&self.time) {
+                                            Ok(_) => acks += 1,
+                                            Err(_) => self.time.incr_cycles(1),
+                                        }
                                     }
                                 }
+                                {
+                                    let mut lock = self.out_val.lock().unwrap();
+                                    for v in pending_vals.drain(..) {
+                                        lock.push(v);
+                                    }
+                                }
+                                out_len += pending_idx.len();
+                                pending_idx.clear();
                             }
                         }
                         // println!("Value: {:?}", Token::<ValType, StopType>::Val(val.clone()));
-                        locked.push(val.clone());
+                        if !use_hbm {
+                            let mut lock = self.out_val.lock().unwrap();
+                            lock.push(val.clone());
+                            out_len += 1;
+                        }
                         // println!("{:?}", val.clone());
                         write_count += 1;
                     }
                     Token::Empty | Token::Stop(_) => {
+                        if use_hbm && !pending_idx.is_empty() {
+                            if let Some(snd) = &self.hbm_wr_addr_snd {
+                                let addrs: Vec<u64> = pending_idx
+                                    .iter()
+                                    .map(|i| self.hbm_wr_base + (*i as u64) * self.hbm_wr_stride)
+                                    .collect();
+                                snd.enqueue(
+                                    &self.time,
+                                    ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                )
+                                .unwrap();
+                            }
+                            if let Some(rcv) = &self.hbm_wr_resp_rcv {
+                                let mut acks = 0usize;
+                                while acks < pending_idx.len() {
+                                    match rcv.dequeue(&self.time) {
+                                        Ok(_) => acks += 1,
+                                        Err(_) => self.time.incr_cycles(1),
+                                    }
+                                }
+                            }
+                            let mut lock = self.out_val.lock().unwrap();
+                            for v in pending_vals.drain(..) {
+                                lock.push(v);
+                            }
+                            out_len += pending_idx.len();
+                            pending_idx.clear();
+                        }
                         continue;
                     }
                     Token::Done => {
-                        let filename: String = "/tmp/tmp_result.txt".to_string();
+                        if use_hbm && !pending_idx.is_empty() {
+                            if let Some(snd) = &self.hbm_wr_addr_snd {
+                                let addrs: Vec<u64> = pending_idx
+                                    .iter()
+                                    .map(|i| self.hbm_wr_base + (*i as u64) * self.hbm_wr_stride)
+                                    .collect();
+                                snd.enqueue(
+                                    &self.time,
+                                    ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                )
+                                .unwrap();
+                            }
+                            if let Some(rcv) = &self.hbm_wr_resp_rcv {
+                                let mut acks = 0usize;
+                                while acks < pending_idx.len() {
+                                    match rcv.dequeue(&self.time) {
+                                        Ok(_) => acks += 1,
+                                        Err(_) => self.time.incr_cycles(1),
+                                    }
+                                }
+                            }
+                            let mut lock = self.out_val.lock().unwrap();
+                            for v in pending_vals.drain(..) {
+                                lock.push(v);
+                            }
+                            out_len += pending_idx.len();
+                            pending_idx.clear();
+                        }
                         // write_outputs(filename.into(), locked.to_vec());
                         // println!("res: {:?}", locked);
                         println!("Write count: {}", write_count);

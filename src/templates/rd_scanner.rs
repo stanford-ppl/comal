@@ -40,6 +40,8 @@ pub struct CompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     hbm_crd_base: u64,
     hbm_seg_stride: u64,
     hbm_crd_stride: u64,
+    // Batch size for crd reads within a segment
+    hbm_crd_batch: usize,
 }
 
 #[context_macro]
@@ -93,6 +95,7 @@ where
             hbm_crd_base: 0,
             hbm_seg_stride: 4,
             hbm_crd_stride: 4,
+            hbm_crd_batch: 8,
             context_info: Default::default(),
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
@@ -133,6 +136,10 @@ where
         self.hbm_crd_base = crd_base;
         self.hbm_seg_stride = seg_stride.max(1);
         self.hbm_crd_stride = crd_stride.max(1);
+    }
+
+    pub fn set_hbm_crd_batch_size(&mut self, batch: usize) {
+        self.hbm_crd_batch = batch.max(1);
     }
 }
 
@@ -491,6 +498,56 @@ where
         let mut stkn_cnt = 0;
         let mut read_count: u64 = 0;
         let mut cached_ref = None;
+        let mut pending_crd_idx: Vec<usize> = Vec::new();
+        let mut pending_pairs: Vec<(ValType, ValType)> = Vec::new();
+        let mut flush_crd =
+            |this: &mut Self, indices: &mut Vec<usize>, pairs: &mut Vec<(ValType, ValType)>| {
+                if indices.is_empty() {
+                    return;
+                }
+                if use_hbm {
+                    if let Some(snd) = &this.hbm_crd_addr_snd {
+                        let addrs: Vec<u64> = indices
+                            .iter()
+                            .map(|idx| this.hbm_crd_base + (*idx as u64) * this.hbm_crd_stride)
+                            .collect();
+                        snd.enqueue(
+                            &this.time,
+                            ChannelElement::new(this.time.tick(), ParAddrs::new(addrs)),
+                        )
+                        .unwrap();
+                    }
+                    if let Some(rcv) = &this.hbm_crd_resp_rcv {
+                        let mut acks = 0usize;
+                        while acks < indices.len() {
+                            match rcv.dequeue(&this.time) {
+                                Ok(_) => acks += 1,
+                                Err(_) => this.time.incr_cycles(1),
+                            }
+                        }
+                    }
+                }
+                // After timing completes, emit outputs for this batch
+                let now = this.time.tick();
+                let lat = this.timing_config.output_latency;
+                for (coord, r) in pairs.drain(..) {
+                    this.rd_scan_data
+                        .out_crd
+                        .enqueue(
+                            &this.time,
+                            ChannelElement::new(now + lat, Token::Val(coord.clone())),
+                        )
+                        .unwrap();
+                    this.rd_scan_data
+                        .out_ref
+                        .enqueue(
+                            &this.time,
+                            ChannelElement::new(now + lat, Token::Val(r.clone())),
+                        )
+                        .unwrap();
+                }
+                indices.clear();
+            };
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data.clone() {
@@ -522,6 +579,8 @@ where
                                     }
                                 }
                             }
+                            // Flush any leftover crd requests from previous segment
+                            flush_crd(self, &mut pending_crd_idx, &mut pending_pairs);
                         }
 
                         let mut curr_addr = self.seg_arr[val.clone().try_into().unwrap()].clone();
@@ -569,42 +628,21 @@ where
                         while curr_addr < stop_addr {
                             let read_addr: usize = curr_addr.clone().try_into().unwrap();
                             if use_hbm {
-                                // Send crd read request and wait for completion
-                                if let Some(snd) = &self.hbm_crd_addr_snd {
-                                    let base = self.hbm_crd_base;
-                                    let stride = self.hbm_crd_stride;
-                                    let phy = base + (read_addr as u64) * stride;
-                                    snd.enqueue(
-                                        &self.time,
-                                        ChannelElement::new(
-                                            self.time.tick(),
-                                            ParAddrs::new(vec![phy]),
-                                        ),
-                                    )
-                                    .unwrap();
-                                }
-                                // Block until we get the memory response for this address
-                                if let Some(rcv) = &self.hbm_crd_resp_rcv {
-                                    loop {
-                                        match rcv.dequeue(&self.time) {
-                                            Ok(_) => break,
-                                            Err(_) => self.time.incr_cycles(1),
-                                        }
-                                    }
+                                // Accumulate for batched timing, and defer output until flush
+                                let coord = self.crd_arr[read_addr].clone();
+                                let this_ref = curr_addr.clone();
+                                pending_crd_idx.push(read_addr);
+                                pending_pairs.push((coord, this_ref));
+                                if pending_crd_idx.len() >= self.hbm_crd_batch {
+                                    flush_crd(self, &mut pending_crd_idx, &mut pending_pairs);
                                 }
                             }
 
-                            // After memory completes, fetch data locally and emit
-                            let coord = self.crd_arr[read_addr].clone();
-                            let curr_time = self.time.tick();
-                            let mut final_rd_latency = if use_hbm {
-                                // Memory latency already accounted for; only add output_latency
-                                self.timing_config.output_latency
-                            } else {
-                                self.timing_config.output_latency
-                            };
-
                             if !use_hbm {
+                                // Non-HBM path emits immediately with synthetic timing
+                                let coord = self.crd_arr[read_addr].clone();
+                                let curr_time = self.time.tick();
+                                let mut final_rd_latency = self.timing_config.output_latency;
                                 let mut start_rd_addr = 0usize;
                                 if initiated {
                                     start_rd_addr = read_addr;
@@ -614,44 +652,43 @@ where
                                     initiated = true;
                                     final_rd_latency = self.timing_config.miss_latency;
                                 }
-                            }
 
-                            self.rd_scan_data
-                                .out_crd
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(
-                                        curr_time + final_rd_latency,
-                                        Token::Val(coord.clone()),
-                                    ),
-                                )
-                                .unwrap();
-                            self.rd_scan_data
-                                .out_ref
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(
-                                        curr_time + final_rd_latency,
-                                        Token::Val(curr_addr.clone()),
-                                    ),
-                                )
-                                .unwrap();
-                            if !seen_prev {
-                                read_count += 1;
-                            }
-
-                            let _ = dam::logging::log_event(&LSLog {
-                                out_crd: Token::Val(coord.clone()).into(),
-                                out_ref: Token::Val(curr_addr.clone()).into(),
-                            });
-                            if self.id() == id.clone() {
-                                println!(
-                                    "Id: {:?}, In_ref: {:?}, Out crd: {:?}, Out ref: {:?}",
-                                    self.id(),
-                                    curr_ref.data.clone(),
-                                    Token::<ValType, StopType>::Val(coord.clone()),
-                                    Token::<ValType, StopType>::Val(curr_addr.clone())
-                                );
+                                self.rd_scan_data
+                                    .out_crd
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(
+                                            curr_time + final_rd_latency,
+                                            Token::Val(coord.clone()),
+                                        ),
+                                    )
+                                    .unwrap();
+                                self.rd_scan_data
+                                    .out_ref
+                                    .enqueue(
+                                        &self.time,
+                                        ChannelElement::new(
+                                            curr_time + final_rd_latency,
+                                            Token::Val(curr_addr.clone()),
+                                        ),
+                                    )
+                                    .unwrap();
+                                if !seen_prev {
+                                    read_count += 1;
+                                }
+                                let _ = dam::logging::log_event(&LSLog {
+                                    out_crd: Token::Val(coord.clone()).into(),
+                                    out_ref: Token::Val(curr_addr.clone()).into(),
+                                });
+                                if self.id() == id.clone() {
+                                    println!(
+                                        "Id: {:?}, In_ref: {:?}, Out crd: {:?}, Out ref: {:?}",
+                                        self.id(),
+                                        curr_ref.data.clone(),
+                                        Token::<ValType, StopType>::Val(coord.clone()),
+                                        Token::<ValType, StopType>::Val(curr_addr.clone())
+                                    );
+                                }
                             }
 
                             curr_addr += 1;
@@ -659,6 +696,10 @@ where
                                 self.time
                                     .incr_cycles(self.timing_config.sequential_interval);
                             }
+                        }
+                        if use_hbm {
+                            // Drain any outstanding acks for the segment and emit deferred outputs
+                            flush_crd(self, &mut pending_crd_idx, &mut pending_pairs);
                         }
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
@@ -710,6 +751,24 @@ where
                             );
                         }
                     }
+                    Token::Done => {
+                        if use_hbm {
+                            flush_crd(self, &mut pending_crd_idx, &mut pending_pairs);
+                        }
+                        let curr_time = self.time.tick();
+                        let latency = self.timing_config.output_latency;
+                        let channel_elem =
+                            ChannelElement::new(self.time.tick() + latency, Token::Done);
+                        self.rd_scan_data
+                            .out_crd
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        self.rd_scan_data
+                            .out_ref
+                            .enqueue(&self.time, channel_elem.clone())
+                            .unwrap();
+                        return;
+                    }
                     Token::Stop(token) => {
                         let curr_time = self.time.tick();
                         self.rd_scan_data
@@ -740,7 +799,7 @@ where
                         });
                         if self.id() == id.clone() {
                             println!(
-                                "Id: {:?}, In ref: {:?}, Out crd: {:?}, Out ref: {:?}",
+                                "Id: {:?}, In_ref: {:?}, Out crd: {:?}, Out ref: {:?}",
                                 self.id(),
                                 curr_ref.data.clone(),
                                 stkn.clone(),
@@ -748,82 +807,31 @@ where
                             );
                         }
                     }
-                    // Could either be a done token or an empty token
-                    // In the case of done token, return
-                    Token::Done => {
-                        let channel_elem = ChannelElement::new(
-                            self.time.tick() + self.timing_config.output_latency,
-                            Token::Done,
-                        );
-                        self.rd_scan_data
-                            .out_crd
-                            .enqueue(&self.time, channel_elem.clone())
-                            .unwrap();
-                        self.rd_scan_data
-                            .out_ref
-                            .enqueue(&self.time, channel_elem.clone())
-                            .unwrap();
-                        let _ = dam::logging::log_event(&LSLog {
-                            out_crd: Token::Done,
-                            out_ref: Token::Done,
-                        });
-                        if self.id() == id.clone() {
-                            println!("Done");
-                        }
-                        println!("Crd read count (compressed): {}", read_count);
-                        return;
-                        // dbg!(Token::<ValType, StopType>::Done);
-                    }
                     Token::Empty => {
-                        let channel_elem = ChannelElement::new(
-                            self.time.tick() + self.timing_config.output_latency,
-                            Token::Empty,
-                        );
-                        self.rd_scan_data
-                            .out_crd
-                            .enqueue(&self.time, channel_elem.clone())
-                            .unwrap();
-                        self.rd_scan_data
-                            .out_ref
-                            .enqueue(&self.time, channel_elem.clone())
-                            .unwrap();
-                        let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
-                        let output: Token<ValType, StopType> = match next_tkn.data {
-                            Token::Val(_) | Token::Done | Token::Empty => {
-                                Token::Stop(StopType::default())
-                            }
-                            Token::Stop(stop_tkn) => {
-                                self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
-                                Token::Stop(stop_tkn + 1)
-                            }
-                        };
+                        if use_hbm {
+                            flush_crd(self, &mut pending_crd_idx, &mut pending_pairs);
+                        }
                         let curr_time = self.time.tick();
+                        let latency = self.timing_config.output_latency;
+                        let channel_elem =
+                            ChannelElement::new(self.time.tick() + latency, Token::Empty);
                         self.rd_scan_data
                             .out_crd
-                            .enqueue(
-                                &self.time,
-                                ChannelElement::new(curr_time + 1, output.clone()),
-                            )
+                            .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
                         self.rd_scan_data
                             .out_ref
-                            .enqueue(
-                                &self.time,
-                                ChannelElement::new(curr_time + 1, output.clone()),
-                            )
+                            .enqueue(&self.time, channel_elem.clone())
                             .unwrap();
                     }
                 },
                 Err(_) => panic!("Error: rd_scan_data dequeue error"),
             }
-            // println!("Stop token cnt: {}", stkn_cnt);
-            if !use_hbm {
-                self.time
-                    .incr_cycles(self.timing_config.sequential_interval);
-            }
+            self.time.incr_cycles(1);
         }
     }
 }
+// }
 
 #[cfg(test)]
 mod tests {

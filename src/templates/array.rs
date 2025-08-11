@@ -24,6 +24,8 @@ pub struct Array<RefType: Clone, ValType: Clone, StopType: Clone> {
     hbm_rd_resp_rcv: Option<Receiver<u64>>,
     hbm_rd_base: u64,
     hbm_rd_stride: u64,
+    // Batch size for HBM reads
+    hbm_rd_batch: usize,
 }
 
 impl<RefType: DAMType, ValType: DAMType, StopType: DAMType> Array<RefType, ValType, StopType>
@@ -38,6 +40,7 @@ where
             hbm_rd_resp_rcv: None,
             hbm_rd_base: 0,
             hbm_rd_stride: 4,
+            hbm_rd_batch: 8,
             context_info: Default::default(),
         };
         (arr.array_data.in_ref).attach_receiver(&arr);
@@ -60,6 +63,10 @@ where
         self.hbm_rd_resp_rcv = Some(rd_resp_rcv);
         self.hbm_rd_base = base;
         self.hbm_rd_stride = stride.max(1);
+    }
+
+    pub fn set_hbm_batch_size(&mut self, batch: usize) {
+        self.hbm_rd_batch = batch.max(1);
     }
 }
 
@@ -89,6 +96,7 @@ where
         let curr_id = self.id();
         let mut num_reads: u64 = 0;
         let use_hbm = self.hbm_rd_addr_snd.is_some() && self.hbm_rd_resp_rcv.is_some();
+        let mut pending_idx: Vec<usize> = Vec::new();
         loop {
             match self.array_data.in_ref.dequeue(&self.time) {
                 Ok(curr_in) => {
@@ -97,46 +105,113 @@ where
                         Token::Val(val) => {
                             let idx: usize = val.try_into().unwrap();
                             if use_hbm {
-                                let addr = self.hbm_rd_base + (idx as u64) * self.hbm_rd_stride;
+                                pending_idx.push(idx);
+                                if pending_idx.len() >= self.hbm_rd_batch {
+                                    if let Some(snd) = &self.hbm_rd_addr_snd {
+                                        let addrs: Vec<u64> = pending_idx
+                                            .iter()
+                                            .map(|i| {
+                                                self.hbm_rd_base + (*i as u64) * self.hbm_rd_stride
+                                            })
+                                            .collect();
+                                        snd.enqueue(
+                                            &self.time,
+                                            ChannelElement::new(
+                                                self.time.tick(),
+                                                ParAddrs::new(addrs),
+                                            ),
+                                        )
+                                        .unwrap();
+                                    }
+                                    if let Some(rcv) = &self.hbm_rd_resp_rcv {
+                                        let mut acks = 0usize;
+                                        while acks < pending_idx.len() {
+                                            match rcv.dequeue(&self.time) {
+                                                Ok(_) => acks += 1,
+                                                Err(_) => self.time.incr_cycles(1),
+                                            }
+                                        }
+                                    }
+                                    // Emit now for all in batch
+                                    for i in pending_idx.drain(..) {
+                                        let channel_elem = ChannelElement::new(
+                                            self.time.tick() + 1,
+                                            Token::Val(self.val_arr[i].clone()),
+                                        );
+                                        num_reads += 1;
+                                        self.array_data
+                                            .out_val
+                                            .enqueue(&self.time, channel_elem)
+                                            .unwrap();
+                                        let out_val = Token::Val::<ValType, StopType>(
+                                            self.val_arr[i].clone(),
+                                        );
+                                        let _ = dam::logging::log_event(&ArrayLog {
+                                            in_ref: data.clone().into(),
+                                            val: out_val.clone().into(),
+                                        });
+                                        if id == curr_id {
+                                            println!("ID: {:?}, Val: {:?}", id, out_val.clone());
+                                        }
+                                    }
+                                }
+                            } else {
+                                let channel_elem = ChannelElement::new(
+                                    self.time.tick() + 1,
+                                    Token::Val(self.val_arr[idx].clone()),
+                                );
+                                num_reads += 1;
+                                self.array_data
+                                    .out_val
+                                    .enqueue(&self.time, channel_elem)
+                                    .unwrap();
+                                let out_val =
+                                    Token::Val::<ValType, StopType>(self.val_arr[idx].clone());
+                                let _ = dam::logging::log_event(&ArrayLog {
+                                    in_ref: data.clone().into(),
+                                    val: out_val.clone().into(),
+                                });
+                                if id == curr_id {
+                                    println!("ID: {:?}, Val: {:?}", id, out_val.clone());
+                                }
+                            }
+                        }
+                        Token::Stop(stkn) => {
+                            if use_hbm && !pending_idx.is_empty() {
                                 if let Some(snd) = &self.hbm_rd_addr_snd {
+                                    let addrs: Vec<u64> = pending_idx
+                                        .iter()
+                                        .map(|i| {
+                                            self.hbm_rd_base + (*i as u64) * self.hbm_rd_stride
+                                        })
+                                        .collect();
                                     snd.enqueue(
                                         &self.time,
-                                        ChannelElement::new(
-                                            self.time.tick(),
-                                            ParAddrs::new(vec![addr]),
-                                        ),
+                                        ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
                                     )
                                     .unwrap();
                                 }
                                 if let Some(rcv) = &self.hbm_rd_resp_rcv {
-                                    loop {
+                                    let mut acks = 0usize;
+                                    while acks < pending_idx.len() {
                                         match rcv.dequeue(&self.time) {
-                                            Ok(_) => break,
+                                            Ok(_) => acks += 1,
                                             Err(_) => self.time.incr_cycles(1),
                                         }
                                     }
                                 }
+                                for i in pending_idx.drain(..) {
+                                    let channel_elem = ChannelElement::new(
+                                        self.time.tick() + 1,
+                                        Token::Val(self.val_arr[i].clone()),
+                                    );
+                                    num_reads += 1;
+                                    self.array_data
+                                        .out_val
+                                        .enqueue(&self.time, channel_elem)
+                                        .unwrap();
+                                }
                             }
-                            let channel_elem = ChannelElement::new(
-                                self.time.tick() + 1,
-                                Token::Val(self.val_arr[idx].clone()),
-                            );
-                            num_reads += 1;
-                            self.array_data
-                                .out_val
-                                .enqueue(&self.time, channel_elem)
-                                .unwrap();
-                            let out_val =
-                                Token::Val::<ValType, StopType>(self.val_arr[idx].clone());
-                            let _ = dam::logging::log_event(&ArrayLog {
-                                in_ref: data.clone().into(),
-                                val: out_val.clone().into(),
-                            });
-                            if id == curr_id {
-                                println!("ID: {:?}, Val: {:?}", id, out_val.clone());
-                            }
-                        }
-                        Token::Stop(stkn) => {
                             let channel_elem = ChannelElement::new(
                                 self.time.tick() + 1,
                                 Token::Stop(stkn.clone()),
@@ -155,6 +230,41 @@ where
                             }
                         }
                         Token::Empty => {
+                            if use_hbm && !pending_idx.is_empty() {
+                                if let Some(snd) = &self.hbm_rd_addr_snd {
+                                    let addrs: Vec<u64> = pending_idx
+                                        .iter()
+                                        .map(|i| {
+                                            self.hbm_rd_base + (*i as u64) * self.hbm_rd_stride
+                                        })
+                                        .collect();
+                                    snd.enqueue(
+                                        &self.time,
+                                        ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                    )
+                                    .unwrap();
+                                }
+                                if let Some(rcv) = &self.hbm_rd_resp_rcv {
+                                    let mut acks = 0usize;
+                                    while acks < pending_idx.len() {
+                                        match rcv.dequeue(&self.time) {
+                                            Ok(_) => acks += 1,
+                                            Err(_) => self.time.incr_cycles(1),
+                                        }
+                                    }
+                                }
+                                for i in pending_idx.drain(..) {
+                                    let channel_elem = ChannelElement::new(
+                                        self.time.tick() + 1,
+                                        Token::Val(self.val_arr[i].clone()),
+                                    );
+                                    num_reads += 1;
+                                    self.array_data
+                                        .out_val
+                                        .enqueue(&self.time, channel_elem)
+                                        .unwrap();
+                                }
+                            }
                             let channel_elem = ChannelElement::new(
                                 self.time.tick() + 1,
                                 Token::Val(ValType::default()),
@@ -173,6 +283,41 @@ where
                             }
                         }
                         Token::Done => {
+                            if use_hbm && !pending_idx.is_empty() {
+                                if let Some(snd) = &self.hbm_rd_addr_snd {
+                                    let addrs: Vec<u64> = pending_idx
+                                        .iter()
+                                        .map(|i| {
+                                            self.hbm_rd_base + (*i as u64) * self.hbm_rd_stride
+                                        })
+                                        .collect();
+                                    snd.enqueue(
+                                        &self.time,
+                                        ChannelElement::new(self.time.tick(), ParAddrs::new(addrs)),
+                                    )
+                                    .unwrap();
+                                }
+                                if let Some(rcv) = &self.hbm_rd_resp_rcv {
+                                    let mut acks = 0usize;
+                                    while acks < pending_idx.len() {
+                                        match rcv.dequeue(&self.time) {
+                                            Ok(_) => acks += 1,
+                                            Err(_) => self.time.incr_cycles(1),
+                                        }
+                                    }
+                                }
+                                for i in pending_idx.drain(..) {
+                                    let channel_elem = ChannelElement::new(
+                                        self.time.tick() + 1,
+                                        Token::Val(self.val_arr[i].clone()),
+                                    );
+                                    num_reads += 1;
+                                    self.array_data
+                                        .out_val
+                                        .enqueue(&self.time, channel_elem)
+                                        .unwrap();
+                                }
+                            }
                             let channel_elem =
                                 ChannelElement::new(self.time.tick() + 1, Token::Done);
                             self.array_data
@@ -228,7 +373,7 @@ mod tests {
 
     #[test]
     fn array_hbm_mode_smoke() {
-        const USE_HBM: bool = false;
+        const USE_HBM: bool = true;
         let mut parent = ProgramBuilder::default();
         let (in_ref_sender, in_ref_receiver) = parent.unbounded::<Token<u32, u32>>();
         let (out_val_sender, out_val_receiver) = parent.unbounded::<Token<u32, u32>>();
