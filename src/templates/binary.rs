@@ -99,6 +99,7 @@ where
                                 Token::<ValType, StopType>::Val(out_val.clone()),
                             );
                             op_count += 1;
+                            // println!("Value: {:?}", Token::<ValType, StopType>::Val(out_val.clone()));
                             self.out_val.enqueue(&self.time, out_val_elem).unwrap();
                         }
                         (Token::Stop(stkn1), Token::Stop(stkn2)) => {
