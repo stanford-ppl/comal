@@ -83,6 +83,24 @@ where
                             // println!("Value: {:?}", Token::<ValType, StopType>::Val(out_val.clone()));
                             self.out_val.enqueue(&self.time, out_val_elem).unwrap();
                         }
+                        (Token::Val(val1), Token::Empty) => {
+                            let out_val = (self.binary_func)(val1, ValType::default());
+                            let out_val_elem = ChannelElement::new(
+                                self.time.tick() + self.latency,
+                                Token::<ValType, StopType>::Val(out_val.clone()),
+                            );
+                            op_count += 1;
+                            self.out_val.enqueue(&self.time, out_val_elem).unwrap();
+                        }
+                        (Token::Empty, Token::Val(val2)) => {
+                            let out_val = (self.binary_func)(ValType::default(), val2);
+                            let out_val_elem = ChannelElement::new(
+                                self.time.tick() + self.latency,
+                                Token::<ValType, StopType>::Val(out_val.clone()),
+                            );
+                            op_count += 1;
+                            self.out_val.enqueue(&self.time, out_val_elem).unwrap();
+                        }
                         (Token::Stop(stkn1), Token::Stop(stkn2)) => {
                             assert_eq!(stkn1.clone(), stkn2.clone(), "Stop tokens don't match");
                             let out_val_elem = ChannelElement::new(
@@ -99,7 +117,7 @@ where
                             self.out_val.enqueue(&self.time, out_val_elem).unwrap();
                             println!("Op count: {}", op_count);
                             return;
-                        },
+                        }
                         _ => panic!(
                             "Should not reach this case: {:?}",
                             (curr_in1.data.clone(), curr_in2.data.clone())
@@ -108,7 +126,7 @@ where
                 }
                 _ => {
                     panic!("Reached error case")
-                },
+                }
             }
             //TODO: Add initiation interval
             self.time.incr_cycles(self.ii);
@@ -131,8 +149,8 @@ mod tests {
 
     use crate::{
         templates::{
-            primitive::Token,
             binary::{Binary, BinaryLogData},
+            primitive::Token,
         },
         token_vec,
     };
