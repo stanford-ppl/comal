@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use comal::templates::accumulator::MaxReduce;
+use comal::templates::accumulator::{MaxReduce, MaxReduceData};
 use comal::templates::primitive::Token;
 use comal::templates::scatter_gather::{Gather, Scatter};
 use comal::templates::stkn_dropper::StknDrop;
@@ -608,6 +608,7 @@ pub fn run_mha<'a>(
             let arrayvals_q_data = ArrayData::<u32, f32, u32> {
                 in_ref: intersectm3_out_ref2_receiver,
                 out_val: q_out_val_sender,
+                block_size: 1,
             };
             let arrayvals_q = Array::<u32, f32, u32>::new(arrayvals_q_data, q_vals.clone());
             parent.add_child(arrayvals_q);
@@ -617,6 +618,7 @@ pub fn run_mha<'a>(
             let arrayvals_k_data = ArrayData::<u32, f32, u32> {
                 in_ref: intersectm3_out_ref1_receiver,
                 out_val: k_out_val_sender,
+                block_size: 1,
             };
             let arrayvals_k = Array::<u32, f32, u32>::new(arrayvals_k_data, k_vals.clone());
             parent.add_child(arrayvals_k);
@@ -626,6 +628,7 @@ pub fn run_mha<'a>(
             let arrayvals_v_data = ArrayData::<u32, f32, u32> {
                 in_ref: intersectm2_out_ref2_receiver,
                 out_val: v_out_val_sender,
+                block_size: 1,
             };
             let arrayvals_v = Array::<u32, f32, u32>::new(arrayvals_v_data, v_vals.clone());
             parent.add_child(arrayvals_v);
@@ -642,11 +645,12 @@ pub fn run_mha<'a>(
 
             // Reduce
             let (red_out_sender, red_out_receiver) = parent.bounded(long_chan_size);
-            let red_data = ReduceData::<f32, u32> {
+            let red_data = ReduceData::<f32, u32, 1> {
                 in_val: mul_out_receiver,
                 out_val: red_out_sender,
+                sum: false,
             };
-            let red = Reduce::new(red_data);
+            let red = Reduce::<f32, u32, 1>::new(red_data);
             parent.add_child(red);
 
             let (bc_out_red_sender, bc_out_red_receiver) = parent.bounded(long_chan_size);
@@ -658,7 +662,7 @@ pub fn run_mha<'a>(
 
             // Max Reduce
             let (max_out_val_sender, max_out_val_receiver) = parent.bounded(short_chan_size);
-            let max_data = ReduceData::<f32, u32> {
+            let max_data = MaxReduceData::<f32, u32> {
                 in_val: bc_out_red_receiver,
                 out_val: max_out_val_sender,
             };
@@ -698,11 +702,12 @@ pub fn run_mha<'a>(
 
             // Reduce
             let (red1_out_sender, red1_out_receiver) = parent.bounded(short_chan_size);
-            let red1_data = ReduceData::<f32, u32> {
+            let red1_data = ReduceData::<f32, u32, 1> {
                 in_val: bc_exp_out_receiver,
                 out_val: red1_out_sender,
+                sum: false,
             };
-            let red1 = Reduce::new(red1_data);
+            let red1 = Reduce::<f32, u32, 1>::new(red1_data);
             parent.add_child(red1);
 
             let (rep1_out_val_sender, rep1_out_val_receiver) = parent.bounded(short_chan_size);

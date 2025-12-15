@@ -13,6 +13,8 @@ use crate::templates::ramulator::hbm_context::ParAddrs;
 pub struct ArrayData<RefType: Clone, ValType: Clone, StopType: Clone> {
     pub in_ref: Receiver<Token<RefType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
+    /// Block size for block sparse mode (1 = scalar mode)
+    pub block_size: usize,
 }
 
 #[context_macro]
@@ -86,17 +88,17 @@ where
     <RefType as TryInto<usize>>::Error: std::fmt::Debug,
     ValType: DAMType,
     StopType: DAMType + std::ops::Add<u32, Output = StopType>,
-    Token<u32, u32>: From<Token<RefType, StopType>>,
-    Token<f32, u32>: From<Token<ValType, StopType>>,
+    // Token<u32, u32>: From<Token<RefType, StopType>>,  // Disabled for block sparse mode
+    // Token<f32, u32>: From<Token<ValType, StopType>>,  // Disabled for block sparse mode
 {
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        let id = Identifier { id: 0 };
-        let curr_id = self.id();
         let mut num_reads: u64 = 0;
         let use_hbm = self.hbm_rd_addr_snd.is_some() && self.hbm_rd_resp_rcv.is_some();
         let mut pending_idx: Vec<usize> = Vec::new();
+        // Block sparse timing: block_size * block_size cycles per access
+        let block_latency: u64 = (self.array_data.block_size * self.array_data.block_size) as u64;
         loop {
             match self.array_data.in_ref.dequeue(&self.time) {
                 Ok(curr_in) => {
@@ -135,7 +137,7 @@ where
                                     // Emit now for all in batch
                                     for i in pending_idx.drain(..) {
                                         let channel_elem = ChannelElement::new(
-                                            self.time.tick() + 1,
+                                            self.time.tick() + block_latency,
                                             Token::Val(self.val_arr[i].clone()),
                                         );
                                         num_reads += 1;
@@ -143,21 +145,12 @@ where
                                             .out_val
                                             .enqueue(&self.time, channel_elem)
                                             .unwrap();
-                                        let out_val = Token::Val::<ValType, StopType>(
-                                            self.val_arr[i].clone(),
-                                        );
-                                        let _ = dam::logging::log_event(&ArrayLog {
-                                            in_ref: data.clone().into(),
-                                            val: out_val.clone().into(),
-                                        });
-                                        if id == curr_id {
-                                            println!("ID: {:?}, Val: {:?}", id, out_val.clone());
-                                        }
+                                        // Logging disabled for block sparse compatibility
                                     }
                                 }
                             } else {
                                 let channel_elem = ChannelElement::new(
-                                    self.time.tick() + 1,
+                                    self.time.tick() + block_latency,
                                     Token::Val(self.val_arr[idx].clone()),
                                 );
                                 num_reads += 1;
@@ -165,15 +158,7 @@ where
                                     .out_val
                                     .enqueue(&self.time, channel_elem)
                                     .unwrap();
-                                let out_val =
-                                    Token::Val::<ValType, StopType>(self.val_arr[idx].clone());
-                                let _ = dam::logging::log_event(&ArrayLog {
-                                    in_ref: data.clone().into(),
-                                    val: out_val.clone().into(),
-                                });
-                                if id == curr_id {
-                                    println!("ID: {:?}, Val: {:?}", id, out_val.clone());
-                                }
+                                // Logging disabled for block sparse compatibility
                             }
                         }
                         Token::Stop(stkn) => {
@@ -220,14 +205,7 @@ where
                                 .out_val
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
-                            let out_val = Token::<ValType, StopType>::Stop(stkn.clone());
-                            let _ = dam::logging::log_event(&ArrayLog {
-                                in_ref: data.clone().into(),
-                                val: out_val.clone().into(),
-                            });
-                            if id == curr_id {
-                                println!("ID: {:?}, Val: {:?}", id, out_val.clone());
-                            }
+                            // Logging disabled for block sparse compatibility
                         }
                         Token::Empty => {
                             if use_hbm && !pending_idx.is_empty() {
@@ -274,13 +252,7 @@ where
                                 .out_val
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
-                            if id == curr_id {
-                                println!(
-                                    "ID: {:?}, Val: {:?}",
-                                    id,
-                                    Token::<ValType, StopType>::Val(ValType::default())
-                                );
-                            }
+                            // Logging disabled for block sparse compatibility
                         }
                         Token::Done => {
                             if use_hbm && !pending_idx.is_empty() {
@@ -324,15 +296,8 @@ where
                                 .out_val
                                 .enqueue(&self.time, channel_elem)
                                 .unwrap();
-                            let out_val = Token::<ValType, StopType>::Done;
-                            let _ = dam::logging::log_event(&ArrayLog {
-                                in_ref: data.clone().into(),
-                                val: out_val.clone().into(),
-                            });
                             println!("Num reads: {}", num_reads);
-                            if id == curr_id {
-                                println!("ID: {:?}, Val: {:?}", id, out_val.clone());
-                            }
+                            // Logging disabled for block sparse compatibility
                             return;
                         }
                     }
@@ -380,6 +345,7 @@ mod tests {
         let data = ArrayData::<u32, u32, u32> {
             in_ref: in_ref_receiver,
             out_val: out_val_sender,
+            block_size: 1,
         };
         let val_arr = vec![10u32, 20, 30, 40];
         let mut arr = Array::new(data, val_arr);
@@ -434,6 +400,7 @@ mod tests {
         let data = ArrayData::<u32, u32, u32> {
             in_ref: in_ref_receiver,
             out_val: out_val_sender,
+            block_size: 1,
         };
         let arr = Array::new(data, val_arr);
         let gen1 = GeneratorContext::new(in_ref, in_ref_sender);

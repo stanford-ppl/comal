@@ -10,6 +10,7 @@ pub struct Unary<ValType: Clone, StopType: Clone, F> {
     pub in_val: Receiver<Token<ValType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
     pub unary_func: F,
+    pub block_size: usize,
 }
 
 impl<ValType: DAMType, StopType: DAMType, F> Unary<ValType, StopType, F>
@@ -20,11 +21,13 @@ where
         in_val: Receiver<Token<ValType, StopType>>,
         out_val: Sender<Token<ValType, StopType>>,
         unary_func: F,
+        block_size: usize,
     ) -> Self {
         let unary = Unary {
             in_val,
             out_val,
             unary_func,
+            block_size,
             context_info: Default::default(),
         };
         (unary).in_val.attach_receiver(&unary);
@@ -45,7 +48,6 @@ where
     ValType: DAMType,
     StopType: DAMType,
     F: Fn(ValType) -> ValType + Sync + Send,
-    f32: From<ValType>,
 {
     fn run(&mut self) {
         let mut op_count: u64 = 0;
@@ -58,14 +60,10 @@ where
                         //TODO: Add logic for when we receive a value on the stream
                         //TODO: Enqueue output to output value channel
 
-                        let log_val: f32 = val.clone().into();
-                        if log_val < 0.0 {
-                            dam::logging::log_event(&UnaryLogData { val: log_val }).unwrap();
-                        }
-
                         let out_val = (self.unary_func)(val);
+                        let latency: u64 = self.block_size.try_into().unwrap();
                         let out_val_elem = ChannelElement::new(
-                            self.time.tick() + 1,
+                            self.time.tick() + latency,
                             Token::<ValType, StopType>::Val(out_val),
                         );
                         self.out_val.enqueue(&self.time, out_val_elem).unwrap();
@@ -172,7 +170,7 @@ mod tests {
         let (out_val_sender, out_val_receiver) = parent.bounded::<Token<f32, u32>>(chan_size);
         let (in_val_sender, in_val_receiver) = parent.bounded::<Token<f32, u32>>(chan_size);
 
-        let max = Unary::new(in_val_receiver, out_val_sender, unary_func);
+        let max = Unary::new(in_val_receiver, out_val_sender, unary_func, 1);
 
         let in_val = GeneratorContext::new(in_val, in_val_sender);
         let out_checker = CheckerContext::new(out_val, out_val_receiver);

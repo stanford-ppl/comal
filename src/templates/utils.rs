@@ -15,20 +15,14 @@ fn set_tensor_path() {
 pub fn read_inputs_vectorized<T>(
     file_path: &PathBuf,
     prim_type: impl Adapter<T>,
-    dim: usize,
-    blocked: bool,
 ) -> Vec<T>
 where
     T: DAMType,
 {
     let file =
         File::open(file_path).unwrap_or_else(|_| panic!("file {:?} wasn't found", file_path));
-    // prim_type.parse(BufReader::new(file).lines().flatten())
-    prim_type.parse(
-        BufReader::new(file).lines().flatten(),
-        Some(dim),
-        Some(blocked),
-    )
+    // Block size is now encoded in the type parameter N of Tensor
+    prim_type.parse(BufReader::new(file).lines().flatten())
 }
 
 pub fn read_inputs<T>(file_path: &PathBuf) -> Vec<T>
