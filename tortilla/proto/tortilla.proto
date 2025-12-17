@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package tortilla; 
+
+import "ops.proto";
+
+message ProgramGraph {
+  // optional string name = 1;
+  string name = 1;
+  repeated Operation operators = 2;
+
+  // Reserved for additional metadata. Blame Rubens if you need more than 8 fields
+  reserved 3 to 10;
+
+  //repeated RefStream ref_streams = 11;
+  //repeated CrdStream crd_streams = 12;
+  //repeated ValStream val_streams = 13;
+  //repeated RepSigStream repsig_streams = 14;
+}
+
+

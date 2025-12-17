@@ -1,0 +1,348 @@
+syntax = "proto3";
+
+package tortilla;
+
+import "stream.proto";
+
+message Operation {
+  string name = 1;
+  uint64 id = 2;
+  reserved 3 to 10;
+  oneof op {
+    Generator root = 11;
+    Joiner joiner = 12;
+    FiberLookup fiber_lookup = 13;
+    FiberWrite fiber_write = 14;
+    Repeat repeat = 15;
+    RepeatSig repeatsig = 16;
+    ALU alu = 17;
+    Reduce reduce = 18;
+    CoordHold coord_hold = 19;
+    CoordMask coord_mask = 20;
+    CoordDrop coord_drop = 21;
+    ArrayVals array = 22;
+    SparseAccumulator spacc = 23;
+    ValWrite val_write = 24;
+    Intrinsic func = 25;
+    Broadcast broadcast = 26;
+    Fork fork = 27;
+    Join join = 28;
+    GenRef gen_ref = 29;
+    Locate locate = 30;
+  }
+}
+
+message Generator {
+  string label = 1;
+  string tensor = 2;
+  RefStream output_ref = 3;
+}
+
+message Broadcast {
+  string label = 1;
+  message CrdBundle {
+    CrdStream input = 1;
+    repeated CrdStream outputs = 2;
+  }
+  message RefBundle {
+    RefStream input = 1;
+    repeated RefStream outputs = 2;
+  }
+  message ValBundle {
+    ValStream input = 1;
+    repeated ValStream outputs = 2;
+  }
+  message RepSigBundle {
+    RepSigStream input = 1;
+    repeated RepSigStream outputs = 2;
+  }
+  oneof conn {
+    CrdBundle crd = 2;
+    RefBundle ref = 3;
+    ValBundle val = 4;
+    RepSigBundle repsig = 5;
+  }
+}
+
+message Joiner {
+  enum Type {
+    INTERSECT = 0;
+    UNION = 1;
+  }
+  enum RefType {
+    REF = 0;
+    VAL = 1;
+  }
+  message Payload {
+    oneof stream {
+      RefStream ref_stream = 1;
+      ValStream val_stream = 2;
+    }
+  }
+
+  message JoinBundle {
+    CrdStream crd = 1;
+    Payload in_ref = 2;
+  }
+
+  Type join_type = 1;
+  repeated JoinBundle input_pairs = 2;
+  string index = 3;
+  string label = 4;
+  repeated Payload output_refs = 5;
+  CrdStream output_crd = 6;
+}
+
+message FiberLookup {
+  // bool ref = 1;
+  RefStream input_ref = 2;
+  RefStream output_ref = 3;
+  CrdStream output_crd = 4;
+  string index = 5;
+  string tensor = 6;
+  uint64 mode = 7;
+  string format = 8;
+  bool src = 9;
+  bool root = 10;
+  string label = 11;
+}
+
+message FiberWrite {
+  bool ref = 1;
+  CrdStream input_crd = 2;
+  string index = 3;
+  string tensor = 4;
+  string mode_val = 5;
+  string format = 6;
+  string segsize = 7;
+  string crdsize = 8;
+  string size = 9;
+  bool sink = 10;
+  string label = 11;
+}
+
+message ValWrite {
+  ValStream input_val = 1;
+  string label = 2;
+  // string index = 5;
+  string crdsize = 3;
+  string segsize = 4;
+  string tensor = 5;
+  bool sink = 6;
+}
+
+message Repeat {
+  oneof input_ref {
+    RefStream in_ref = 1;
+    ValStream in_val = 2;
+  }
+  oneof output_ref {
+    RefStream out_ref = 3;
+    ValStream out_val = 4;
+  };
+  oneof input_rep_sig {
+    RefStream rep_ref = 5;
+    ValStream rep_val = 6;
+  };
+  string label = 7;
+  string index = 8;
+  bool root = 9;
+  string tensor = 10;
+  //  RefStream input_rep_ref = 11;
+}
+
+message RepeatSig {
+  CrdStream input_crd = 1;
+  RepSigStream output_rep_sig = 2;
+  string label = 3;
+  string index = 4;
+}
+
+message ALU {
+  message Val {
+    repeated ValStream inputs = 1;
+    ValStream output = 2;
+  }
+
+  message Crd {
+    repeated CrdStream inputs = 1;
+    CrdStream output = 2;
+  }
+
+  oneof conn {
+    Val vals = 1;
+    Crd crds = 2;
+  }
+
+  enum ALUOp {
+    ADD = 0;
+    SUB = 1;
+    MUL = 2;
+    DIV = 3;
+    EXP = 4;
+    SIN = 5;
+    COS = 6;
+    MAX = 7;
+    SCALARADD = 8;
+    SCALARMUL = 9;
+    SCALARDIV = 10;
+    RSQRT = 11;
+    SIGMOID = 12;
+    ELEMMUL = 13;
+  }
+  message Stage {
+    repeated uint64 inputs = 1;
+    uint64 output = 2;
+    ALUOp op = 3;
+  }
+
+  repeated Stage stages = 3;
+  uint64 output_val = 4;
+  string label = 5;
+  uint64 stream_shape = 6;
+  bool blocked = 7;
+  double scalar = 8;
+}
+
+message Reduce {
+  enum Type {
+    ADD = 0;
+    MAX = 1;
+    ADDSUM = 2;
+  }
+  ValStream input_val = 1;
+  ValStream output_val = 2;
+  string label = 3;
+  uint64 stream_shape = 4;
+  bool blocked = 5;
+  Type reduce_type = 6;
+}
+
+message GenRef {
+  ValStream input_crd = 1;
+  ValStream output_ref = 2;
+  string label = 3;
+}
+
+message SparseAccumulator {
+  CrdStream input_inner_crd = 1;
+  CrdStream output_inner_crd = 2;
+  repeated CrdStream input_outer_crds = 3;
+  ValStream input_val = 4;
+  ValStream output_val = 5;
+  uint64 order = 6;
+  string inner_crd = 7;
+  repeated string outer_crds = 8;
+  string label = 9;
+  repeated CrdStream output_outer_crds = 10;
+  uint64 stream_shape = 11;
+  bool blocked = 12;
+  // string val = 10;
+}
+
+message CoordHold {
+  CrdStream input_inner_crd = 1;
+  CrdStream input_outer_crd = 2;
+  CrdStream output_inner_crd = 3;
+  CrdStream output_outer_crd = 4;
+  string inner_crd = 5;
+  string outer_crd = 6;
+  string label = 7;
+}
+
+message Locate {
+  CrdStream input_crd = 1;
+  RefStream input_ref = 2;
+  RefStream output_ref1 = 3;
+  RefStream output_ref2 = 4;
+  CrdStream output_crd = 5;
+  string label = 6;
+}
+
+message CoordDrop {
+  CrdStream input_inner_crd = 1;
+  CrdStream input_outer_crd = 2;
+  CrdStream output_inner_crd = 3;
+  CrdStream output_outer_crd = 4;
+  string inner_crd = 5;
+  string outer_crd = 6;
+  string label = 7;
+}
+
+message CoordMask {
+  CrdStream input_inner_crd = 1;
+  CrdStream input_outer_crd = 2;
+  RefStream input_ref = 3;
+  CrdStream output_inner_crd = 4;
+  CrdStream output_outer_crd = 5;
+  RefStream output_ref = 6;
+}
+
+message ArrayVals {
+  string tensor = 1;
+  RefStream input_ref = 2;
+  ValStream output_val = 3;
+  string label = 4;
+  uint64 stream_shape = 5;
+  bool blocked = 6;
+}
+
+message Intrinsic {
+  string name = 1;
+  ValStream input_val = 2;
+  repeated CrdStream inputs = 3;
+  ValStream output_val = 4;
+  repeated CrdStream outputs = 5;
+}
+
+message Fork {
+  string label = 1;
+  message CrdBundle {
+    CrdStream input = 1;
+    repeated CrdStream outputs = 2;
+  }
+  message RefBundle {
+    RefStream input = 1;
+    repeated RefStream outputs = 2;
+  }
+  message ValBundle {
+    ValStream input = 1;
+    repeated ValStream outputs = 2;
+  }
+  message RepSigBundle {
+    RepSigStream input = 1;
+    repeated RepSigStream outputs = 2;
+  }
+  oneof conn {
+    CrdBundle crd = 2;
+    RefBundle ref = 3;
+    ValBundle val = 4;
+    RepSigBundle repsig = 5;
+  }
+}
+
+message Join {
+  string label = 1;
+  message CrdBundle {
+    CrdStream output = 1;
+    repeated CrdStream inputs = 2;
+  }
+  message RefBundle {
+    RefStream output = 1;
+    repeated RefStream inputs = 2;
+  }
+  message ValBundle {
+    ValStream output = 1;
+    repeated ValStream inputs = 2;
+  }
+  message RepSigBundle {
+    RepSigStream output = 1;
+    repeated RepSigStream inputs = 2;
+  }
+  oneof conn {
+    CrdBundle crd = 2;
+    RefBundle ref = 3;
+    ValBundle val = 4;
+    RepSigBundle repsig = 5;
+  }
+}

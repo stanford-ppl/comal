@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package tortilla;
+
+message RefStream {
+  message StreamID {
+    uint64 id = 1;
+  }
+  StreamID id = 1;
+  // optional string name = 2;
+  string name = 2;
+}
+
+message ValStream {
+  message StreamID {
+    uint64 id = 1;
+  }
+  StreamID id = 1;
+  // optional string name = 2;
+  string name = 2;
+}
+
+message CrdStream {
+  message StreamID {
+    uint64 id = 1;
+  }
+  StreamID id = 1;
+  // optional string name = 2;
+  string name = 2;
+}
+
+message RepSigStream {
+  message StreamID {
+    uint64 id = 1;
+  }
+  StreamID id = 1;
+  // optional string name = 2;
+  string name = 2;
+}

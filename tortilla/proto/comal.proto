@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package tortilla;
+
+import "tortilla.proto";
+
+message ComalGraph {
+    string name = 1;
+    uint64 channel_size = 2;
+    ProgramGraph graph = 3;
+}
