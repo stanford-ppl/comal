@@ -144,10 +144,10 @@ pub fn build_from_proto<'a>(
             builder,
             HBMConfig {
                 addr_offset: 64,
-                channel_num: 8,
-                per_channel_latency: 2,
-                per_channel_init_interval: 2,
-                per_channel_outstanding: 1,
+                channel_num: 32,              // U280: 2 HBM2 stacks × 16 pseudo-channels
+                per_channel_latency: 100,     // ~220ns at 450 MHz FPGA clock
+                per_channel_init_interval: 1, // 64B/cycle/channel → 921 GB/s peak
+                per_channel_outstanding: 32,  // deep pipeline for latency hiding
                 per_channel_start_up_time: 14,
             },
         ))
@@ -294,7 +294,11 @@ pub fn build_from_proto<'a>(
                     let shape_filename = base_path.join(format!("tensor_{}_mode_shape", op.tensor));
                     let shapes = read_inputs(&shape_filename);
                     let index: usize = op.mode.try_into().unwrap();
-                    builder.add_child(UncompressedCrdRdScan::new(f_data, shapes[index.clone()]));
+                    let mut ucr = UncompressedCrdRdScan::new(f_data, shapes[index.clone()]);
+                    if op.stream_shape > 0 {
+                        ucr.set_stream_shape(op.stream_shape);
+                    }
+                    builder.add_child(ucr);
                 }
             }
             Op::FiberWrite(op) => {
@@ -636,14 +640,15 @@ pub fn build_from_proto<'a>(
             }
             Op::Array(op) => {
                 let in_ref_id = get_ref_id(&op.input_ref);
+                let block_size = if op.stream_shape > 0 { op.stream_shape as usize } else { 1 };
                 let array_data = ArrayData {
                     in_ref: refmap.get_receiver(in_ref_id, builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
-                    block_size: 1,  // Scalar mode
+                    block_size,
                 };
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
                 let vals = read_inputs(&val_filename);
-                let mut arr = Array::new(array_data, vals);
+                let arr = Array::new(array_data, vals);
                 if let Some(hbm) = hbm_ctx_opt.as_mut() {
                     let (rd_addr_snd, rd_addr_rcv) = builder.unbounded::<ParAddrs>();
                     let (rd_resp_snd, rd_resp_rcv) = builder.unbounded::<u64>();
@@ -651,9 +656,20 @@ pub fn build_from_proto<'a>(
                         addr: rd_addr_rcv,
                         resp: rd_resp_snd,
                     });
-                    arr.enable_hbm_reads(rd_addr_snd, rd_resp_rcv, 0x6000_0000, 4);
+                    // Software-pipelined: issuer fires HBM addresses without
+                    // blocking, consumer waits on responses.  DAM's parallel
+                    // context execution overlaps the two.
+                    arr.enable_hbm_pipelined(
+                        builder,
+                        rd_addr_snd,
+                        rd_resp_rcv,
+                        0x6000_0000,
+                        4 * block_size as u64,
+                    );
+                    // arr is consumed -- do NOT add to builder
+                } else {
+                    builder.add_child(arr);
                 }
-                builder.add_child(arr);
             }
             Op::Spacc(op) => {
                 let in_inner_crd = get_crd_id(&op.input_inner_crd);
