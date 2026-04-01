@@ -296,6 +296,19 @@ impl<'a, A: DAMType, const N: usize> std::fmt::Display for Tensor<'a, A, Ix2, N>
     }
 }
 
+impl<'a, A: DAMType, const N: usize> std::fmt::Display for Tensor<'a, A, Ix1, N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+        for (i, value) in self.data.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{:?}", value)?;
+        }
+        write!(f, "]")
+    }
+}
+
 impl<'a, A, const N: usize> num::One for Tensor<'a, A, Ix2, N>
 where
     A: DAMType + num::Zero + dam::types::StaticallySized + num::One,

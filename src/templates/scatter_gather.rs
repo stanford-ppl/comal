@@ -89,6 +89,10 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
+        let parallel_drain = std::env::var("COMAL_PARALLEL_DRAIN")
+            .map(|v| v != "0" && v.to_lowercase() != "false")
+            .unwrap_or(false);
+
         let mut target_idx = 0;
         loop {
             let output = self.targets[target_idx].dequeue(&self.time).unwrap().data;
@@ -119,7 +123,13 @@ where
                 }
                 _ => todo!(),
             }
-            self.time.incr_cycles(1);
+            // In parallel drain mode, model direct-write to output memory
+            // partitions — each lane writes independently, no serialization.
+            // The dequeue already advances time via manager.advance(), so
+            // skipping incr_cycles means the Gather runs at upstream speed.
+            if !parallel_drain {
+                self.time.incr_cycles(1);
+            }
         }
     }
 }
@@ -141,6 +151,53 @@ where
     pub fn add_target(&mut self, target: Receiver<Token<ValType, StopType>>) {
         target.attach_receiver(self);
         self.targets.push(target);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ParallelDrain: models direct-write output where each lane writes to its
+// own memory partition independently. No serialization overhead.
+// Used when COMAL_PARALLEL_DRAIN=1 to replace the serial Gather.
+// ---------------------------------------------------------------------------
+
+#[context_macro]
+pub struct ParallelDrain<ValType: Clone, StopType: Clone> {
+    input: Receiver<Token<ValType, StopType>>,
+}
+
+impl<ValType: DAMType, StopType: DAMType> ParallelDrain<ValType, StopType>
+where
+    ParallelDrain<ValType, StopType>: Context,
+{
+    pub fn new(input: Receiver<Token<ValType, StopType>>) -> Self {
+        let ctx = Self {
+            input,
+            context_info: Default::default(),
+        };
+        ctx.input.attach_receiver(&ctx);
+        ctx
+    }
+}
+
+impl<ValType, StopType> Context for ParallelDrain<ValType, StopType>
+where
+    ValType: DAMType,
+    StopType: DAMType,
+{
+    fn init(&mut self) {}
+
+    fn run(&mut self) {
+        loop {
+            match self.input.dequeue(&self.time) {
+                Ok(elem) => {
+                    if matches!(elem.data, Token::Done) {
+                        return;
+                    }
+                }
+                Err(_) => return,
+            }
+            self.time.incr_cycles(1);
+        }
     }
 }
 

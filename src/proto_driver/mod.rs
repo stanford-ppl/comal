@@ -20,13 +20,15 @@ use super::templates::rd_scanner::{CompressedCrdRdScan, RdScanData, Uncompressed
 use super::templates::repeat::{RepSigGenData, Repeat, RepeatData, RepeatSigGen};
 use super::templates::utils::{read_inputs, read_inputs_vectorized};
 use crate::templates::tensor::{PrimitiveType, Tensor};
-use ndarray::{Array2, Axis, CowArray, Ix2, ShapeBuilder};
+use ndarray::{Array2, Axis, CowArray, Ix1, Ix2, ShapeBuilder};
 use dam::types::StaticallySized;
 
 // Block sparse value type aliases - NxN dense blocks
 type VT16 = Tensor<'static, f32, Ix2, 16>;
 type VT32 = Tensor<'static, f32, Ix2, 32>;
 type VT64 = Tensor<'static, f32, Ix2, 64>;
+// 1D vector type for CGRA vector-lane modeling
+type Vec1T16 = Tensor<'static, f32, Ix1, 16>;
 use super::templates::wr_scanner::{CompressedWrScan, ValsWrScan};
 use super::token_vec;
 use crate::cli_common::SamOptions;
@@ -36,7 +38,7 @@ use crate::templates::binary::Binary;
 use crate::templates::joiner::{NIntersect, NJoinerData, NUnion};
 use crate::templates::new_alu::{ALUAdd, ALUMul};
 use crate::templates::primitive::ALUMaxOp;
-use crate::templates::scatter_gather::{Gather, Scatter};
+use crate::templates::scatter_gather::{Gather, ParallelDrain, Scatter};
 use crate::templates::unary::Unary;
 // HBM timing interfaces
 use crate::templates::ramulator::hbm_context::{
@@ -138,16 +140,54 @@ pub fn build_from_proto<'a>(
     let enable_hbm = env::var("COMAL_ENABLE_HBM")
         .map(|v| v != "0" && v.to_lowercase() != "false")
         .unwrap_or(true);
-    // Optional HBM memory timing context
-    let mut hbm_ctx_opt = if enable_hbm {
+    // HBM configuration — configurable via env vars for design space exploration.
+    // Defaults: U280 (32 channels, 100 cycle latency)
+    let hbm_channels: usize = env::var("COMAL_HBM_CHANNELS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(32);
+    let hbm_latency: u64 = env::var("COMAL_HBM_LATENCY")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+    let hbm_ii: u64 = env::var("COMAL_HBM_II")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+
+    // Dedicated HBM ports: each array reader gets its own HBMContext
+    // with a partition of the total channels. This models real hardware
+    // where each memory port has dedicated HBM channels (no sharing).
+    let dedicated_hbm = env::var("COMAL_HBM_DEDICATED")
+        .map(|v| v != "0" && v.to_lowercase() != "false")
+        .unwrap_or(true);
+
+    // Multi-issue width: N tokens processed per cycle per array consumer.
+    // Models an FPGA with N parallel read ports and N-wide output datapath.
+    let issue_width: usize = env::var("COMAL_ISSUE_WIDTH")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+
+    // Count arrays to partition channels (pre-scan)
+    let num_arrays = if enable_hbm && dedicated_hbm {
+        comal_graph.graph.as_ref().map(|g| {
+            g.operators.iter().filter(|op| matches!(op.op, Some(Op::Array(_)))).count()
+        }).unwrap_or(1).max(1)
+    } else { 1 };
+    let channels_per_array = if dedicated_hbm { (hbm_channels / num_arrays).max(1) } else { hbm_channels };
+
+    if enable_hbm {
+        if dedicated_hbm {
+            println!("[HBM config] dedicated ports: {}ch total / {} arrays = {}ch each, latency={}, II={}, issue_width={}",
+                     hbm_channels, num_arrays, channels_per_array, hbm_latency, hbm_ii, issue_width);
+        } else {
+            println!("[HBM config] shared: {}ch, latency={}, II={}, issue_width={}", hbm_channels, hbm_latency, hbm_ii, issue_width);
+        }
+    }
+
+    // Shared HBM (legacy mode, for compressed scanners that aren't pipelined)
+    let mut hbm_ctx_opt = if enable_hbm && !dedicated_hbm {
         Some(HBMContext::new(
             builder,
             HBMConfig {
                 addr_offset: 64,
-                channel_num: 32,              // U280: 2 HBM2 stacks × 16 pseudo-channels
-                per_channel_latency: 100,     // ~220ns at 450 MHz FPGA clock
-                per_channel_init_interval: 1, // 64B/cycle/channel → 921 GB/s peak
-                per_channel_outstanding: 32,  // deep pipeline for latency hiding
+                channel_num: hbm_channels,
+                per_channel_latency: hbm_latency,
+                per_channel_init_interval: hbm_ii,
+                per_channel_outstanding: 32,
                 per_channel_start_up_time: 14,
             },
         ))
@@ -302,6 +342,13 @@ pub fn build_from_proto<'a>(
                 }
             }
             Op::FiberWrite(op) => {
+                let parallel_drain = env::var("COMAL_PARALLEL_DRAIN")
+                    .map(|v| v != "0" && v.to_lowercase() != "false")
+                    .unwrap_or(false);
+                if parallel_drain {
+                    // Per-lane writers already created in Op::Join handler
+                    continue;
+                }
                 let in_crd_id = get_crd_id(&op.input_crd);
                 let receiver = crdmap.get_receiver(in_crd_id, builder);
                 let mut wr = CompressedWrScan::new(receiver);
@@ -649,22 +696,42 @@ pub fn build_from_proto<'a>(
                 let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
                 let vals = read_inputs(&val_filename);
                 let arr = Array::new(array_data, vals);
-                if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                if enable_hbm {
                     let (rd_addr_snd, rd_addr_rcv) = builder.unbounded::<ParAddrs>();
                     let (rd_resp_snd, rd_resp_rcv) = builder.unbounded::<u64>();
-                    hbm.add_reader(ReadBundle {
-                        addr: rd_addr_rcv,
-                        resp: rd_resp_snd,
-                    });
-                    // Software-pipelined: issuer fires HBM addresses without
-                    // blocking, consumer waits on responses.  DAM's parallel
-                    // context execution overlaps the two.
+
+                    if dedicated_hbm {
+                        // Dedicated HBM: each array gets its own HBMContext
+                        // with channels_per_array channels. No contention.
+                        let mut dedicated = HBMContext::new(
+                            builder,
+                            HBMConfig {
+                                addr_offset: 64,
+                                channel_num: channels_per_array,
+                                per_channel_latency: hbm_latency,
+                                per_channel_init_interval: hbm_ii,
+                                per_channel_outstanding: 32,
+                                per_channel_start_up_time: 14,
+                            },
+                        );
+                        dedicated.add_reader(ReadBundle {
+                            addr: rd_addr_rcv,
+                            resp: rd_resp_snd,
+                        });
+                        builder.add_child(dedicated);
+                    } else if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                        hbm.add_reader(ReadBundle {
+                            addr: rd_addr_rcv,
+                            resp: rd_resp_snd,
+                        });
+                    }
                     arr.enable_hbm_pipelined(
                         builder,
                         rd_addr_snd,
                         rd_resp_rcv,
                         0x6000_0000,
                         4 * block_size as u64,
+                        issue_width,
                     );
                     // arr is consumed -- do NOT add to builder
                 } else {
@@ -710,6 +777,12 @@ pub fn build_from_proto<'a>(
                 }
             }
             Op::ValWrite(op) => {
+                let parallel_drain = env::var("COMAL_PARALLEL_DRAIN")
+                    .map(|v| v != "0" && v.to_lowercase() != "false")
+                    .unwrap_or(false);
+                if parallel_drain {
+                    continue;
+                }
                 let in_val_id = get_val_id(&op.input_val);
                 let val_receiver = valmap.get_receiver(in_val_id, builder);
                 let mut vals = ValsWrScan::new(val_receiver);
@@ -771,39 +844,57 @@ pub fn build_from_proto<'a>(
                     panic!("Attempting to fork a repsig");
                 }
             },
-            Op::Join(op) => match op.conn.as_ref().unwrap() {
-                join::Conn::Crd(in_crd) => {
-                    let in_crd_id = in_crd.output.try_conv();
-                    let sender = crdmap.get_sender(in_crd_id, builder);
-                    let out_crd_ids = in_crd.inputs.iter().map(|id| id.try_conv());
-                    let mut gather = Gather::new(sender);
-                    out_crd_ids
-                        .into_iter()
-                        .for_each(|id| gather.add_target(crdmap.get_receiver(id, builder)));
-                    builder.add_child(gather);
-                }
-                join::Conn::Ref(in_ref) => {
-                    let in_ref_id = in_ref.output.try_conv();
-                    let out_ref_ids = in_ref.inputs.iter().map(|id| id.try_conv());
-                    let sender = refmap.get_sender(in_ref_id, builder);
-                    let mut gather = Gather::new(sender);
-                    out_ref_ids
-                        .into_iter()
-                        .for_each(|id| gather.add_target(refmap.get_receiver(id, builder)));
-                    builder.add_child(gather);
-                }
-                join::Conn::Val(in_val) => {
-                    let in_val_id = in_val.output.try_conv();
-                    let out_val_ids = in_val.inputs.iter().map(|id| id.try_conv());
-                    let sender = valmap.get_sender(in_val_id, builder);
-                    let mut gather = Gather::new(sender);
-                    out_val_ids
-                        .into_iter()
-                        .for_each(|id| gather.add_target(valmap.get_receiver(id, builder)));
-                    builder.add_child(gather);
-                }
-                join::Conn::Repsig(_) => {
-                    panic!("Attempting to join repsig");
+            Op::Join(op) => {
+                let parallel_drain = env::var("COMAL_PARALLEL_DRAIN")
+                    .map(|v| v != "0" && v.to_lowercase() != "false")
+                    .unwrap_or(false);
+
+                match op.conn.as_ref().unwrap() {
+                    join::Conn::Crd(in_crd) => {
+                        if parallel_drain {
+                            let ids: Vec<u64> = in_crd.inputs.iter().map(|id| id.try_conv()).collect();
+                            let rcvs: Vec<_> = ids.iter().map(|id| crdmap.get_receiver(*id, builder)).collect();
+                            for rcv in rcvs {
+                                builder.add_child(CompressedWrScan::new(rcv));
+                            }
+                        } else {
+                            let sender = crdmap.get_sender(in_crd.output.try_conv(), builder);
+                            let mut gather = Gather::new(sender);
+                            in_crd.inputs.iter().for_each(|id| gather.add_target(crdmap.get_receiver(id.try_conv(), builder)));
+                            builder.add_child(gather);
+                        }
+                    }
+                    join::Conn::Val(in_val) => {
+                        if parallel_drain {
+                            let ids: Vec<u64> = in_val.inputs.iter().map(|id| id.try_conv()).collect();
+                            let rcvs: Vec<_> = ids.iter().map(|id| valmap.get_receiver(*id, builder)).collect();
+                            for rcv in rcvs {
+                                builder.add_child(ValsWrScan::new(rcv));
+                            }
+                        } else {
+                            let sender = valmap.get_sender(in_val.output.try_conv(), builder);
+                            let mut gather = Gather::new(sender);
+                            in_val.inputs.iter().for_each(|id| gather.add_target(valmap.get_receiver(id.try_conv(), builder)));
+                            builder.add_child(gather);
+                        }
+                    }
+                    join::Conn::Ref(in_ref) => {
+                        if parallel_drain {
+                            let ids: Vec<u64> = in_ref.inputs.iter().map(|id| id.try_conv()).collect();
+                            let rcvs: Vec<_> = ids.iter().map(|id| refmap.get_receiver(*id, builder)).collect();
+                            for rcv in rcvs {
+                                builder.add_child(ParallelDrain::new(rcv));
+                            }
+                        } else {
+                            let sender = refmap.get_sender(in_ref.output.try_conv(), builder);
+                            let mut gather = Gather::new(sender);
+                            in_ref.inputs.iter().for_each(|id| gather.add_target(refmap.get_receiver(id.try_conv(), builder)));
+                            builder.add_child(gather);
+                        }
+                    }
+                    join::Conn::Repsig(_) => {
+                        panic!("Attempting to join repsig");
+                    }
                 }
             },
             _ => todo!(),
@@ -821,6 +912,814 @@ pub fn parse_proto<'a>(
 ) -> ProgramBuilder<'a> {
     let mut builder = ProgramBuilder::default();
     build_from_proto(
+        comal_graph,
+        base_path,
+        sam_options,
+        &mut builder,
+        &mut Default::default(),
+        &mut Default::default(),
+        &mut Default::default(),
+        &mut Default::default(),
+    );
+    builder
+}
+
+// ============================================================================
+// Vector Token Mode Functions (COMAL_VECTOR_MODE=16)
+// ============================================================================
+// Vector mode uses 1D Tensor<f32, Ix1, 16> valued tokens. Each array read
+// returns a 16-element vector in 1 cycle. The dense inner fiber_lookup divides
+// its shape by stream_shape so the scanner emits vector-granularity refs.
+
+/// Build proto graph with Vec1T16 (1D vector of 16 f32s) valued tokens
+#[allow(clippy::too_many_arguments)]
+pub fn build_from_proto_vec16<'a>(
+    comal_graph: ComalGraph,
+    base_path: PathBuf,
+    sam_options: SamOptions,
+    builder: &mut ProgramBuilder<'a>,
+    refmap: &mut Channels<'a, Token<CT, ST>>,
+    crdmap: &mut Channels<'a, Token<CT, ST>>,
+    valmap: &mut Channels<'a, Token<Vec1T16, ST>>,
+    repmap: &mut Channels<'a, Repsiggen>,
+) {
+    // Read HBM setting from environment variable (default: enabled)
+    let enable_hbm = env::var("COMAL_ENABLE_HBM")
+        .map(|v| v != "0" && v.to_lowercase() != "false")
+        .unwrap_or(true);
+    // HBM configuration — configurable via env vars for design space exploration.
+    let hbm_channels: usize = env::var("COMAL_HBM_CHANNELS")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(32);
+    let hbm_latency: u64 = env::var("COMAL_HBM_LATENCY")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(100);
+    let hbm_ii: u64 = env::var("COMAL_HBM_II")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+
+    let dedicated_hbm = env::var("COMAL_HBM_DEDICATED")
+        .map(|v| v != "0" && v.to_lowercase() != "false")
+        .unwrap_or(true);
+
+    let issue_width: usize = env::var("COMAL_ISSUE_WIDTH")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+
+    // Count arrays to partition channels (pre-scan)
+    let num_arrays = if enable_hbm && dedicated_hbm {
+        comal_graph.graph.as_ref().map(|g| {
+            g.operators.iter().filter(|op| matches!(op.op, Some(Op::Array(_)))).count()
+        }).unwrap_or(1).max(1)
+    } else { 1 };
+    let channels_per_array = if dedicated_hbm { (hbm_channels / num_arrays).max(1) } else { hbm_channels };
+
+    if enable_hbm {
+        if dedicated_hbm {
+            println!("[HBM config] vec16 dedicated ports: {}ch total / {} arrays = {}ch each, latency={}, II={}, issue_width={}",
+                     hbm_channels, num_arrays, channels_per_array, hbm_latency, hbm_ii, issue_width);
+        } else {
+            println!("[HBM config] vec16 shared: {}ch, latency={}, II={}, issue_width={}", hbm_channels, hbm_latency, hbm_ii, issue_width);
+        }
+    }
+
+    // Shared HBM (legacy mode)
+    let mut hbm_ctx_opt = if enable_hbm && !dedicated_hbm {
+        Some(HBMContext::new(
+            builder,
+            HBMConfig {
+                addr_offset: 64,
+                channel_num: hbm_channels,
+                per_channel_latency: hbm_latency,
+                per_channel_init_interval: hbm_ii,
+                per_channel_outstanding: 32,
+                per_channel_start_up_time: 14,
+            },
+        ))
+    } else {
+        None
+    };
+    for operation in comal_graph.graph.unwrap().operators {
+        match operation.op.expect("Error processing") {
+            Op::Broadcast(op) => match op.conn.as_ref().unwrap() {
+                broadcast::Conn::Crd(in_crd) => {
+                    let in_crd_id = in_crd.input.try_conv();
+                    let out_crd_ids = in_crd.outputs.iter().map(|id| id.try_conv());
+                    let receiver = crdmap.get_receiver(in_crd_id, builder);
+                    let mut broadcast = BroadcastContext::new(receiver);
+                    out_crd_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(crdmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
+                }
+                broadcast::Conn::Ref(in_ref) => {
+                    let in_ref_id = in_ref.input.try_conv();
+                    let out_ref_ids = in_ref.outputs.iter().map(|id| id.try_conv());
+                    let receiver = refmap.get_receiver(in_ref_id, builder);
+                    let mut broadcast = BroadcastContext::new(receiver);
+                    out_ref_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(refmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
+                }
+                broadcast::Conn::Val(in_val) => {
+                    let in_val_id = in_val.input.try_conv();
+                    let out_val_ids = in_val.outputs.iter().map(|id| id.try_conv());
+                    let receiver = valmap.get_receiver(in_val_id, builder);
+                    let mut broadcast = BroadcastContext::new(receiver);
+                    out_val_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(valmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
+                }
+                broadcast::Conn::Repsig(in_repsig) => {
+                    let in_repsig_id = in_repsig.input.try_conv();
+                    let out_repsig_ids = in_repsig.outputs.iter().map(|id| id.try_conv());
+                    let receiver = repmap.get_receiver(in_repsig_id, builder);
+                    let mut broadcast = BroadcastContext::new(receiver);
+                    out_repsig_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(repmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
+                }
+            },
+            Op::Joiner(op) => {
+                let mut in_crds = Vec::new();
+                let mut in_refs: Vec<Box<dyn RecvAdapter<Token<_, ST>> + Send + Sync>> = Vec::new();
+                let mut out_refs: Vec<Box<dyn SendAdapter<Token<_, ST>> + Send + Sync>> =
+                    Vec::new();
+                op.input_pairs.iter().for_each(|pair| {
+                    let pair_crd = crdmap.get_receiver(get_crd_id(&pair.crd), builder);
+                    match pair.in_ref.clone().unwrap().stream.as_ref().unwrap() {
+                        joiner::payload::Stream::RefStream(ref_stream) => {
+                            in_refs.push(Box::new(
+                                refmap.get_receiver(get_ref_id(&Some(ref_stream.clone())), builder),
+                            ));
+                        }
+                        joiner::payload::Stream::ValStream(val_stream) => {
+                            in_refs.push(Box::new(
+                                valmap.get_receiver(get_val_id(&Some(val_stream.clone())), builder),
+                            ));
+                        }
+                    }
+
+                    in_crds.push(pair_crd);
+                });
+                op.output_refs.iter().for_each(|output_ref| {
+                    match output_ref.stream.as_ref().unwrap() {
+                        joiner::payload::Stream::RefStream(ref_stream) => out_refs.push(Box::new(
+                            refmap.get_sender(get_ref_id(&Some(ref_stream.clone())), builder),
+                        )),
+                        joiner::payload::Stream::ValStream(val_stream) => out_refs.push(Box::new(
+                            valmap.get_sender(get_val_id(&Some(val_stream.clone())), builder),
+                        )),
+                    }
+                });
+                let joiner_data = NJoinerData {
+                    in_crds,
+                    in_refs,
+                    out_refs,
+                    out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
+                };
+
+                if let joiner::Type::Intersect = op.join_type() {
+                    builder.add_child(NIntersect::new(joiner_data))
+                } else {
+                    builder.add_child(NUnion::new(joiner_data))
+                };
+            }
+            Op::FiberLookup(op) => {
+                let in_ref = refmap.get_receiver(get_ref_id(&op.input_ref), builder);
+
+                let f_data = RdScanData {
+                    in_ref,
+                    out_crd: crdmap.get_sender(get_crd_id(&op.output_crd), builder),
+                    out_ref: refmap.get_sender(get_ref_id(&op.output_ref), builder),
+                };
+                if op.format == "compressed" {
+                    let seg_filename =
+                        base_path.join(format!("tensor_{}_mode_{}_seg", op.tensor, op.mode));
+                    let crd_filename =
+                        base_path.join(format!("tensor_{}_mode_{}_crd", op.tensor, op.mode));
+                    let seg = read_inputs(&seg_filename);
+                    let crd = read_inputs(&crd_filename);
+                    let mut crs = CompressedCrdRdScan::new(f_data, seg, crd);
+                    crs.set_timings(sam_options.compressed_read_config);
+                    if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                        let (seg_addr_snd, seg_addr_rcv) = builder.unbounded::<ParAddrs>();
+                        let (seg_resp_snd, seg_resp_rcv) = builder.unbounded::<u64>();
+                        let (crd_addr_snd, crd_addr_rcv) = builder.unbounded::<ParAddrs>();
+                        let (crd_resp_snd, crd_resp_rcv) = builder.unbounded::<u64>();
+                        hbm.add_reader(ReadBundle {
+                            addr: seg_addr_rcv,
+                            resp: seg_resp_snd,
+                        });
+                        hbm.add_reader(ReadBundle {
+                            addr: crd_addr_rcv,
+                            resp: crd_resp_snd,
+                        });
+                        crs.enable_hbm(
+                            seg_addr_snd,
+                            seg_resp_rcv,
+                            crd_addr_snd,
+                            crd_resp_rcv,
+                            0x1000_0000,
+                            0x2000_0000,
+                            4,
+                            4,
+                        );
+                    }
+                    builder.add_child(crs);
+                } else {
+                    // Dense fiber lookup — in vector mode, divide shape by stream_shape
+                    let shape_filename = base_path.join(format!("tensor_{}_mode_shape", op.tensor));
+                    let shapes: Vec<CT> = read_inputs(&shape_filename);
+                    let index: usize = op.mode.try_into().unwrap();
+                    if op.stream_shape > 0 {
+                        // Vector mode: emit vec_dim refs per input, stride=1.
+                        // Inner Stops are skipped via COMAL_VECTOR_MODE env var in scanner.
+                        let vec_dim = shapes[index] / (op.stream_shape as u32).max(1);
+                        let ucr = UncompressedCrdRdScan::new(f_data, vec_dim);
+                        // Don't set stream_shape → stride=1 → emits 0,1,...,vec_dim-1
+                        builder.add_child(ucr);
+                    } else {
+                        let ucr = UncompressedCrdRdScan::new(f_data, shapes[index]);
+                        builder.add_child(ucr);
+                    }
+                }
+            }
+            Op::FiberWrite(op) => {
+                let parallel_drain = env::var("COMAL_PARALLEL_DRAIN")
+                    .map(|v| v != "0" && v.to_lowercase() != "false")
+                    .unwrap_or(false);
+                if parallel_drain {
+                    continue;
+                }
+                let in_crd_id = get_crd_id(&op.input_crd);
+                let receiver = crdmap.get_receiver(in_crd_id, builder);
+                let mut wr = CompressedWrScan::new(receiver);
+                if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                    let (crd_addr_snd, crd_addr_rcv) = builder.unbounded::<ParAddrs>();
+                    let (crd_resp_snd, crd_resp_rcv) = builder.unbounded::<u64>();
+                    let (seg_addr_snd, seg_addr_rcv) = builder.unbounded::<ParAddrs>();
+                    let (seg_resp_snd, seg_resp_rcv) = builder.unbounded::<u64>();
+                    hbm.add_writer(WriteBundle {
+                        addr: crd_addr_rcv,
+                        resp: crd_resp_snd,
+                    });
+                    hbm.add_writer(WriteBundle {
+                        addr: seg_addr_rcv,
+                        resp: seg_resp_snd,
+                    });
+                    wr.enable_hbm_writes(
+                        crd_addr_snd,
+                        crd_resp_rcv,
+                        seg_addr_snd,
+                        seg_resp_rcv,
+                        0x4000_0000,
+                        0x5000_0000,
+                        4,
+                        4,
+                    );
+                }
+                builder.add_child(wr);
+            }
+            Op::Repeat(op) => {
+                let (out_repsig, in_repsig) = builder.bounded(DEFAULT_CHAN_SIZE);
+                match op.input_rep_sig {
+                    Some(in_rep) => match in_rep {
+                        repeat::InputRepSig::RepRef(rep_ref) => {
+                            let in_rep_ref = get_ref_id(&Some(rep_ref));
+                            let repsig_data = RepSigGenData {
+                                input: refmap.get_receiver(in_rep_ref, builder),
+                                out_repsig,
+                            };
+                            builder.add_child(RepeatSigGen::new(repsig_data));
+                        }
+                        repeat::InputRepSig::RepVal(rep_val) => {
+                            let in_rep_val = get_val_id(&Some(rep_val));
+                            let repsig_data = RepSigGenData {
+                                input: valmap.get_receiver(in_rep_val, builder),
+                                out_repsig,
+                            };
+                            builder.add_child(RepeatSigGen::new(repsig_data));
+                        }
+                    },
+                    None => todo!(),
+                }
+
+                match op.input_ref {
+                    Some(input_ref) => match input_ref {
+                        repeat::InputRef::InRef(in_ref_stream) => {
+                            let in_ref =
+                                refmap.get_receiver(get_ref_id(&Some(in_ref_stream)), builder);
+
+                            match op.output_ref {
+                                Some(out_ref) => match out_ref {
+                                    repeat::OutputRef::OutRef(out_ref_stream) => {
+                                        let rep_data = RepeatData {
+                                            in_ref,
+                                            in_repsig,
+                                            out_ref: refmap.get_sender(
+                                                get_ref_id(&Some(out_ref_stream)),
+                                                builder,
+                                            ),
+                                        };
+                                        builder.add_child(Repeat::new(rep_data));
+                                    }
+                                    repeat::OutputRef::OutVal(_) => todo!(),
+                                },
+                                None => todo!(),
+                            }
+                        }
+                        repeat::InputRef::InVal(in_val_stream) => {
+                            let in_val =
+                                valmap.get_receiver(get_val_id(&Some(in_val_stream)), builder);
+
+                            match op.output_ref {
+                                Some(out_ref) => match out_ref {
+                                    repeat::OutputRef::OutRef(_) => todo!(),
+                                    repeat::OutputRef::OutVal(out_val_stream) => {
+                                        let rep_data = RepeatData {
+                                            in_ref: in_val,
+                                            in_repsig,
+                                            out_ref: valmap.get_sender(
+                                                get_val_id(&Some(out_val_stream)),
+                                                builder,
+                                            ),
+                                        };
+                                        builder.add_child(Repeat::new(rep_data));
+                                    }
+                                },
+                                None => todo!(),
+                            }
+                        }
+                    },
+                    None => todo!(),
+                }
+            }
+            Op::Repeatsig(op) => {
+                let in_crd_id = get_crd_id(&op.input_crd);
+                let repsig_data = RepSigGenData {
+                    input: crdmap.get_receiver(in_crd_id, builder),
+                    out_repsig: repmap.get_sender(get_repsig_id(&op.output_rep_sig), builder),
+                };
+                builder.add_child(RepeatSigGen::new(repsig_data));
+            }
+            Op::Alu(op) => {
+                let mut in_val_ids = match op.conn.as_ref().unwrap() {
+                    alu::Conn::Vals(val) => val
+                        .inputs
+                        .iter()
+                        .map(|input_val| get_val_id(&Some(input_val.clone()))),
+                    alu::Conn::Crds(_) => todo!(),
+                };
+                let out_val_id = match op.conn.as_ref().unwrap() {
+                    alu::Conn::Vals(val) => get_val_id(&val.output),
+                    alu::Conn::Crds(_) => todo!(),
+                };
+                assert!(in_val_ids.len() >= 1);
+                let out_val_sender = valmap.get_sender(out_val_id, builder);
+                if in_val_ids.len() == 2 {
+                    let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
+                    let val_receiver2 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
+                    let latency = 1;
+                    let ii = 1;
+                    // Element-wise binary ops on Vec1T16
+                    let binary_func: fn(Vec1T16, Vec1T16) -> Vec1T16 = match op.stages[0].op() {
+                        alu::AluOp::Add => |val1: Vec1T16, val2: Vec1T16| -> Vec1T16 { val1 + val2 },
+                        alu::AluOp::Sub => |val1: Vec1T16, val2: Vec1T16| -> Vec1T16 { val1 - val2 },
+                        alu::AluOp::Mul => |val1: Vec1T16, val2: Vec1T16| -> Vec1T16 { val1 * val2 },
+                        alu::AluOp::Div => |val1: Vec1T16, val2: Vec1T16| -> Vec1T16 { val1 / val2 },
+                        alu::AluOp::Elemmul => |val1: Vec1T16, val2: Vec1T16| -> Vec1T16 { val1 * val2 },
+                        _ => todo!(),
+                    };
+                    builder.add_child(Binary::new(
+                        val_receiver1,
+                        val_receiver2,
+                        out_val_sender,
+                        binary_func,
+                        1,
+                        latency,
+                        ii,
+                    ));
+                } else if in_val_ids.len() == 1 {
+                    let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
+                    match op.stages[0].op() {
+                        alu::AluOp::Exp => {
+                            let unary_func = |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| x.exp()).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        alu::AluOp::Sin => {
+                            let unary_func = |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| x.sin()).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        alu::AluOp::Cos => {
+                            let unary_func = |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| x.cos()).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        alu::AluOp::Max => {
+                            let scalar: f32 = op.scalar as f32;
+                            let unary_func = move |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| x.max(scalar)).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        alu::AluOp::Scalaradd => {
+                            let scalar: f32 = op.scalar as f32;
+                            let unary_func = move |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| x + scalar).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        alu::AluOp::Scalarmul => {
+                            let scalar: f32 = op.scalar as f32;
+                            let unary_func = move |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| x * scalar).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        alu::AluOp::Scalardiv => {
+                            let scalar: f32 = op.scalar as f32;
+                            let unary_func = move |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| x / scalar).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        alu::AluOp::Rsqrt => {
+                            let unary_func = |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| 1.0 / x.sqrt()).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        alu::AluOp::Sigmoid => {
+                            let unary_func = |val: Vec1T16| -> Vec1T16 {
+                                Tensor { data: CowArray::from(val.data.map(|x| 1.0 / (1.0 + f32::exp(-x))).to_owned()) }
+                            };
+                            builder.add_child(Unary::new(
+                                val_receiver1,
+                                out_val_sender,
+                                unary_func,
+                                1,
+                            ));
+                        }
+                        _ => {
+                            panic!("Should not reach binary op cases")
+                        }
+                    }
+                }
+            }
+            Op::Reduce(op) => {
+                let in_val_id = get_val_id(&op.input_val);
+                match op.reduce_type() {
+                    reduce::Type::Add => {
+                        let reduce_data = ReduceData::<Vec1T16, ST, 1> {
+                            in_val: valmap.get_receiver(in_val_id, builder),
+                            out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                            sum: false,
+                        };
+                        builder.add_child(Reduce::<Vec1T16, ST, 1>::new(reduce_data));
+                    }
+                    reduce::Type::Max => {
+                        let max_reduce_data = MaxReduceData::<Vec1T16, ST> {
+                            in_val: valmap.get_receiver(in_val_id, builder),
+                            out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                        };
+                        builder.add_child(MaxReduce::new(max_reduce_data, Vec1T16::default()));
+                    }
+                    reduce::Type::Addsum => {
+                        let reduce_data = ReduceData::<Vec1T16, ST, 1> {
+                            in_val: valmap.get_receiver(in_val_id, builder),
+                            out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                            sum: true,
+                        };
+                        builder.add_child(Reduce::<Vec1T16, ST, 1>::new(reduce_data));
+                    }
+                }
+            }
+            Op::CoordHold(op) => {
+                let in_inner_crd = get_crd_id(&op.input_inner_crd);
+                let in_outer_crd = get_crd_id(&op.input_outer_crd);
+
+                let crd_hold_data = CrdManagerData {
+                    in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
+                    in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
+                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                    out_crd_outer: crdmap.get_sender(get_crd_id(&op.output_outer_crd), builder),
+                };
+                builder.add_child(CrdHold::new(crd_hold_data));
+            }
+            Op::CoordDrop(op) => {
+                let in_inner_crd = get_crd_id(&op.input_inner_crd);
+                let in_outer_crd = get_crd_id(&op.input_outer_crd);
+
+                let crd_drop_data = CrdManagerData {
+                    in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
+                    in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
+                    out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                    out_crd_outer: crdmap.get_sender(get_crd_id(&op.output_outer_crd), builder),
+                };
+                builder.add_child(CrdDrop::new(crd_drop_data));
+            }
+            Op::Locate(op) => {
+                let in_ref_id = get_ref_id(&op.input_ref);
+                let in_crd_id = get_crd_id(&op.input_crd);
+                let out_ref1_id = get_ref_id(&op.output_ref1);
+                let out_ref2_id = get_ref_id(&op.output_ref2);
+                let out_crd_id = get_crd_id(&op.output_crd);
+                let locate = IterateLocate::new(
+                    refmap.get_receiver(in_ref_id, builder),
+                    crdmap.get_receiver(in_crd_id, builder),
+                    refmap.get_sender(out_ref1_id, builder),
+                    refmap.get_sender(out_ref2_id, builder),
+                    crdmap.get_sender(out_crd_id, builder),
+                );
+                builder.add_child(locate);
+            }
+            Op::Array(op) => {
+                let in_ref_id = get_ref_id(&op.input_ref);
+                let array_data = ArrayData {
+                    in_ref: refmap.get_receiver(in_ref_id, builder),
+                    out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    block_size: 1,
+                };
+                let val_filename = base_path.join(format!("tensor_{}_mode_vals", op.tensor));
+                // Load scalar values first, then convert to vectors.
+                // Dense tables (embed dim is multiple of 16): chunk into 16-wide vectors.
+                // Sparse values (1 per nnz): broadcast each scalar to a 16-wide vector.
+                let scalar_vals: Vec<f32> = read_inputs(&val_filename);
+                // Dense tables: chunk consecutive 16 scalars into vectors.
+                // Sparse values: broadcast each scalar to a 16-wide vector.
+                // Distinguish by: dense tables have >> 16*nnz values (embed_dim factor).
+                // Simple heuristic: if #vectors from chunking > #nnz_expected, it's dense.
+                let chunk_count = scalar_vals.len() / 16;
+                let is_dense = scalar_vals.len() % 16 == 0 && chunk_count > 100_000;
+                let vals: Vec<Vec1T16> = if is_dense {
+                    read_inputs_vectorized(&val_filename, PrimitiveType::<Vec1T16>::new())
+                } else {
+                    // Broadcast each scalar to fill a 16-element vector
+                    scalar_vals.iter().map(|&v| {
+                        Tensor { data: ndarray::CowArray::from(ndarray::Array::from_elem(16, v)) }
+                    }).collect()
+                };
+                println!("[vec16] Array {}: {} scalars -> {} vectors ({})",
+                    op.tensor, scalar_vals.len(), vals.len(), if is_dense { "chunked" } else { "broadcast" });
+                let arr = Array::new(array_data, vals);
+                if enable_hbm {
+                    let (rd_addr_snd, rd_addr_rcv) = builder.unbounded::<ParAddrs>();
+                    let (rd_resp_snd, rd_resp_rcv) = builder.unbounded::<u64>();
+
+                    if dedicated_hbm {
+                        let mut dedicated = HBMContext::new(
+                            builder,
+                            HBMConfig {
+                                addr_offset: 64,
+                                channel_num: channels_per_array,
+                                per_channel_latency: hbm_latency,
+                                per_channel_init_interval: hbm_ii,
+                                per_channel_outstanding: 32,
+                                per_channel_start_up_time: 14,
+                            },
+                        );
+                        dedicated.add_reader(ReadBundle {
+                            addr: rd_addr_rcv,
+                            resp: rd_resp_snd,
+                        });
+                        builder.add_child(dedicated);
+                    } else if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                        hbm.add_reader(ReadBundle {
+                            addr: rd_addr_rcv,
+                            resp: rd_resp_snd,
+                        });
+                    }
+                    arr.enable_hbm_pipelined(
+                        builder,
+                        rd_addr_snd,
+                        rd_resp_rcv,
+                        0x6000_0000,
+                        4 * 16, // 16 f32s per vector = 64 bytes
+                        issue_width,
+                    );
+                } else {
+                    builder.add_child(arr);
+                }
+            }
+            Op::Spacc(op) => {
+                let in_inner_crd = get_crd_id(&op.input_inner_crd);
+                let order = op.order;
+
+                assert_ne!(order, 0);
+
+                if order == 1 {
+                    let in_outer_crd = op.input_outer_crds[0].try_conv();
+                    let in_val_id = get_val_id(&op.input_val);
+
+                    let spacc_data = Spacc1Data {
+                        in_crd_inner: crdmap.get_receiver(in_inner_crd, builder),
+                        in_crd_outer: crdmap.get_receiver(in_outer_crd, builder),
+                        in_val: valmap.get_receiver(in_val_id, builder),
+                        out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                        out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    };
+                    builder.add_child(Spacc1::new(spacc_data));
+                } else if order == 2 {
+                    let in_crd1 = op.input_outer_crds[0].clone().try_conv();
+                    let in_crd2 = op.input_outer_crds[1].clone().try_conv();
+                    let in_val_id = get_val_id(&op.input_val);
+
+                    let spacc2_data = Spacc2Data {
+                        in_val: valmap.get_receiver(in_val_id, builder),
+                        in_crd0: crdmap.get_receiver(in_inner_crd, builder),
+                        in_crd1: crdmap.get_receiver(in_crd1, builder),
+                        in_crd2: crdmap.get_receiver(in_crd2, builder),
+                        out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                        out_crd0: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
+                        out_crd1: crdmap.get_sender(
+                            get_crd_id(&Some(op.output_outer_crds[0].clone())),
+                            builder,
+                        ),
+                    };
+                    builder.add_child(Spacc2::new(spacc2_data));
+                }
+            }
+            Op::ValWrite(op) => {
+                let parallel_drain = env::var("COMAL_PARALLEL_DRAIN")
+                    .map(|v| v != "0" && v.to_lowercase() != "false")
+                    .unwrap_or(false);
+                if parallel_drain {
+                    continue;
+                }
+                let in_val_id = get_val_id(&op.input_val);
+                let val_receiver = valmap.get_receiver(in_val_id, builder);
+                let mut vals = ValsWrScan::new(val_receiver);
+                if let Some(hbm) = hbm_ctx_opt.as_mut() {
+                    let (wr_addr_snd, wr_addr_rcv) = builder.unbounded::<ParAddrs>();
+                    let (wr_resp_snd, wr_resp_rcv) = builder.unbounded::<u64>();
+                    hbm.add_writer(WriteBundle {
+                        addr: wr_addr_rcv,
+                        resp: wr_resp_snd,
+                    });
+                    vals.enable_hbm_writes(wr_addr_snd, wr_resp_rcv, 0x3000_0000, 4);
+                }
+                builder.add_child(vals);
+            }
+            Op::CoordMask(_) => unimplemented!("SAMML can't output coord mask op yet"),
+            operation::Op::Func(_) => todo!(),
+            Op::Root(op) => {
+                let out_ref_id = get_ref_id(&op.output_ref);
+
+                let root_sender = refmap.get_sender(out_ref_id, builder);
+                builder.add_child(GeneratorContext::new(
+                    || token_vec!(u32; u32; 0, "D").into_iter(),
+                    root_sender,
+                ));
+            }
+            Op::Fork(op) => match op.conn.as_ref().unwrap() {
+                fork::Conn::Crd(in_crd) => {
+                    let in_crd_id = in_crd.input.try_conv();
+                    let out_crd_ids = in_crd.outputs.iter().map(|id| id.try_conv());
+                    let receiver = crdmap.get_receiver(in_crd_id, builder);
+                    let mut broadcast = Scatter::new(receiver);
+                    out_crd_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(crdmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
+                }
+                fork::Conn::Ref(in_ref) => {
+                    let in_ref_id = in_ref.input.try_conv();
+                    let out_ref_ids = in_ref.outputs.iter().map(|id| id.try_conv());
+                    let receiver = refmap.get_receiver(in_ref_id, builder);
+                    let mut scatter = Scatter::new(receiver);
+                    out_ref_ids
+                        .into_iter()
+                        .for_each(|id| scatter.add_target(refmap.get_sender(id, builder)));
+                    builder.add_child(scatter);
+                }
+                fork::Conn::Val(in_val) => {
+                    let in_val_id = in_val.input.try_conv();
+                    let out_val_ids = in_val.outputs.iter().map(|id| id.try_conv());
+                    let receiver = valmap.get_receiver(in_val_id, builder);
+                    let mut broadcast = Scatter::new(receiver);
+                    out_val_ids
+                        .into_iter()
+                        .for_each(|id| broadcast.add_target(valmap.get_sender(id, builder)));
+                    builder.add_child(broadcast);
+                }
+                fork::Conn::Repsig(_) => {
+                    panic!("Attempting to fork a repsig");
+                }
+            },
+            Op::Join(op) => {
+                let parallel_drain = env::var("COMAL_PARALLEL_DRAIN")
+                    .map(|v| v != "0" && v.to_lowercase() != "false")
+                    .unwrap_or(false);
+
+                match op.conn.as_ref().unwrap() {
+                    join::Conn::Crd(in_crd) => {
+                        if parallel_drain {
+                            let ids: Vec<u64> = in_crd.inputs.iter().map(|id| id.try_conv()).collect();
+                            let rcvs: Vec<_> = ids.iter().map(|id| crdmap.get_receiver(*id, builder)).collect();
+                            for rcv in rcvs {
+                                builder.add_child(CompressedWrScan::new(rcv));
+                            }
+                        } else {
+                            let sender = crdmap.get_sender(in_crd.output.try_conv(), builder);
+                            let mut gather = Gather::new(sender);
+                            in_crd.inputs.iter().for_each(|id| gather.add_target(crdmap.get_receiver(id.try_conv(), builder)));
+                            builder.add_child(gather);
+                        }
+                    }
+                    join::Conn::Val(in_val) => {
+                        if parallel_drain {
+                            let ids: Vec<u64> = in_val.inputs.iter().map(|id| id.try_conv()).collect();
+                            let rcvs: Vec<_> = ids.iter().map(|id| valmap.get_receiver(*id, builder)).collect();
+                            for rcv in rcvs {
+                                builder.add_child(ValsWrScan::new(rcv));
+                            }
+                        } else {
+                            let sender = valmap.get_sender(in_val.output.try_conv(), builder);
+                            let mut gather = Gather::new(sender);
+                            in_val.inputs.iter().for_each(|id| gather.add_target(valmap.get_receiver(id.try_conv(), builder)));
+                            builder.add_child(gather);
+                        }
+                    }
+                    join::Conn::Ref(in_ref) => {
+                        if parallel_drain {
+                            let ids: Vec<u64> = in_ref.inputs.iter().map(|id| id.try_conv()).collect();
+                            let rcvs: Vec<_> = ids.iter().map(|id| refmap.get_receiver(*id, builder)).collect();
+                            for rcv in rcvs {
+                                builder.add_child(ParallelDrain::new(rcv));
+                            }
+                        } else {
+                            let sender = refmap.get_sender(in_ref.output.try_conv(), builder);
+                            let mut gather = Gather::new(sender);
+                            in_ref.inputs.iter().for_each(|id| gather.add_target(refmap.get_receiver(id.try_conv(), builder)));
+                            builder.add_child(gather);
+                        }
+                    }
+                    join::Conn::Repsig(_) => {
+                        panic!("Attempting to join repsig");
+                    }
+                }
+            },
+            _ => todo!(),
+        }
+    }
+    if let Some(hbm) = hbm_ctx_opt {
+        builder.add_child(hbm);
+    }
+}
+
+/// Entry point for vector token mode — builds the graph with Vec1T16 val channels
+pub fn parse_proto_vec16<'a>(
+    comal_graph: ComalGraph,
+    base_path: PathBuf,
+    sam_options: SamOptions,
+) -> ProgramBuilder<'a> {
+    let mut builder = ProgramBuilder::default();
+    build_from_proto_vec16(
         comal_graph,
         base_path,
         sam_options,
@@ -1818,7 +2717,7 @@ pub fn build_from_proto_block16<'a>(
                         alu::AluOp::Scalarmul => {
                             let scalar: f32 = op.scalar as f32;
                             let unary_func = move |val: VT16| -> VT16 {
-                                Tensor::new(val.data.map(|x| x * scalar).to_owned())
+                                Tensor { data: CowArray::from(val.data.map(|x| x * scalar).to_owned()) }
                             };
                             builder.add_child(Unary::new(
                                 val_receiver1,
@@ -1830,7 +2729,7 @@ pub fn build_from_proto_block16<'a>(
                         alu::AluOp::Scalaradd => {
                             let scalar: f32 = op.scalar as f32;
                             let unary_func = move |val: VT16| -> VT16 {
-                                Tensor::new(val.data.map(|x| x + scalar).to_owned())
+                                Tensor { data: CowArray::from(val.data.map(|x| x + scalar).to_owned()) }
                             };
                             builder.add_child(Unary::new(
                                 val_receiver1,
@@ -2188,8 +3087,8 @@ pub fn build_from_proto_block32<'a>(
                 } else if in_val_ids.len() == 1 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     match op.stages[0].op() {
-                        alu::AluOp::Scalarmul => { let scalar: f32 = op.scalar as f32; builder.add_child(Unary::new(val_receiver1, out_val_sender, move |val: VT32| -> VT32 { Tensor::new(val.data.map(|x| x * scalar).to_owned()) }, N)); }
-                        alu::AluOp::Scalaradd => { let scalar: f32 = op.scalar as f32; builder.add_child(Unary::new(val_receiver1, out_val_sender, move |val: VT32| -> VT32 { Tensor::new(val.data.map(|x| x + scalar).to_owned()) }, N)); }
+                        alu::AluOp::Scalarmul => { let scalar: f32 = op.scalar as f32; builder.add_child(Unary::new(val_receiver1, out_val_sender, move |val: VT32| -> VT32 { Tensor { data: CowArray::from(val.data.map(|x| x * scalar).to_owned()) } }, N)); }
+                        alu::AluOp::Scalaradd => { let scalar: f32 = op.scalar as f32; builder.add_child(Unary::new(val_receiver1, out_val_sender, move |val: VT32| -> VT32 { Tensor { data: CowArray::from(val.data.map(|x| x + scalar).to_owned()) } }, N)); }
                         _ => todo!("Unsupported unary op for block sparse"),
                     }
                 }
@@ -2414,8 +3313,8 @@ pub fn build_from_proto_block64<'a>(
                 } else if in_val_ids.len() == 1 {
                     let val_receiver1 = valmap.get_receiver(in_val_ids.next().unwrap(), builder);
                     match op.stages[0].op() {
-                        alu::AluOp::Scalarmul => { let scalar: f32 = op.scalar as f32; builder.add_child(Unary::new(val_receiver1, out_val_sender, move |val: VT64| -> VT64 { Tensor::new(val.data.map(|x| x * scalar).to_owned()) }, N)); }
-                        alu::AluOp::Scalaradd => { let scalar: f32 = op.scalar as f32; builder.add_child(Unary::new(val_receiver1, out_val_sender, move |val: VT64| -> VT64 { Tensor::new(val.data.map(|x| x + scalar).to_owned()) }, N)); }
+                        alu::AluOp::Scalarmul => { let scalar: f32 = op.scalar as f32; builder.add_child(Unary::new(val_receiver1, out_val_sender, move |val: VT64| -> VT64 { Tensor { data: CowArray::from(val.data.map(|x| x * scalar).to_owned()) } }, N)); }
+                        alu::AluOp::Scalaradd => { let scalar: f32 = op.scalar as f32; builder.add_child(Unary::new(val_receiver1, out_val_sender, move |val: VT64| -> VT64 { Tensor { data: CowArray::from(val.data.map(|x| x + scalar).to_owned()) } }, N)); }
                         _ => todo!("Unsupported unary op for block sparse"),
                     }
                 }

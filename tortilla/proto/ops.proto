@@ -29,6 +29,7 @@ message Operation {
     Join join = 28;
     GenRef gen_ref = 29;
     Locate locate = 30;
+    Concat concat = 31;
   }
 }
 
@@ -105,6 +106,7 @@ message FiberLookup {
   bool src = 9;
   bool root = 10;
   string label = 11;
+  uint64 stream_shape = 12;  // vector stride: emit refs at stride stream_shape
 }
 
 message FiberWrite {
@@ -293,6 +295,23 @@ message Intrinsic {
   repeated CrdStream inputs = 3;
   ValStream output_val = 4;
   repeated CrdStream outputs = 5;
+}
+
+message Concat {
+  // Flattened input coord streams: [t0.d0, ..., t0.d{r-1}, t1.d0, ..., t{m-1}.d{r-1}]
+  repeated CrdStream in_crds = 1;
+  // Non-last dims provide Ref streams in order; the last level provides a single Val stream
+  repeated RefStream in_refs = 9; // for non-last dims
+  repeated ValStream in_vals = 10; // last-level value streams
+  uint64 axis = 3; // 0 <= axis < rank
+  uint64 rank = 4; // common rank across inputs
+  uint64 dim_len = 8; // dense length of concat dimension
+  // Result coord streams (exactly 'rank' outputs)
+  repeated CrdStream out_crds = 5;
+  // Result streams per level: non-last dims are Ref streams; last is Val stream
+  repeated RefStream out_refs = 11;
+  ValStream out_val = 12;
+  string label = 7;
 }
 
 message Fork {

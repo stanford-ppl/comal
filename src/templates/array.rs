@@ -107,7 +107,7 @@ where
         let mut num_reads: u64 = 0;
         let use_hbm = self.hbm_rd_addr_snd.is_some() && self.hbm_rd_resp_rcv.is_some();
         let mut pending_idx: Vec<usize> = Vec::new();
-        let block_latency: u64 = (self.array_data.block_size * self.array_data.block_size) as u64;
+        let block_latency: u64 = self.array_data.block_size as u64;
 
         // Double-buffer: in-flight HBM batches awaiting responses
         let prefetch_depth = if use_hbm { self.hbm_prefetch_depth } else { 1 };
@@ -278,85 +278,81 @@ where
     fn init(&mut self) {}
 
     fn run(&mut self) {
-        let mut pending_addrs: Vec<u64> = Vec::with_capacity(self.batch_size);
+        let width = self.batch_size;
 
         loop {
-            match self.in_ref.dequeue(&self.time) {
-                Ok(elem) => {
-                    match elem.data {
-                        Token::Val(ref val) => {
-                            let idx: usize = val.clone().try_into().unwrap();
-                            let addr = self.hbm_base + (idx as u64) * self.hbm_stride;
-                            pending_addrs.push(addr);
+            // Phase 1: Dequeue up to `width` Val tokens in one cycle.
+            // Models an N-wide input datapath — N tokens arrive simultaneously.
+            // Uses dequeue (not peek) so we consume N tokens per incr_cycles(1),
+            // regardless of upstream timestamps.
+            let mut batch_addrs: Vec<u64> = Vec::with_capacity(width);
+            let mut batch_count = 0usize;
+            let mut control: Option<Token<RefType, StopType>> = None;
 
-                            // Forward token to consumer immediately
-                            self.idx_snd
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(self.time.tick(), elem.data),
-                                )
-                                .unwrap();
-
-                            // When batch is full, fire all addresses to HBM at once
-                            // This dispatches to batch_size channels simultaneously
-                            if pending_addrs.len() >= self.batch_size {
-                                self.hbm_addr_snd
+            for _ in 0..width {
+                match self.in_ref.dequeue(&self.time) {
+                    Ok(elem) => {
+                        match elem.data {
+                            Token::Val(ref val) => {
+                                let idx: usize = val.clone().try_into().unwrap();
+                                batch_addrs.push(self.hbm_base + (idx as u64) * self.hbm_stride);
+                                // Forward token to consumer at current time
+                                self.idx_snd
                                     .enqueue(
                                         &self.time,
-                                        ChannelElement::new(
-                                            self.time.tick(),
-                                            ParAddrs::new(std::mem::take(&mut pending_addrs)),
-                                        ),
+                                        ChannelElement::new(self.time.tick(), elem.data),
                                     )
                                     .unwrap();
+                                batch_count += 1;
                             }
-                        }
-                        Token::Stop(_) | Token::Empty => {
-                            // Flush any partial batch before control token
-                            if !pending_addrs.is_empty() {
-                                self.hbm_addr_snd
-                                    .enqueue(
-                                        &self.time,
-                                        ChannelElement::new(
-                                            self.time.tick(),
-                                            ParAddrs::new(std::mem::take(&mut pending_addrs)),
-                                        ),
-                                    )
-                                    .unwrap();
+                            other => {
+                                control = Some(other);
+                                break;
                             }
-                            self.idx_snd
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(self.time.tick(), elem.data),
-                                )
-                                .unwrap();
-                        }
-                        Token::Done => {
-                            if !pending_addrs.is_empty() {
-                                self.hbm_addr_snd
-                                    .enqueue(
-                                        &self.time,
-                                        ChannelElement::new(
-                                            self.time.tick(),
-                                            ParAddrs::new(std::mem::take(&mut pending_addrs)),
-                                        ),
-                                    )
-                                    .unwrap();
-                            }
-                            self.idx_snd
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(self.time.tick(), Token::Done),
-                                )
-                                .unwrap();
-                            return;
                         }
                     }
-                }
-                Err(_) => {
-                    panic!("ArrayIssuer: unexpected end of stream");
+                    Err(_) => {
+                        panic!("ArrayIssuer: unexpected end of stream");
+                    }
                 }
             }
+
+            // Phase 2: Fire all N addresses to HBM at once
+            if !batch_addrs.is_empty() {
+                self.hbm_addr_snd
+                    .enqueue(
+                        &self.time,
+                        ChannelElement::new(
+                            self.time.tick(),
+                            ParAddrs::new(batch_addrs),
+                        ),
+                    )
+                    .unwrap();
+            }
+
+            // Phase 3: Handle control token if one was hit
+            if let Some(tok) = control {
+                match tok {
+                    Token::Done => {
+                        self.idx_snd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(self.time.tick(), Token::Done),
+                            )
+                            .unwrap();
+                        return;
+                    }
+                    _ => {
+                        self.idx_snd
+                            .enqueue(
+                                &self.time,
+                                ChannelElement::new(self.time.tick(), tok),
+                            )
+                            .unwrap();
+                    }
+                }
+            }
+
             self.time.incr_cycles(1);
         }
     }
@@ -369,6 +365,7 @@ pub struct ArrayConsumer<RefType: Clone, ValType: Clone, StopType: Clone> {
     out_val: Sender<Token<ValType, StopType>>,
     val_arr: Vec<ValType>,
     block_size: usize,
+    issue_width: usize, // N tokens processed per cycle (1 = original behavior)
 }
 
 impl<RefType: DAMType, ValType: DAMType, StopType: DAMType> ArrayConsumer<RefType, ValType, StopType>
@@ -381,6 +378,7 @@ where
         out_val: Sender<Token<ValType, StopType>>,
         val_arr: Vec<ValType>,
         block_size: usize,
+        issue_width: usize,
     ) -> Self {
         let ctx = Self {
             idx_rcv,
@@ -388,6 +386,7 @@ where
             out_val,
             val_arr,
             block_size,
+            issue_width: issue_width.max(1),
             context_info: Default::default(),
         };
         ctx.idx_rcv.attach_receiver(&ctx);
@@ -408,48 +407,79 @@ where
 
     fn run(&mut self) {
         let mut num_reads: u64 = 0;
-        let block_latency: u64 = (self.block_size * self.block_size) as u64;
+        // Block latency: models HBM read time for the vector.
+        // Default: block_size cycles (1 cycle per element in the vector).
+        // Override with COMAL_BLOCK_LATENCY for accurate CGRA modeling
+        // (e.g., 512 bytes / 64 bytes/cycle = 8 cycles for 128-wide vector with 2 HBM channels).
+        let block_latency: u64 = std::env::var("COMAL_BLOCK_LATENCY")
+            .ok().and_then(|v| v.parse().ok())
+            .unwrap_or(self.block_size as u64);
+        let width = self.issue_width;
+
         loop {
-            match self.idx_rcv.dequeue(&self.time) {
-                Ok(elem) => {
-                    match elem.data {
-                        Token::Val(val) => {
-                            let idx: usize = val.try_into().unwrap();
-                            // Wait for HBM response using peek + incr_cycles
-                            // to advance time gradually (1 cycle at a time).
-                            // This preserves the 1-token-per-cycle cadence that
-                            // downstream spacc/reduce nodes expect.
-                            // Using dequeue() would atomically jump time to T+100,
-                            // breaking timing alignment with crd streams.
-                            loop {
-                                match self.hbm_resp_rcv.peek() {
-                                    dam::channel::PeekResult::Something(ref ce)
-                                        if ce.time <= self.time.tick() =>
-                                    {
-                                        self.hbm_resp_rcv.dequeue(&self.time).unwrap();
-                                        break;
-                                    }
-                                    dam::channel::PeekResult::Something(_) => {
-                                        // Response exists but in the future — advance time
-                                        self.time.incr_cycles(1);
-                                    }
-                                    dam::channel::PeekResult::Nothing(_) => {
-                                        self.time.incr_cycles(1);
-                                    }
-                                    dam::channel::PeekResult::Closed => break,
+            // Phase 1: Collect up to `width` Val tokens via peek.
+            // Stop at control tokens — they must NOT be batched with values.
+            let mut batch_idx: Vec<usize> = Vec::with_capacity(width);
+
+            for _ in 0..width {
+                match self.idx_rcv.peek() {
+                    dam::channel::PeekResult::Something(ref ce) if ce.time <= self.time.tick() => {
+                        match &ce.data {
+                            Token::Val(_) => {
+                                let elem = self.idx_rcv.dequeue(&self.time).unwrap();
+                                if let Token::Val(val) = elem.data {
+                                    batch_idx.push(val.try_into().unwrap());
                                 }
                             }
-                            num_reads += 1;
-                            self.out_val
-                                .enqueue(
-                                    &self.time,
-                                    ChannelElement::new(
-                                        self.time.tick() + block_latency,
-                                        Token::Val(self.val_arr[idx].clone()),
-                                    ),
-                                )
-                                .unwrap();
+                            _ => break, // control token — stop collecting
                         }
+                    }
+                    dam::channel::PeekResult::Something(_) => break, // future token
+                    dam::channel::PeekResult::Nothing(_) => break,   // nothing available
+                    dam::channel::PeekResult::Closed => break,
+                }
+            }
+
+            // Phase 2: Wait for HBM responses for all collected tokens.
+            // Use peek+incr to advance time gradually (preserves timing).
+            for _ in 0..batch_idx.len() {
+                loop {
+                    match self.hbm_resp_rcv.peek() {
+                        dam::channel::PeekResult::Something(ref ce)
+                            if ce.time <= self.time.tick() =>
+                        {
+                            self.hbm_resp_rcv.dequeue(&self.time).unwrap();
+                            break;
+                        }
+                        dam::channel::PeekResult::Something(_) => {
+                            self.time.incr_cycles(1);
+                        }
+                        dam::channel::PeekResult::Nothing(_) => {
+                            self.time.incr_cycles(1);
+                        }
+                        dam::channel::PeekResult::Closed => break,
+                    }
+                }
+            }
+
+            // Phase 3: Emit all values (all N in same cycle — N-wide output).
+            for idx in &batch_idx {
+                num_reads += 1;
+                self.out_val
+                    .enqueue(
+                        &self.time,
+                        ChannelElement::new(
+                            self.time.tick() + block_latency,
+                            Token::Val(self.val_arr[*idx].clone()),
+                        ),
+                    )
+                    .unwrap();
+            }
+
+            // Phase 4: If no batch collected, process a control token.
+            if batch_idx.is_empty() {
+                match self.idx_rcv.dequeue(&self.time) {
+                    Ok(elem) => match elem.data {
                         Token::Stop(stkn) => {
                             self.out_val
                                 .enqueue(
@@ -482,12 +512,25 @@ where
                             println!("Num reads: {}", num_reads);
                             return;
                         }
-                    }
-                }
-                Err(_) => {
-                    panic!("ArrayConsumer: unexpected end of stream");
+                        Token::Val(val) => {
+                            // Shouldn't happen (peeked non-val above), but handle gracefully
+                            let idx: usize = val.try_into().unwrap();
+                            num_reads += 1;
+                            self.out_val
+                                .enqueue(
+                                    &self.time,
+                                    ChannelElement::new(
+                                        self.time.tick() + block_latency,
+                                        Token::Val(self.val_arr[idx].clone()),
+                                    ),
+                                )
+                                .unwrap();
+                        }
+                    },
+                    Err(_) => return,
                 }
             }
+
             self.time.incr_cycles(1);
         }
     }
@@ -512,6 +555,7 @@ where
         hbm_resp_rcv: Receiver<u64>,
         hbm_base: u64,
         hbm_stride: u64,
+        issue_width: usize,
     ) where
         RefType: 'a,
         ValType: 'a,
@@ -520,15 +564,15 @@ where
         // Internal channel connecting issuer -> consumer
         let (idx_snd, idx_rcv) = builder.unbounded::<Token<RefType, StopType>>();
 
-        // batch_size=32 matches U280's 32 HBM channels — one address per channel
-        // per dispatch cycle, maximizing memory-level parallelism.
+        // batch_size = issue_width: issuer batches N addresses per HBM dispatch
+        // to match consumer's N-wide processing per cycle.
         let issuer = ArrayIssuer::new(
             self.array_data.in_ref,
             hbm_addr_snd,
             idx_snd,
             hbm_base,
             hbm_stride,
-            32,
+            issue_width,
         );
 
         let consumer = ArrayConsumer::new(
@@ -537,6 +581,7 @@ where
             self.array_data.out_val,
             self.val_arr,
             self.array_data.block_size,
+            issue_width,
         );
 
         builder.add_child(issuer);
@@ -654,7 +699,7 @@ mod tests {
             resp: rd_resp_snd,
         });
         // Use pipelined mode: arr is consumed, issuer + consumer added to builder
-        arr.enable_hbm_pipelined(&mut parent, rd_addr_snd, rd_resp_rcv, 0x6000_0000, 4);
+        arr.enable_hbm_pipelined(&mut parent, rd_addr_snd, rd_resp_rcv, 0x6000_0000, 4, 1);
         parent.add_child(mem);
 
         let in_ref = || token_vec!(u32; u32; 0, 2, 1, "D").into_iter();

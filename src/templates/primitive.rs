@@ -4,7 +4,7 @@ use dam::context_tools::*;
 use dam::templates::ops::*;
 use dam::types::StaticallySized;
 use dam::RegisterALUOp;
-use ndarray::{Axis, Dimension, Ix2};
+use ndarray::{Axis, Dimension, Ix1, Ix2};
 use num::Zero;
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +63,17 @@ where
             panic!("Should not reach this case in sum_axis");
         };
         out
+    }
+}
+
+impl<StopType: DAMType, A: DAMType, const N: usize> FinalReduce<StopType, 1> for Token<Tensor<'static, A, Ix1, N>, StopType>
+where
+    A: dam::types::StaticallySized + Zero + std::ops::Add<Output = A>,
+    Ix1: Dimension,
+{
+    fn sum_axis(self) -> Self {
+        // For 1D vectors, sum_axis is identity — no second axis to reduce.
+        self
     }
 }
 
@@ -182,6 +193,35 @@ impl<StopType: DAMType> TryInto<Token<u32, StopType>>
 
 impl<StopType: DAMType> From<Token<u32, StopType>>
     for Token<Tensor<'static, f32, Ix2, 16>, StopType>
+{
+    fn from(value: Token<u32, StopType>) -> Self {
+        match value {
+            Token::Val(_val) => Token::Val(Tensor::default()),
+            Token::Stop(stop) => Token::Stop(stop),
+            Token::Empty => Token::Empty,
+            Token::Done => Token::Done,
+        }
+    }
+}
+
+// 1D vector token conversions (Vec1T16 = Tensor<f32, Ix1, 16>)
+impl<StopType: DAMType> TryInto<Token<u32, StopType>>
+    for Token<Tensor<'static, f32, Ix1, 16>, StopType>
+{
+    type Error = u32;
+
+    fn try_into(self) -> Result<Token<u32, StopType>, Self::Error> {
+        match self {
+            Token::Val(_val) => Ok(Token::Val(u32::default())),
+            Token::Stop(stop) => Ok(Token::Stop(stop)),
+            Token::Empty => Ok(Token::Empty),
+            Token::Done => Ok(Token::Done),
+        }
+    }
+}
+
+impl<StopType: DAMType> From<Token<u32, StopType>>
+    for Token<Tensor<'static, f32, Ix1, 16>, StopType>
 {
     fn from(value: Token<u32, StopType>) -> Self {
         match value {

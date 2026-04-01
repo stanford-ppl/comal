@@ -21,6 +21,7 @@ pub struct RdScanData<ValType: Clone, StopType: Clone> {
 pub struct UncompressedCrdRdScan<ValType: Clone, StopType: Clone> {
     rd_scan_data: RdScanData<ValType, StopType>,
     meta_dim: ValType,
+    stream_shape: u64, // vector stride: emit every stream_shape-th coordinate (0 or 1 = scalar)
 }
 
 #[context_macro]
@@ -63,6 +64,7 @@ where
         let ucr = UncompressedCrdRdScan {
             rd_scan_data,
             meta_dim,
+            stream_shape: 0,
             context_info: Default::default(),
         };
         (ucr.rd_scan_data.in_ref).attach_receiver(&ucr);
@@ -70,6 +72,10 @@ where
         (ucr.rd_scan_data.out_crd).attach_sender(&ucr);
 
         ucr
+    }
+
+    pub fn set_stream_shape(&mut self, shape: u64) {
+        self.stream_shape = shape;
     }
 }
 
@@ -166,6 +172,8 @@ where
         let curr_id = self.id();
         let mut read_count: u64 = 0;
         let mut cached_ref = None;
+        // Vector stride: if stream_shape > 1, emit every stream_shape-th coordinate
+        let stride: u32 = if self.stream_shape > 1 { self.stream_shape as u32 } else { 1 };
         loop {
             match self.rd_scan_data.in_ref.dequeue(&self.time) {
                 Ok(curr_ref) => match curr_ref.data.clone() {
@@ -217,20 +225,41 @@ where
                                     crd_count.clone() + (val.clone() * self.meta_dim.clone())
                                 );
                             }
-                            crd_count += 1;
+                            crd_count += stride;
                             self.time.incr_cycles(1);
                         }
+                        // When stream_shape covers the full dimension (vector mode),
+                        // the inner loop ran exactly once per ref — no inner fiber boundary.
+                        // Skip the inner Stop(0); only propagate outer Stop tokens.
+                        // full_vector: when stream_shape covers the entire dense dimension,
+                        // the inner loop ran exactly 1 iteration. No inner Stop needed.
+                        // Detect by checking if stride >= meta_dim (both are ValType).
+                        let full_vector = (self.stream_shape > 1 && {
+                            let s: ValType = ValType::default();
+                            let mut sv = s;
+                            sv += stride;
+                            !(sv < self.meta_dim)
+                        }) || std::env::var("COMAL_VECTOR_MODE")
+                            .map(|v| v != "0" && !v.is_empty())
+                            .unwrap_or(false);
                         let next_tkn = self.rd_scan_data.in_ref.peek_next(&self.time).unwrap();
                         let output: Token<ValType, StopType> = match next_tkn.data {
                             Token::Val(_) | Token::Done | Token::Empty => {
+                                if full_vector {
+                                    // No inner Stop needed — next ref is another nnz, not a fiber boundary
+                                    continue;
+                                }
                                 Token::Stop(StopType::default())
                             }
                             Token::Stop(stop_tkn) => {
                                 self.rd_scan_data.in_ref.dequeue(&self.time).unwrap();
-                                Token::Stop(stop_tkn + 1)
-                            } // Token::Empty => {
-
-                              // }
+                                if full_vector {
+                                    // Outer Stop: propagate without incrementing level
+                                    Token::Stop(stop_tkn)
+                                } else {
+                                    Token::Stop(stop_tkn + 1)
+                                }
+                            }
                         };
 
                         let curr_time = self.time.tick();
