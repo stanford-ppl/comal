@@ -1,30 +1,75 @@
 # Tiling support for comal-samml-cosim
 
-This branch (`samml-cosim-tiling`, off `samml-cosim`) adds tile-aware execution
-semantics to the comal dataflow simulator. The goal is to support multi-level
-tiled SpMM/matmul/GNN workloads where the iteration nest is split-and-reordered
-into outer (tile-bucket) and inner (within-tile) loops, with cycle-counts that
-reflect real streaming-tile pipelining rather than a flat-graph approximation.
+This branch (`samml-cosim-tiling`, off `samml-cosim`) adds support for tiled
+matmul/SpMM/GNN workloads to the comal dataflow simulator.
+
+## Conceptual framing: tiling = rank promotion
+
+Tiling is not a special execution mode. It is a **rank promotion** of the
+tensors involved. A 2D matmul `C[i,k] = sum_j A[i,j] · B[j,k]` tiled with
+`(T_i, T_j, T_k)` is exactly equivalent to a 4D-storage / 6D-iter computation:
+
+```
+C[io, ii, ko, ki] = sum_(jo, ji) A[io, ii, jo, ji] · B[jo, ji, ko, ki]
+                       ^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^   ^^^^^^^^^^^^^^^^
+                    2-rank reduction      4-rank A          4-rank B (and C)
+```
+
+In SAM-storage terms, every involved tensor gains levels, the iteration nest
+deepens, and **every Stop token is just a regular rank-Stop with no special
+"tile" semantics**. The existing depth-from-innermost encoding (`Stop(0)`
+ends innermost, larger `k` ends progressively outer fibers) handles tiling
+without any new token type.
+
+Stop semantics under this framing:
+- `Stop(0)` ends `ki` fiber (innermost-most after tiling)
+- `Stop(1)` ends `ko` fiber
+- `Stop(2)` ends `ji` fiber
+- `Stop(3)` ends `jo` fiber
+- `Stop(4)` ends `ii` fiber
+- `Stop(5)` ends `io` fiber (outermost)
+
+For an Spacc reducing over `j = (jo, ji)`, the reduction-fiber-end is at
+**Stop(3)** — that's the level at which both ji and jo have been fully
+iterated. Stops at depth < 3 are still inside the reduction (pass through);
+Stop(3) is reduction-done (flush + emit); Stops at depth > 3 are above the
+reduction (pass through).
 
 ## Why this is small (the headline)
 
 Most comal templates are **depth-agnostic** — they pass `Stop(k)` tokens through
-unchanged regardless of the value of `k`. Pipelining across tile iterations
-falls out automatically from streaming dataflow: tile-token N+1 can flow as
-soon as tile-token N has been emitted, and all the joiners / ALUs / Arrays /
+unchanged regardless of the value of `k`. Pipelining across higher-rank
+iterations falls out automatically from streaming dataflow: outer-rank-token
+N+1 can flow as soon as N has been emitted, and all joiners / ALUs / Arrays /
 WrScans handle deeper Stop nesting without code changes.
 
-Only **three node families** are depth-aware and need explicit audit:
+Only **three node families** are depth-aware and need explicit audit, and all
+of them need the same fix: parameterize their flush/decrement behavior by a
+**`reduction_depth`** field that tells the node which Stop level corresponds
+to the end of its reduction fiber.
 
 | Node | File | Hardcoded behavior | Fix |
 |------|------|---------------------|-----|
-| `Reduce` | `src/templates/accumulator.rs:176` | `Stop(stkn-1)` always decrements | Conditional on `stkn < tile_depth` |
-| `Spacc1` / `Spacc2` | `src/templates/accumulator.rs:330,369-370 / 524-750` | Flushes on every Stop | Flush only when `stkn < tile_depth` |
-| `*CrdRdScan` | `src/templates/rd_scanner.rs:260, 740` | `Stop(stop_tkn+1)` always increments | No code change — relies on the data-gen reshape (`mode_shape = [N/T, T]`) so the +1 produces the right depth automatically |
+| `Reduce` | `src/templates/accumulator.rs:176` | `Stop(stkn-1)` always decrements | Decrement only when `stkn == reduction_depth`; pass through otherwise |
+| `Spacc1` / `Spacc2` | `src/templates/accumulator.rs:330,369-370 / 524-750` | Flushes on every Stop | Flush only at `stkn == reduction_depth`; pass through otherwise |
+| `*CrdRdScan` | `src/templates/rd_scanner.rs:260, 740` | `Stop(stop_tkn+1)` always increments | No code change — relies on data-gen producing higher-rank `mode_shape` so the +1 naturally produces the right depth |
 
-The hard part is the **per-token Stop-depth bookkeeping** at the tile boundary.
-Get it right once in Spacc/Reduce, and the rest of the graph pipelines for
-free.
+The hard part is the **per-token Stop-depth bookkeeping** at reduction
+fiber ends. Get `reduction_depth` right in Spacc/Reduce, and the rest of the
+graph pipelines for free.
+
+## Tile parallel vs reduction dims have different costs
+
+| What you tile | Effect on reduction_depth | Simulator change needed |
+|---------------|---------------------------|------------------------|
+| Parallel dim (`i`, `k` of SpMM) | unchanged | none — pass-through Stops above reduction_depth already work |
+| Reduction dim (`j` of SpMM) | grows by 1 per tiling level | reduction_depth on Spacc/Reduce must reflect new depth |
+| Outer-tile fusion across phases (`isShared`) | unchanged per-phase, but the intermediate tensor under the shared rank streams instead of materializing | none for execution; the shared rank is a regular outer fiber wrapping two phase subgraphs |
+
+So **tiling parallel dims (the cheap and most common case) needs zero
+simulator changes** once multi-rank-reduction semantics are correct. Tiling
+reduction dims and outer-tile fusion are the only cases that exercise
+`reduction_depth`.
 
 ## Token model recap (from `src/templates/primitive.rs:14-19`)
 
@@ -40,7 +85,7 @@ pub enum Token<ValType, StopType> {
 `Stop(k)` semantics: `k=0` is the innermost fiber boundary; larger `k` is
 progressively outer. **Adding a tile level introduces an extra Stop level
 above all existing ones**, so every original `Stop(k)` from the inner subgraph
-becomes effectively a fiber-internal token, and a new `Stop(tile_depth)`
+becomes effectively a fiber-internal token, and a new `Stop(reduction_depth)`
 appears at tile boundaries.
 
 Three observed depth behaviors today:
@@ -64,11 +109,11 @@ Three observed depth behaviors today:
    ```protobuf
    message Reduce {
        // existing fields ...
-       uint32 tile_depth = N;     // 0 = pre-tiling behavior (every Stop decrements)
+       uint32 reduction_depth = N;     // 0 = pre-tiling behavior (every Stop decrements)
    }
    message Spacc {
        // existing fields ...
-       uint32 tile_depth = N;     // 0 = pre-tiling behavior (every Stop flushes)
+       uint32 reduction_depth = N;     // 0 = pre-tiling behavior (every Stop flushes)
    }
    message FiberLookup {
        // existing fields ...
@@ -98,12 +143,12 @@ Token::Stop(stkn) => {
 }
 
 // Proposed:
-Token::Stop(stkn) if stkn < self.tile_depth => {
+Token::Stop(stkn) if stkn < self.reduction_depth => {
     // Reduction-fiber-end: flush state, emit accumulated (crd, val) pairs
     flush_and_emit_pairs();
     emit Token::Stop(stkn);
 }
-Token::Stop(stkn) /* if stkn >= self.tile_depth */ => {
+Token::Stop(stkn) /* if stkn >= self.reduction_depth */ => {
     // Tile boundary: state persists across tiles; just forward
     emit Token::Stop(stkn);
 }
@@ -115,7 +160,7 @@ unconditional `Stop(stkn-1)` at line 176):
 ```rust
 match token {
     Token::Val(v) => self.sum += v,
-    Token::Stop(stkn) if stkn < self.tile_depth => {
+    Token::Stop(stkn) if stkn < self.reduction_depth => {
         emit Token::Val(self.sum); self.sum = 0;
         emit Token::Stop(stkn - 1);   // legitimate level-collapse
     }
@@ -126,22 +171,30 @@ match token {
 }
 ```
 
-`tile_depth = 0` (default) → every Stop has `stkn < 0` false (since `stkn >= 0`),
-so **all Stops fall into the second branch**... no, wait — `stkn < 0` is never
-true. Need to flip the default:
+**Default `reduction_depth = 0`** means "1-rank reduction; flush at
+`Stop(0)`." This is equivalent to today's "flush on the only Stop the Spacc
+sees in a flat-iter SpMM" — every existing untiled test passes with this
+default because their Spaccs see Stop(0) as the reduction-fiber-end.
+
+For correctness in general (multi-rank reductions, including tiled-reduction),
+the right test is `stkn == reduction_depth`:
 
 ```rust
-// tile_depth == 0 sentinel = "untiled, every Stop is a reduction Stop"
-let is_tile_boundary = self.tile_depth > 0 && stkn >= self.tile_depth;
+// reduction_depth: the Stop level at which this Spacc's reduction fiber ends.
+//   Stops at lower depth → within the reduction (pass through, accumulate).
+//   Stop at this exact depth → reduction-end (flush + emit + propagate).
+//   Stops at higher depth → above the reduction (pass through unchanged).
+let is_reduction_end = stkn == self.reduction_depth;
+if is_reduction_end {
+    flush_and_emit_pairs();
+}
+emit Token::Stop(stkn);   // always forward
 ```
-
-That's the right semantics. Default `tile_depth=0` → `is_tile_boundary` is
-always false → preserves untiled behavior exactly.
 
 Tests to add:
 - Spacc reduction-only (untiled): existing tests at `accumulator.rs:1008+`
-  must pass byte-identically.
-- Spacc with `tile_depth=2`, feed `Val Val Stop(0) Val Val Stop(0) Stop(1)
+  must pass byte-identically with `reduction_depth=0`.
+- Spacc with `reduction_depth=1`, feed `Val Val Stop(0) Val Val Stop(0) Stop(1)
   Stop(2)`: assert flush at the two `Stop(0)` events (reduction-fiber-ends),
   pass-through at `Stop(1)` (tile-internal), pass-through at `Stop(2)`
   (tile-boundary).
@@ -162,9 +215,9 @@ In `samml/lib/Target/ProtoEmitter/`:
 1. Populate `tile_size` / `tile_role` on `FiberLookup` proto from
    `sam.fiber_lookup` op attrs (already on the op via Phase 1 of the samml-side
    work, commit `c9ea419`).
-2. Compute `tile_depth` for each `Spacc` / `Reduce` proto: the depth is the
+2. Compute `reduction_depth` for each `Spacc` / `Reduce` proto: the depth is the
    number of tile-introduced Stop levels between the reduction var and the
-   outermost stream. Concretely: `tile_depth = (number of tile-vars that come
+   outermost stream. Concretely: `reduction_depth = (number of tile-vars that come
    AFTER this op's reduction var in the loop order)`.
 3. Data-gen (`autosparse/tensor_data_generator.py`): when a dense tensor's
    arg has `samml.tile_sizes`, write `mode_shape` as `[N/T, T]` instead of
@@ -177,7 +230,7 @@ In `samml/lib/Target/ProtoEmitter/`:
 **Status: depends on 2a-2c**
 
 A standalone test in `tests/test_tiled_spmm.rs` (or a comal-side fixture):
-1. Hand-build a proto for a tiled SpMM with `tile_depth` set on Spacc.
+1. Hand-build a proto for a tiled SpMM with `reduction_depth` set on Spacc.
 2. Feed in tensor data with the reshaped `mode_shape`.
 3. Run comal, assert cycle count is *less than or equal to* the untiled
    equivalent.
@@ -185,10 +238,10 @@ A standalone test in `tests/test_tiled_spmm.rs` (or a comal-side fixture):
    gives no benefit (e.g., serial reductions).
 
 The Phase 3 acceptance is more nuanced than a single-number compare — we want:
-- Untiled cycles ≈ tiled-with-tile_depth=0 cycles (regression check).
-- Tiled-with-correct-tile_depth on a parallel-dim-tile workload: shows
+- Untiled cycles ≈ tiled-with-reduction_depth=0 cycles (regression check).
+- Tiled-with-correct-reduction_depth on a parallel-dim-tile workload: shows
   measurable cycle reduction proportional to pipelining-window size.
-- Tiled-with-incorrect-tile_depth (e.g., off-by-one): correctness fails (wrong
+- Tiled-with-incorrect-reduction_depth (e.g., off-by-one): correctness fails (wrong
   output values), surfacing the bug at the first integration test.
 
 **Cost:** ~300 LoC tests, ~3-5 days.
@@ -203,7 +256,7 @@ factory's `isShared = true` flag in `tilingInfo` is for. Streamingly, no
 intermediate-tensor materialization to memory under the shared tile.
 
 Simulator-side: ensure the WrScan + ArrayVal of the intermediate tensor handle
-the shared outer-Stop correctly (the Spacc tile_depth from Phase 2b already
+the shared outer-Stop correctly (the Spacc reduction_depth from Phase 2b already
 covers Spacc; ArrayVal is depth-agnostic and should pass through; WrScan's
 fiber-segment writes need to honor the shared tile boundary).
 
@@ -234,9 +287,9 @@ fiber-segment writes need to honor the shared tile boundary).
 ## Open questions
 
 1. **Multiple reduction levels in one Spacc.** If a future workload has
-   nested reductions (e.g., reduce j inside reduce m), `tile_depth` is not
+   nested reductions (e.g., reduce j inside reduce m), `reduction_depth` is not
    sufficient — need a per-Spacc `reduction_depth_set`. Defer until needed.
-2. **`tile_depth` with format-tiled sparse (BCSR).** When the outer scanner
+2. **`reduction_depth` with format-tiled sparse (BCSR).** When the outer scanner
    is a `TileRdScan` rather than a reshaped UncompressedCrdRdScan, the Stop
    semantics may differ. Audit when activating in Phase 5.
 3. **`isShared` semantics across more than two phases.** Current factory
@@ -248,7 +301,7 @@ fiber-segment writes need to honor the shared tile boundary).
 - **Per-node unit tests** (Phase 2b): hand-crafted token streams with explicit
   Stop depths; assert correct flush/pass-through behavior.
 - **Default-zero regression**: every existing `cargo test` passes byte-identically
-  with new code paths gated by `tile_depth > 0`.
+  with new code paths gated by `reduction_depth > 0`.
 - **Integration test on real SpMM** (Phase 3): tiled vs untiled cycle counts
   agree on the untiled-tile-depth=0 case; tiled-with-correct-depth shows
   measurable speedup on parallel-dim tiling.
