@@ -668,6 +668,19 @@ where
                     }
                 }
                 Token::Stop(stkn) => {
+                    // reduction_depth gates whether this Stop on in_crd2 is the
+                    // reduction-fiber-end (flush + emit pairs) or within reduction
+                    // (consume silently, keep accumulating across multi-rank reduction).
+                    // Default reduction_depth=0 → every Stop has stkn >= 0 → flushes
+                    // (current behavior preserved byte-identically for untiled).
+                    // See Spacc1::run for the analogous single-rank-output case.
+                    let red_depth = StopType::from(self.spacc2_data.reduction_depth);
+                    if stkn < red_depth {
+                        self.spacc2_data.in_crd2.dequeue(&self.time).unwrap();
+                        ocrd_val_pop_cnt += 1;
+                        self.time.incr_cycles(1);
+                        continue;
+                    }
                     for (key, crd0_map) in &accum_storage {
                         // Flush out crd1 in order
                         let icrd_chan_elem =
@@ -1829,5 +1842,101 @@ mod tests {
         let out_icrd = || token_vec!(u32; u32; 0, 1, "S1", 1, "S2", "D").into_iter();
         let out_val  = || token_vec!(f32; u32; 3.0, 3.0, "S1", 9.0, "S2", "D").into_iter();
         spacc1_check_test(in_ocrd, in_icrd, in_val, out_icrd, out_val, 1);
+    }
+
+    fn spacc2_check_test<IRT1, IRT2, IRT3, IRT4, ORT1, ORT2>(
+        in_crd2: fn() -> IRT1,
+        in_crd1: fn() -> IRT2,
+        in_crd0: fn() -> IRT3,
+        in_val: fn() -> IRT4,
+        out_crd0: fn() -> ORT1,
+        out_crd1: fn() -> ORT1,
+        out_val: fn() -> ORT2,
+        red_depth: u32,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT3: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT4: Iterator<Item = Token<f32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT2: Iterator<Item = Token<f32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_crd0_sender, in_crd0_receiver) = parent.unbounded();
+        let (in_crd1_sender, in_crd1_receiver) = parent.unbounded();
+        let (in_crd2_sender, in_crd2_receiver) = parent.unbounded();
+        let (in_val_sender, in_val_receiver) = parent.unbounded();
+        let (out_val_sender, out_val_receiver) = parent.unbounded();
+        let (out_crd0_sender, out_crd0_receiver) = parent.unbounded();
+        let (out_crd1_sender, out_crd1_receiver) = parent.unbounded();
+        let data = Spacc2Data::<u32, f32, u32> {
+            in_val: in_val_receiver,
+            in_crd0: in_crd0_receiver,
+            in_crd1: in_crd1_receiver,
+            in_crd2: in_crd2_receiver,
+            out_val: out_val_sender,
+            out_crd0: out_crd0_sender,
+            out_crd1: out_crd1_sender,
+            reduction_depth: red_depth,
+        };
+        let red = Spacc2::new(data);
+        let gen1 = GeneratorContext::new(in_crd2, in_crd2_sender);
+        let gen2 = GeneratorContext::new(in_crd1, in_crd1_sender);
+        let gen3 = GeneratorContext::new(in_crd0, in_crd0_sender);
+        let gen4 = GeneratorContext::new(in_val, in_val_sender);
+        let crd0_checker = CheckerContext::new(out_crd0, out_crd0_receiver);
+        let crd1_checker = CheckerContext::new(out_crd1, out_crd1_receiver);
+        let val_checker = CheckerContext::new(out_val, out_val_receiver);
+        parent.add_child(gen1);
+        parent.add_child(gen2);
+        parent.add_child(gen3);
+        parent.add_child(gen4);
+        parent.add_child(crd0_checker);
+        parent.add_child(crd1_checker);
+        parent.add_child(val_checker);
+        parent.add_child(red);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        assert!(executed.passed(), "Spacc2 simulation failed (checker mismatch)");
+    }
+
+    /// red_depth=0 (default) — locks in untiled Spacc2 with real checkers.
+    /// Two tile-passes (in_crd2 = 0, 1) each contribute crd1/crd0 entries;
+    /// outer Stop(0) on in_crd2 flushes the merged 2D accum.
+    ///
+    /// Tile 0 (crd2=0): crd1=0 → {0:50, 2:5, 3:10}; crd1=2 → {0:40, 2:4, 3:8}
+    /// Tile 1 (crd2=1): crd1=2 → {0:-40, 2:33, 3:36}
+    /// Merged: crd1=0 → {0:50, 2:5, 3:10}; crd1=2 → {0:0, 2:37, 3:44}
+    #[test]
+    fn spacc2_red_depth_0_untiled_check() {
+        let in_crd2 = || token_vec!(u32; u32; 0, 1, "S0", "D").into_iter();
+        let in_crd1 = || token_vec!(u32; u32; 0, 2, "S0", 2, "S1", "D").into_iter();
+        let in_crd0 = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", 0, 2, 3, "S2", "D").into_iter();
+        let in_val  = || token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 40.0, 4.0, 8.0, "S1", -40.0, 33.0, 36.0, "S2", "D").into_iter();
+        let out_crd1 = || token_vec!(u32; u32; 0, 2, "S0", "D").into_iter();
+        let out_crd0 = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", "D").into_iter();
+        let out_val  = || token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 0.0, 37.0, 44.0, "S1", "D").into_iter();
+        spacc2_check_test(in_crd2, in_crd1, in_crd0, in_val, out_crd0, out_crd1, out_val, 0);
+    }
+
+    /// red_depth=1, two tile-passes contributing to the same output region.
+    /// in_crd2 Stop(0) is absorbed (within reduction); Stop(1) flushes the
+    /// merged 2D accum.
+    ///
+    /// Tile 0: crd1=0 → {0:1, 1:2}; crd1=1 → {0:3}
+    /// Tile 1: crd1=0 → {1:10}    ; crd1=2 → {0:20}
+    /// Merged: crd1=0 → {0:1, 1:12}; crd1=1 → {0:3}; crd1=2 → {0:20}
+    #[test]
+    fn spacc2_red_depth_1_two_tiles_one_region() {
+        let in_crd2 = || token_vec!(u32; u32; 0, "S0", 0, "S1", "D").into_iter();
+        let in_crd1 = || token_vec!(u32; u32; 0, 1, "S0", 0, 2, "S1", "D").into_iter();
+        let in_crd0 = || token_vec!(u32; u32; 0, 1, "S0", 0, "S1", 1, "S0", 0, "S2", "D").into_iter();
+        let in_val  = || token_vec!(f32; u32; 1.0, 2.0, "S0", 3.0, "S1", 10.0, "S0", 20.0, "S2", "D").into_iter();
+        let out_crd1 = || token_vec!(u32; u32; 0, 1, 2, "S1", "D").into_iter();
+        let out_crd0 = || token_vec!(u32; u32; 0, 1, "S0", 0, "S0", 0, "S2", "D").into_iter();
+        let out_val  = || token_vec!(f32; u32; 1.0, 12.0, "S0", 3.0, "S0", 20.0, "S2", "D").into_iter();
+        spacc2_check_test(in_crd2, in_crd1, in_crd0, in_val, out_crd0, out_crd1, out_val, 1);
     }
 }
