@@ -107,6 +107,15 @@ message FiberLookup {
   bool root = 10;
   string label = 11;
   uint64 stream_shape = 12;  // vector stride: emit refs at stride stream_shape
+
+  // Tile metadata. Diagnostic-only for the simulator (it doesn't need these
+  // to execute correctly given a higher-rank mode_shape from data-gen). Used
+  // by the compiler / autosparse search to identify tile-related fiber_lookups
+  // and recover the original tile-size choice for ranking.
+  //   tile_role: 0 = None, 1 = Outer, 2 = Inner.
+  //   tile_size: original tile size T (untiled when 0 or tile_role==None).
+  uint64 tile_size = 13;
+  uint32 tile_role = 14;
 }
 
 message FiberWrite {
@@ -218,6 +227,14 @@ message Reduce {
   uint64 stream_shape = 4;
   bool blocked = 5;
   Type reduce_type = 6;
+
+  // Stop depth at which this reduction's fiber ends.
+  //   Stops with depth < reduction_depth → within reduction (still accumulating)
+  //   Stop at depth == reduction_depth   → reduction-fiber-end (flush + decrement)
+  //   Stops with depth >  reduction_depth → above reduction (pass through)
+  // Default 0 = "1-rank reduction; flush at Stop(0)" — matches today's behavior
+  // for untiled SpMM/matmul where the reduction is the innermost iter.
+  uint32 reduction_depth = 7;
 }
 
 message GenRef {
@@ -240,6 +257,15 @@ message SparseAccumulator {
   uint64 stream_shape = 11;
   bool blocked = 12;
   // string val = 10;
+
+  // Stop depth at which this accumulator's reduction fiber ends.
+  //   Stops with depth < reduction_depth → within reduction (don't flush)
+  //   Stop at depth == reduction_depth   → reduction-fiber-end (flush + emit pairs)
+  //   Stops with depth >  reduction_depth → above reduction (pass through)
+  // Default 0 = "1-rank reduction; flush at Stop(0)" — matches today's behavior.
+  // Larger values support multi-rank reductions (tiled-reduction-dim) and
+  // outer ranks (tiled-parallel-dims) without spurious flushes.
+  uint32 reduction_depth = 13;
 }
 
 message CoordHold {
