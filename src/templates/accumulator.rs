@@ -366,19 +366,12 @@ where
                     let red_depth = StopType::from(self.spacc1_data.reduction_depth);
                     let is_reduction_end = stkn >= red_depth;
                     if !is_reduction_end {
-                        // Within multi-rank reduction: forward Stop, do NOT flush.
-                        let val_stkn_chan_elem =
-                            ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
-                        self.spacc1_data
-                            .out_val
-                            .enqueue(&self.time, val_stkn_chan_elem)
-                            .unwrap();
-                        let crd_stkn_chan_elem =
-                            ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
-                        self.spacc1_data
-                            .out_crd_inner
-                            .enqueue(&self.time, crd_stkn_chan_elem)
-                            .unwrap();
+                        // Within multi-rank reduction: consume the outer-crd Stop
+                        // silently and keep the accumulator alive for further tile
+                        // contributions. Do NOT emit anything on the output channels
+                        // — the Stop only marks an inner-tile boundary in the *input*
+                        // stream; the output rank structure does not include this
+                        // boundary. (Mirrors Reduce's within-reduction skip.)
                         self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
                         ocrd_val_pop_cnt += 1;
                         continue;
@@ -1642,5 +1635,199 @@ mod tests {
         println!("flash_softmax_accum_two_rows: ref0={:.4} ref1={:.4}, elapsed={:?}",
                  ref_row0, ref_row1, executed.elapsed_cycles());
         assert!(executed.passed(), "Simulation failed (checker mismatch)");
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Multi-rank reduction tests for Reduce / Spacc1 (reduction_depth > 0).
+    //
+    // These tests exercise the runtime branching introduced in Phase 2b:
+    //   - Stops with depth < reduction_depth → within reduction (silently consumed)
+    //   - Stop at depth == reduction_depth   → reduction-fiber-end (flush + decrement)
+    //   - Stops with depth >  reduction_depth → above reduction (still flush + decrement;
+    //     accumulator is empty so this acts as a stop-decrement pass-through with a
+    //     spurious Val(0) — preserved from the existing untiled flush behavior).
+    // ────────────────────────────────────────────────────────────────────────
+
+    fn reduce_check_test<IRT, ORT>(in_val: fn() -> IRT, out_val: fn() -> ORT, red_depth: u32)
+    where
+        IRT: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT: Iterator<Item = Token<u32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_val_sender, in_val_receiver) = parent.unbounded();
+        let (out_val_sender, out_val_receiver) = parent.unbounded();
+        let data = ReduceData::<u32, u32, 1> {
+            in_val: in_val_receiver,
+            out_val: out_val_sender,
+            sum: false,
+            reduction_depth: red_depth,
+        };
+        let red = Reduce::<u32, u32, 1>::new(data);
+        let gen1 = GeneratorContext::new(in_val, in_val_sender);
+        let val_checker = CheckerContext::new(out_val, out_val_receiver);
+        parent.add_child(gen1);
+        parent.add_child(val_checker);
+        parent.add_child(red);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        assert!(executed.passed(), "Reduce simulation failed (checker mismatch)");
+    }
+
+    /// red_depth=0 (default) — locks in the untiled behaviour with a real checker.
+    /// Without this, the existing reduce_2d_test only used a PrinterContext.
+    #[test]
+    fn reduce_red_depth_0_untiled_check() {
+        // Per-row sums: 5+5=10, 5, 4+8=12, 4+3=7, 4+3=7. End-of-rows yields a
+        // spurious Val(0) Stop(0) (existing behaviour for outer Stop with empty acc).
+        let in_val = || token_vec!(u32; u32; 5, 5, "S0", 5, "S0", 4, 8, "S0", 4, 3, "S0", 4, 3, "S1", "D").into_iter();
+        let out_val = || token_vec!(u32; u32; 10, 5, 12, 7, 7, "S0", "D").into_iter();
+        reduce_check_test(in_val, out_val, 0);
+    }
+
+    /// red_depth=1, single tile-group of two inner fibers.
+    /// Inner Stop(0)s are absorbed; Stop(1) flushes the accumulated sum.
+    #[test]
+    fn reduce_red_depth_1_single_group() {
+        let in_val = || token_vec!(u32; u32; 1, 2, "S0", 3, 4, "S0", "S1", "D").into_iter();
+        // 1+2+3+4 = 10. Decrement Stop(1) → Stop(0).
+        let out_val = || token_vec!(u32; u32; 10, "S0", "D").into_iter();
+        reduce_check_test(in_val, out_val, 1);
+    }
+
+    /// red_depth=1, multiple tile-groups followed by an above-reduction Stop(2).
+    /// Each Stop(1) flushes one row's reduced value; the final Stop(2) is the
+    /// rank-above-reduction marker — empty-flush emits Val(0) + Stop(1).
+    #[test]
+    fn reduce_red_depth_1_multi_group_with_outer() {
+        let in_val = || token_vec!(u32; u32; 1, "S0", 2, "S0", "S1", 3, "S0", 4, "S0", "S1", "S2", "D").into_iter();
+        // Group 0: 1+2 = 3. Group 1: 3+4 = 7. Outer Stop(2) → empty-flush Val(0).
+        let out_val = || token_vec!(u32; u32; 3, "S0", 7, "S0", 0, "S1", "D").into_iter();
+        reduce_check_test(in_val, out_val, 1);
+    }
+
+    /// red_depth=2 — three input ranks collapse to one output rank.
+    /// Stop(0) and Stop(1) absorbed; Stop(2) flushes; Stop(2) decrements to Stop(1).
+    #[test]
+    fn reduce_red_depth_2_deeper_nesting() {
+        let in_val = || token_vec!(u32; u32; 1, 2, "S0", 3, "S0", "S1", 4, "S0", 5, 6, "S0", "S1", "S2", "D").into_iter();
+        // All 6 vals sum to 21. Output rank = input rank - 2.
+        let out_val = || token_vec!(u32; u32; 21, "S1", "D").into_iter();
+        reduce_check_test(in_val, out_val, 2);
+    }
+
+    /// red_depth=1, empty inner fibers (Stops with no preceding Vals).
+    /// Sum stays at 0; flush emits Val(0).
+    #[test]
+    fn reduce_red_depth_1_empty_inner_fibers() {
+        let in_val = || token_vec!(u32; u32; "S0", "S0", "S1", "D").into_iter();
+        let out_val = || token_vec!(u32; u32; 0, "S0", "D").into_iter();
+        reduce_check_test(in_val, out_val, 1);
+    }
+
+    /// red_depth=1, single Val sandwiched between many absorbed inner Stops.
+    /// Confirms inner-Stop absorption is unbounded and accumulator is not reset
+    /// until the reduction-end Stop.
+    #[test]
+    fn reduce_red_depth_1_long_inner_chain() {
+        let in_val = || token_vec!(u32; u32; "S0", 7, "S0", "S0", "S0", "S1", "D").into_iter();
+        let out_val = || token_vec!(u32; u32; 7, "S0", "D").into_iter();
+        reduce_check_test(in_val, out_val, 1);
+    }
+
+    fn spacc1_check_test<IRT1, IRT2, IRT3, ORT1, ORT2>(
+        in_ocrd: fn() -> IRT1,
+        in_icrd: fn() -> IRT2,
+        in_val: fn() -> IRT3,
+        out_icrd: fn() -> ORT1,
+        out_val: fn() -> ORT2,
+        red_depth: u32,
+    ) where
+        IRT1: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT2: Iterator<Item = Token<u32, u32>> + 'static,
+        IRT3: Iterator<Item = Token<f32, u32>> + 'static,
+        ORT1: Iterator<Item = Token<u32, u32>> + 'static,
+        ORT2: Iterator<Item = Token<f32, u32>> + 'static,
+    {
+        let mut parent = ProgramBuilder::default();
+        let (in_ocrd_sender, in_ocrd_receiver) = parent.unbounded();
+        let (in_icrd_sender, in_icrd_receiver) = parent.unbounded();
+        let (in_val_sender, in_val_receiver) = parent.unbounded();
+        let (out_val_sender, out_val_receiver) = parent.unbounded();
+        let (out_icrd_sender, out_icrd_receiver) = parent.unbounded();
+        let data = Spacc1Data::<u32, f32, u32> {
+            in_crd_outer: in_ocrd_receiver,
+            in_crd_inner: in_icrd_receiver,
+            in_val: in_val_receiver,
+            out_val: out_val_sender,
+            out_crd_inner: out_icrd_sender,
+            reduction_depth: red_depth,
+        };
+        let red = Spacc1::new(data);
+        let gen1 = GeneratorContext::new(in_ocrd, in_ocrd_sender);
+        let gen2 = GeneratorContext::new(in_icrd, in_icrd_sender);
+        let gen3 = GeneratorContext::new(in_val, in_val_sender);
+        let icrd_checker = CheckerContext::new(out_icrd, out_icrd_receiver);
+        let val_checker = CheckerContext::new(out_val, out_val_receiver);
+        parent.add_child(gen1);
+        parent.add_child(gen2);
+        parent.add_child(gen3);
+        parent.add_child(icrd_checker);
+        parent.add_child(val_checker);
+        parent.add_child(red);
+        let executed = parent
+            .initialize(InitializationOptions::default())
+            .unwrap()
+            .run(RunOptions::default());
+        assert!(executed.passed(), "Spacc1 simulation failed (checker mismatch)");
+    }
+
+    /// red_depth=0 (default) — locks in the existing untiled Spacc1 behaviour
+    /// using a real checker. Mirrors spacc1_2d_test inputs.
+    #[test]
+    fn spacc1_red_depth_0_untiled_check() {
+        let in_ocrd = || token_vec!(u32; u32; 0, 2, "S0", 2, "S1", "D").into_iter();
+        let in_icrd = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", 0, 2, 3, "S2", "D").into_iter();
+        let in_val = || token_vec!(f32; u32; 50.0, 5.0, 10.0, "S0", 40.0, 4.0, 8.0, "S1", -40.0, 33.0, 36.0, "S2", "D").into_iter();
+        // First Stop(0) on ocrd flushes accum from ocrd Vals 0+2 (icrd S0+S1):
+        //   accum[0]=50+40=90, accum[2]=5+4=9, accum[3]=10+8=18
+        // Then ocrd Stop(1) flushes accum from ocrd Val 2 (icrd S2):
+        //   accum[0]=-40, accum[2]=33, accum[3]=36
+        let out_icrd = || token_vec!(u32; u32; 0, 2, 3, "S0", 0, 2, 3, "S1", "D").into_iter();
+        let out_val  = || token_vec!(f32; u32; 90.0, 9.0, 18.0, "S0", -40.0, 33.0, 36.0, "S1", "D").into_iter();
+        spacc1_check_test(in_ocrd, in_icrd, in_val, out_icrd, out_val, 0);
+    }
+
+    /// red_depth=1, single output row split across two tile-passes.
+    /// Inner ocrd Stop(0) is absorbed (no flush); ocrd Stop(1) flushes the
+    /// merged accumulator.
+    #[test]
+    fn spacc1_red_depth_1_two_tiles_one_row() {
+        // Two tiles contributing to a single output row:
+        //   Tile 0: position 0→10, position 1→20
+        //   Tile 1: position 0→ 5, position 2→30
+        // Expected merged row: position 0→15, position 1→20, position 2→30.
+        let in_ocrd = || token_vec!(u32; u32; 0, "S0", 0, "S1", "D").into_iter();
+        let in_icrd = || token_vec!(u32; u32; 0, 1, "S0", 0, 2, "S1", "D").into_iter();
+        let in_val  = || token_vec!(f32; u32; 10.0, 20.0, "S0", 5.0, 30.0, "S1", "D").into_iter();
+        let out_icrd = || token_vec!(u32; u32; 0, 1, 2, "S1", "D").into_iter();
+        let out_val  = || token_vec!(f32; u32; 15.0, 20.0, 30.0, "S1", "D").into_iter();
+        spacc1_check_test(in_ocrd, in_icrd, in_val, out_icrd, out_val, 1);
+    }
+
+    /// red_depth=1, two output rows, each split across two tile-passes.
+    /// Stop(0) within reduction is absorbed; Stop(1) flushes one output row;
+    /// Stop(2) flushes the (empty) accum and decrements rank for outer-end.
+    #[test]
+    fn spacc1_red_depth_1_two_rows_two_tiles_each() {
+        // Row 0: Tile 0 (pos 0→1) + Tile 1 (pos 0→2, pos 1→3)  → merged: 0→3, 1→3
+        // Row 1: Tile 0 (pos 1→4)              + Tile 1 (pos 1→5)         → merged: 1→9
+        let in_ocrd = || token_vec!(u32; u32; 0, "S0", 0, "S1", 0, "S0", 0, "S2", "D").into_iter();
+        let in_icrd = || token_vec!(u32; u32; 0, "S0", 0, 1, "S1", 1, "S0", 1, "S2", "D").into_iter();
+        let in_val  = || token_vec!(f32; u32; 1.0, "S0", 2.0, 3.0, "S1", 4.0, "S0", 5.0, "S2", "D").into_iter();
+        let out_icrd = || token_vec!(u32; u32; 0, 1, "S1", 1, "S2", "D").into_iter();
+        let out_val  = || token_vec!(f32; u32; 3.0, 3.0, "S1", 9.0, "S2", "D").into_iter();
+        spacc1_check_test(in_ocrd, in_icrd, in_val, out_icrd, out_val, 1);
     }
 }
