@@ -14,6 +14,12 @@ pub struct ReduceData<ValType: Clone, StopType: Clone, const N: usize> {
     pub in_val: Receiver<Token<ValType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
     pub sum: bool,
+    /// Stop depth at which this reduction's fiber ends.
+    ///   Stops at depth <  reduction_depth → within reduction (consume, no emit)
+    ///   Stops at depth >= reduction_depth → at-or-above reduction-fiber-end
+    ///                                       (emit Val(sum), reset, decrement Stop)
+    /// Default 0 = "1-rank reduction; flush at Stop(0)" — preserves untiled behavior.
+    pub reduction_depth: u32,
 }
 
 #[context_macro]
@@ -121,6 +127,7 @@ where
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
         + std::cmp::PartialEq
+        + std::cmp::PartialOrd
         + std::convert::From<u32>,
     // Token<f32, u32>: From<Token<ValType, StopType>>,  // Disabled for block sparse mode
     Token<ValType, StopType>: FinalReduce<StopType, N>,
@@ -141,6 +148,21 @@ where
                     }
                     Token::Stop(stkn) => {
                         let curr_time = self.time.tick();
+
+                        // reduction_depth gates whether this Stop is at-or-above
+                        // the reduction fiber (flush + emit + decrement) or within
+                        // the reduction (consume, no emission, sum keeps growing).
+                        // Default reduction_depth=0 → all Stops are at-or-above →
+                        // current 1-rank-reduction behavior preserved byte-identically.
+                        let red_depth = StopType::from(self.reduce_data.reduction_depth);
+                        if stkn < red_depth {
+                            // Within multi-rank reduction: consume Stop, keep accumulating.
+                            // No Val/Stop emission; downstream sees the reduction
+                            // collapse all input ranks below reduction_depth.
+                            // (The rank-collapse means there's no corresponding output
+                            // Stop level for input depths below reduction_depth.)
+                            continue;
+                        }
 
                         let final_reduce = if self.reduce_data.sum {
                             Token::Val(sum.clone()).sum_axis()
@@ -222,6 +244,12 @@ pub struct Spacc1Data<CrdType: Clone, ValType: Clone, StopType: Clone> {
     pub in_crd_inner: Receiver<Token<CrdType, StopType>>,
     pub out_val: Sender<Token<ValType, StopType>>,
     pub out_crd_inner: Sender<Token<CrdType, StopType>>,
+    /// Stop depth at which this accumulator's reduction fiber ends.
+    ///   Stops at depth <  reduction_depth → within reduction (forward, do NOT flush)
+    ///   Stops at depth >= reduction_depth → flush state, emit (crd, val) pairs,
+    ///                                       then forward Stop unchanged
+    /// Default 0 preserves current behavior (every Stop flushes).
+    pub reduction_depth: u32,
 }
 
 #[context_macro]
@@ -259,7 +287,9 @@ where
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
-        + std::cmp::PartialEq,
+        + std::cmp::PartialEq
+        + std::cmp::PartialOrd
+        + std::convert::From<u32>,
     // Token<f32, u32>: From<Token<ValType, StopType>>,  // Disabled for block sparse mode
     // Token<u32, u32>: From<Token<CrdType, StopType>>,  // Disabled for block sparse mode
 {
@@ -328,6 +358,31 @@ where
                     self.spacc1_data.in_val.dequeue(&self.time).unwrap();
                 }
                 Token::Stop(stkn) => {
+                    // reduction_depth gates whether this Stop on outer-crd is the
+                    // reduction-fiber-end (flush + forward) or within reduction
+                    // (just forward, keep accumulating across multi-rank reduction).
+                    // Default reduction_depth=0 → every Stop has stkn >= 0 → flushes
+                    // (current behavior preserved byte-identically for untiled).
+                    let red_depth = StopType::from(self.spacc1_data.reduction_depth);
+                    let is_reduction_end = stkn >= red_depth;
+                    if !is_reduction_end {
+                        // Within multi-rank reduction: forward Stop, do NOT flush.
+                        let val_stkn_chan_elem =
+                            ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
+                        self.spacc1_data
+                            .out_val
+                            .enqueue(&self.time, val_stkn_chan_elem)
+                            .unwrap();
+                        let crd_stkn_chan_elem =
+                            ChannelElement::new(self.time.tick() + 1, Token::Stop(stkn.clone()));
+                        self.spacc1_data
+                            .out_crd_inner
+                            .enqueue(&self.time, crd_stkn_chan_elem)
+                            .unwrap();
+                        self.spacc1_data.in_crd_outer.dequeue(&self.time).unwrap();
+                        ocrd_val_pop_cnt += 1;
+                        continue;
+                    }
                     for (key, value) in &accum_storage {
                         let icrd_chan_elem = ChannelElement::new(
                             self.time.tick() + 1,
@@ -493,6 +548,8 @@ pub struct Spacc2Data<CrdType: Clone, ValType: Clone, StopType: Clone> {
     pub out_val: Sender<Token<ValType, StopType>>,
     pub out_crd0: Sender<Token<CrdType, StopType>>,
     pub out_crd1: Sender<Token<CrdType, StopType>>,
+    /// See Spacc1Data::reduction_depth — same semantics.
+    pub reduction_depth: u32,
 }
 
 #[context_macro]
@@ -532,7 +589,9 @@ where
     StopType: DAMType
         + std::ops::Add<u32, Output = StopType>
         + std::ops::Sub<u32, Output = StopType>
-        + std::cmp::PartialEq,
+        + std::cmp::PartialEq
+        + std::cmp::PartialOrd
+        + std::convert::From<u32>,
     // Token<f32, u32>: From<Token<ValType, StopType>>,  // Disabled for block sparse mode
     // Token<u32, u32>: From<Token<CrdType, StopType>>,  // Disabled for block sparse mode
     CrdType: PartialEq<CrdType>,
@@ -1166,6 +1225,7 @@ mod tests {
             in_val: in_val_receiver,
             out_val: out_val_sender,
             sum: false,
+            reduction_depth: 0,
         };
         let red = Reduce::<u32, u32, 1>::new(data);
         let gen1 = GeneratorContext::new(in_val, in_val_sender);
@@ -1263,6 +1323,7 @@ mod tests {
             out_val: out_val_sender,
             out_crd0: out_crd0_sender,
             out_crd1: out_crd1_sender,
+            reduction_depth: 0,
         };
         let red = Spacc2::new(data);
         let gen1 = GeneratorContext::new(in_crd2, in_crd2_sender);
@@ -1312,6 +1373,7 @@ mod tests {
             in_val: in_val_receiver,
             out_val: out_val_sender,
             out_crd_inner: out_icrd_sender,
+            reduction_depth: 0,
         };
         let red = Spacc1::new(data);
         let gen1 = GeneratorContext::new(in_ocrd, in_ocrd_sender);

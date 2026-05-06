@@ -649,6 +649,7 @@ pub fn run_mha<'a>(
                 in_val: mul_out_receiver,
                 out_val: red_out_sender,
                 sum: false,
+                reduction_depth: 0,
             };
             let red = Reduce::<f32, u32, 1>::new(red_data);
             parent.add_child(red);
@@ -706,6 +707,7 @@ pub fn run_mha<'a>(
                 in_val: bc_exp_out_receiver,
                 out_val: red1_out_sender,
                 sum: false,
+                reduction_depth: 0,
             };
             let red1 = Reduce::<f32, u32, 1>::new(red1_data);
             parent.add_child(red1);
@@ -775,6 +777,7 @@ pub fn run_mha<'a>(
                 in_val: mul2_out_receiver,
                 out_val: out_spacc_val_sender,
                 out_crd_inner: out_spacc_icrd_sender,
+                reduction_depth: 0,
             };
             let spacc = Spacc1::new(spacc_data);
             parent.add_child(spacc);

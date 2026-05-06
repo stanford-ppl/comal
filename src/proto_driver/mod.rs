@@ -626,6 +626,7 @@ pub fn build_from_proto<'a>(
                             in_val: valmap.get_receiver(in_val_id, builder),
                             out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                             sum: false,
+                            reduction_depth: op.reduction_depth,
                         };
                         builder.add_child(Reduce::<VT, ST, 1>::new(reduce_data));
                     }
@@ -641,6 +642,7 @@ pub fn build_from_proto<'a>(
                             in_val: valmap.get_receiver(in_val_id, builder),
                             out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                             sum: true,
+                            reduction_depth: op.reduction_depth,
                         };
                         builder.add_child(Reduce::<VT, ST, 1>::new(reduce_data));
                     }
@@ -754,6 +756,7 @@ pub fn build_from_proto<'a>(
                         in_val: valmap.get_receiver(in_val_id, builder),
                         out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
                         out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                        reduction_depth: op.reduction_depth,
                     };
                     builder.add_child(Spacc1::new(spacc_data));
                 } else if order == 2 {
@@ -772,6 +775,7 @@ pub fn build_from_proto<'a>(
                             get_crd_id(&Some(op.output_outer_crds[0].clone())),
                             builder,
                         ),
+                        reduction_depth: op.reduction_depth,
                     };
                     builder.add_child(Spacc2::new(spacc2_data));
                 }
@@ -1419,6 +1423,7 @@ pub fn build_from_proto_vec16<'a>(
                             in_val: valmap.get_receiver(in_val_id, builder),
                             out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                             sum: false,
+                            reduction_depth: op.reduction_depth,
                         };
                         builder.add_child(Reduce::<Vec1T16, ST, 1>::new(reduce_data));
                     }
@@ -1434,6 +1439,7 @@ pub fn build_from_proto_vec16<'a>(
                             in_val: valmap.get_receiver(in_val_id, builder),
                             out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                             sum: true,
+                            reduction_depth: op.reduction_depth,
                         };
                         builder.add_child(Reduce::<Vec1T16, ST, 1>::new(reduce_data));
                     }
@@ -1562,6 +1568,7 @@ pub fn build_from_proto_vec16<'a>(
                         in_val: valmap.get_receiver(in_val_id, builder),
                         out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
                         out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                        reduction_depth: op.reduction_depth,
                     };
                     builder.add_child(Spacc1::new(spacc_data));
                 } else if order == 2 {
@@ -1580,6 +1587,7 @@ pub fn build_from_proto_vec16<'a>(
                             get_crd_id(&Some(op.output_outer_crds[0].clone())),
                             builder,
                         ),
+                        reduction_depth: op.reduction_depth,
                     };
                     builder.add_child(Spacc2::new(spacc2_data));
                 }
@@ -2193,6 +2201,7 @@ pub fn build_from_proto_parameterized<'a>(
                             in_val: valmap.get_receiver(in_val_id, builder),
                             out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                             sum: false,
+                            reduction_depth: op.reduction_depth,
                         };
                         builder.add_child(Reduce::<VT, ST, 1>::new(reduce_data));
                     }
@@ -2208,6 +2217,7 @@ pub fn build_from_proto_parameterized<'a>(
                             in_val: valmap.get_receiver(in_val_id, builder),
                             out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                             sum: true,
+                            reduction_depth: op.reduction_depth,
                         };
                         builder.add_child(Reduce::<VT, ST, 1>::new(reduce_data));
                     }
@@ -2266,6 +2276,7 @@ pub fn build_from_proto_parameterized<'a>(
                     in_val: valmap.get_receiver(in_val_id, builder),
                     out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    reduction_depth: op.reduction_depth,
                 };
                 builder.add_child(Spacc1::new(spacc_data));
             }
@@ -2750,6 +2761,7 @@ pub fn build_from_proto_block16<'a>(
                             in_val: valmap.get_receiver(in_val_id, builder),
                             out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                             sum: false,
+                            reduction_depth: op.reduction_depth,
                         };
                         builder.add_child(Reduce::<VT16, ST, N>::new(reduce_data));
                     }
@@ -2765,6 +2777,7 @@ pub fn build_from_proto_block16<'a>(
                             in_val: valmap.get_receiver(in_val_id, builder),
                             out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
                             sum: true,
+                            reduction_depth: op.reduction_depth,
                         };
                         builder.add_child(Reduce::<VT16, ST, N>::new(reduce_data));
                     }
@@ -2819,6 +2832,7 @@ pub fn build_from_proto_block16<'a>(
                     in_val: valmap.get_receiver(in_val_id, builder),
                     out_crd_inner: crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder),
                     out_val: valmap.get_sender(get_val_id(&op.output_val), builder),
+                    reduction_depth: op.reduction_depth,
                 };
                 builder.add_child(Spacc1::new(spacc_data));
             }
@@ -3099,17 +3113,22 @@ pub fn build_from_proto_block32<'a>(
                     reduce::Type::Add => {
                         let in_val = valmap.get_receiver(in_val_id, builder);
                         let out_val = valmap.get_sender(get_val_id(&op.output_val), builder);
-                        builder.add_child(Reduce::<VT32, ST, N>::new(ReduceData { in_val, out_val, sum: false }));
+                        builder.add_child(Reduce::<VT32, ST, N>::new(ReduceData { in_val, out_val, sum: false,
+ reduction_depth: op.reduction_depth,
+                     }));
                     }
                     reduce::Type::Max => {
                         let in_val = valmap.get_receiver(in_val_id, builder);
                         let out_val = valmap.get_sender(get_val_id(&op.output_val), builder);
-                        builder.add_child(MaxReduce::new(MaxReduceData { in_val, out_val }, VT32::default()));
+                        builder.add_child(MaxReduce::new(MaxReduceData { in_val, out_val,
+                     }, VT32::default()));
                     }
                     reduce::Type::Addsum => {
                         let in_val = valmap.get_receiver(in_val_id, builder);
                         let out_val = valmap.get_sender(get_val_id(&op.output_val), builder);
-                        builder.add_child(Reduce::<VT32, ST, N>::new(ReduceData { in_val, out_val, sum: true }));
+                        builder.add_child(Reduce::<VT32, ST, N>::new(ReduceData { in_val, out_val, sum: true,
+ reduction_depth: op.reduction_depth,
+                     }));
                     }
                 }
             }
@@ -3140,7 +3159,9 @@ pub fn build_from_proto_block32<'a>(
                 let in_val = valmap.get_receiver(get_val_id(&op.input_val), builder);
                 let out_crd_inner = crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder);
                 let out_val = valmap.get_sender(get_val_id(&op.output_val), builder);
-                builder.add_child(Spacc1::new(Spacc1Data { in_crd_inner, in_crd_outer, in_val, out_crd_inner, out_val }));
+                builder.add_child(Spacc1::new(Spacc1Data { in_crd_inner, in_crd_outer, in_val, out_crd_inner, out_val,
+                    reduction_depth: op.reduction_depth,
+                     }));
             }
             Op::ValWrite(op) => {
                 let val_receiver = valmap.get_receiver(get_val_id(&op.input_val), builder);
@@ -3324,9 +3345,14 @@ pub fn build_from_proto_block64<'a>(
                 let in_val = valmap.get_receiver(in_val_id, builder);
                 let out_val = valmap.get_sender(get_val_id(&op.output_val), builder);
                 match op.reduce_type() {
-                    reduce::Type::Add => { builder.add_child(Reduce::<VT64, ST, N>::new(ReduceData { in_val, out_val, sum: false })); }
-                    reduce::Type::Max => { builder.add_child(MaxReduce::new(MaxReduceData { in_val, out_val }, VT64::default())); }
-                    reduce::Type::Addsum => { builder.add_child(Reduce::<VT64, ST, N>::new(ReduceData { in_val, out_val, sum: true })); }
+                    reduce::Type::Add => { builder.add_child(Reduce::<VT64, ST, N>::new(ReduceData { in_val, out_val, sum: false,
+ reduction_depth: op.reduction_depth,
+                     })); }
+                    reduce::Type::Max => { builder.add_child(MaxReduce::new(MaxReduceData { in_val, out_val,
+                     }, VT64::default())); }
+                    reduce::Type::Addsum => { builder.add_child(Reduce::<VT64, ST, N>::new(ReduceData { in_val, out_val, sum: true,
+ reduction_depth: op.reduction_depth,
+                     })); }
                 }
             }
             Op::CoordHold(op) => {
@@ -3354,7 +3380,9 @@ pub fn build_from_proto_block64<'a>(
                 let in_val = valmap.get_receiver(get_val_id(&op.input_val), builder);
                 let out_crd_inner = crdmap.get_sender(get_crd_id(&op.output_inner_crd), builder);
                 let out_val = valmap.get_sender(get_val_id(&op.output_val), builder);
-                builder.add_child(Spacc1::new(Spacc1Data { in_crd_inner, in_crd_outer, in_val, out_crd_inner, out_val }));
+                builder.add_child(Spacc1::new(Spacc1Data { in_crd_inner, in_crd_outer, in_val, out_crd_inner, out_val,
+                    reduction_depth: op.reduction_depth,
+                     }));
             }
             Op::ValWrite(op) => {
                 let receiver = valmap.get_receiver(get_val_id(&op.input_val), builder);
